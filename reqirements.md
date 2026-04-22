@@ -1,0 +1,29 @@
+# HTTP / scraping
+requests>=2.32.0
+beautifulsoup4>=4.12.0
+arxiv>=2.1.0
+feedparser>=6.0.11
+
+# LLM
+openai>=1.54.0
+
+# TTS
+elevenlabs>=1.10.0
+
+# Video
+moviepy>=1.0.3
+Pillow>=10.4.0
+imageio>=2.34.0
+imageio-ffmpeg>=0.5.0
+
+# Google / YouTube
+google-api-python-client>=2.147.0
+google-auth-httplib2>=0.2.0
+google-auth-oauthlib>=1.2.1
+
+# Scheduling
+APScheduler>=3.10.4
+python-dotenv>=1.0.1
+
+# Logging
+loguru>=0.7.2

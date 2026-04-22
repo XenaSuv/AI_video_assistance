@@ -1,0 +1,216 @@
+"""Generate b-roll clips via RunwayML Gen-3 Alpha Turbo, then assemble
+the full 15-minute video by stitching clips, overlaying chyrons, and
+mixing in the narration audio.
+
+RunwayML API flow:
+  POST /v1/image_to_video or /v1/text_to_video  →  {"id": "<task_id>"}
+  GET  /v1/tasks/<task_id>                       →  poll until status == "SUCCEEDED"
+"""
+from __future__ import annotations
+
+import sys
+import time
+from pathlib import Path
+
+import requests
+from loguru import logger
+from moviepy.editor import (
+    AudioFileClip,
+    CompositeVideoClip,
+    TextClip,
+    VideoFileClip,
+    concatenate_videoclips,
+    ColorClip,
+)
+from moviepy.video.fx.all import fadein, fadeout, loop
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from config import settings
+from src.script_generator import Scene, VideoScript
+
+
+RUNWAY_BASE = "https://api.dev.runwayml.com/v1"
+RUNWAY_CLIP_SECONDS = 10  # Gen-3 Turbo produces 5s or 10s clips
+POLL_INTERVAL = 8
+POLL_TIMEOUT = 600  # 10 min per clip
+
+
+# --------------------- RunwayML API ---------------------
+
+def _runway_headers() -> dict:
+    return {
+        "Authorization": f"Bearer {settings.runwayml_api_key}",
+        "Content-Type": "application/json",
+        "X-Runway-Version": "2024-11-06",
+    }
+
+
+def generate_runway_clip(prompt: str, duration: int = 10, seed: int | None = None) -> bytes:
+    """Submit a text-to-video job and return downloaded mp4 bytes."""
+    payload = {
+        "promptText": prompt,
+        "model": settings.runwayml_model,
+        "duration": 10 if duration > 5 else 5,
+        "ratio": "1280:768",  # 16:9 horizontal
+        "watermark": False,
+    }
+    if seed is not None:
+        payload["seed"] = seed
+
+    logger.info(f"RunwayML: submitting prompt: {prompt[:80]}...")
+    r = requests.post(
+        f"{RUNWAY_BASE}/text_to_video",
+        headers=_runway_headers(),
+        json=payload,
+        timeout=30,
+    )
+    r.raise_for_status()
+    task_id = r.json()["id"]
+
+    # Poll until done
+    start = time.time()
+    while time.time() - start < POLL_TIMEOUT:
+        time.sleep(POLL_INTERVAL)
+        status = requests.get(
+            f"{RUNWAY_BASE}/tasks/{task_id}",
+            headers=_runway_headers(),
+            timeout=30,
+        ).json()
+
+        state = status.get("status")
+        logger.debug(f"  task {task_id}: {state}")
+        if state == "SUCCEEDED":
+            url = status["output"][0]
+            dl = requests.get(url, timeout=120)
+            dl.raise_for_status()
+            return dl.content
+        if state in ("FAILED", "CANCELLED"):
+            raise RuntimeError(f"Runway task failed: {status}")
+
+    raise TimeoutError(f"Runway task {task_id} timed out")
+
+
+def generate_clips_for_scene(scene: Scene, out_dir: Path) -> list[Path]:
+    """Produce as many ~10s clips as needed to cover the scene's narration."""
+    n_clips = max(1, (scene.duration_sec + RUNWAY_CLIP_SECONDS - 1) // RUNWAY_CLIP_SECONDS)
+    paths: list[Path] = []
+
+    for i in range(n_clips):
+        out = out_dir / f"scene_{scene.idx:02d}_clip_{i}.mp4"
+        if out.exists():
+            logger.info(f"Reusing cached clip: {out.name}")
+            paths.append(out)
+            continue
+        try:
+            # Slight prompt variation across clips of same scene to avoid
+            # looking like a loop.
+            prompt = scene.visual_prompt
+            if i > 0:
+                prompt += f" --variation {i}"
+            data = generate_runway_clip(prompt, duration=RUNWAY_CLIP_SECONDS, seed=scene.idx * 100 + i)
+            out.write_bytes(data)
+            paths.append(out)
+        except Exception as e:
+            logger.error(f"Runway clip failed for scene {scene.idx} clip {i}: {e}")
+            # Graceful fallback: reuse first clip of this scene if we have one
+            if paths:
+                paths.append(paths[0])
+            else:
+                # Last resort: plain black placeholder
+                paths.append(_make_black_placeholder(out, RUNWAY_CLIP_SECONDS))
+
+    return paths
+
+
+def _make_black_placeholder(path: Path, duration: int) -> Path:
+    """Fallback if Runway can't produce a clip. Dark gradient, not pure black."""
+    clip = ColorClip(size=(1280, 768), color=(15, 20, 30), duration=duration)
+    clip.write_videofile(str(path), fps=24, codec="libx264", audio=False, logger=None)
+    clip.close()
+    return path
+
+
+# --------------------- Assembly ---------------------
+
+def _chyron(heading: str, duration: float) -> TextClip:
+    """Lower-third text graphic for scene heading."""
+    txt = TextClip(
+        heading,
+        fontsize=48,
+        color="white",
+        font="DejaVu-Sans-Bold",
+        stroke_color="black",
+        stroke_width=2,
+    ).set_duration(duration).set_position(("center", 650))
+    return fadein(fadeout(txt, 0.5), 0.5)
+
+
+def _fit_clip_to_duration(video_path: Path, target_seconds: int) -> VideoFileClip:
+    """Loop or trim a clip to exactly target_seconds."""
+    clip = VideoFileClip(str(video_path)).without_audio()
+    if clip.duration < target_seconds:
+        clip = loop(clip, duration=target_seconds)
+    return clip.subclip(0, target_seconds)
+
+
+def assemble_video(
+    script: VideoScript,
+    clip_paths_by_scene: dict[int, list[Path]],
+    audio_paths_by_scene: dict[int, Path],
+    output_path: Path,
+) -> Path:
+    """Combine generated clips + narration into the final 16:9 video."""
+    segments = []
+
+    for scene in script.scenes:
+        # Concatenate the scene's Runway clips, then trim/loop to narration length
+        scene_clips = [VideoFileClip(str(p)).without_audio()
+                       for p in clip_paths_by_scene[scene.idx]]
+        video_seg = concatenate_videoclips(scene_clips, method="compose")
+        if video_seg.duration < scene.duration_sec:
+            video_seg = loop(video_seg, duration=scene.duration_sec)
+        video_seg = video_seg.subclip(0, scene.duration_sec)
+
+        # Overlay chyron for first 4 seconds
+        chyron = _chyron(scene.heading, min(4.0, scene.duration_sec))
+        composite = CompositeVideoClip([video_seg, chyron])
+
+        # Attach narration audio for this scene
+        narration = AudioFileClip(str(audio_paths_by_scene[scene.idx]))
+        composite = composite.set_audio(narration)
+
+        segments.append(composite)
+        logger.info(f"Scene {scene.idx} assembled: {composite.duration:.1f}s")
+
+    final = concatenate_videoclips(segments, method="compose")
+    final = fadein(fadeout(final, 1.0), 1.0)
+
+    logger.info(f"Writing final video to {output_path} ({final.duration:.0f}s)")
+    final.write_videofile(
+        str(output_path),
+        fps=24,
+        codec="libx264",
+        audio_codec="aac",
+        bitrate="6M",
+        threads=4,
+        preset="medium",
+        logger=None,
+    )
+    final.close()
+    return output_path
+
+
+def build_video(script: VideoScript, out_dir: Path) -> Path:
+    """End-to-end video creation."""
+    clip_dir = out_dir / "clips"
+    clip_dir.mkdir(parents=True, exist_ok=True)
+
+    clip_paths_by_scene = {
+        s.idx: generate_clips_for_scene(s, clip_dir) for s in script.scenes
+    }
+    audio_paths_by_scene = {
+        s.idx: out_dir / "audio" / f"scene_{s.idx:02d}.mp3" for s in script.scenes
+    }
+
+    output_path = out_dir / "final_video.mp4"
+    return assemble_video(script, clip_paths_by_scene, audio_paths_by_scene, output_path)
