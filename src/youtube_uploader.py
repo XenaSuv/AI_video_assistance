@@ -22,7 +22,11 @@ from config import settings
 from src.script_generator import VideoScript
 
 
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+SCOPES = [
+    "https://www.googleapis.com/auth/youtube.upload",
+    # Required for thumbnails.set
+    "https://www.googleapis.com/auth/youtube.force-ssl",
+]
 
 
 def _get_creds():
@@ -114,6 +118,18 @@ def upload_video(
     return video_id
 
 
+def set_thumbnail(video_id: str, thumbnail_path: Path) -> None:
+    """Upload a custom thumbnail for an already-uploaded video."""
+    youtube = _youtube_client()
+    media = MediaFileUpload(str(thumbnail_path), mimetype="image/jpeg")
+    try:
+        youtube.thumbnails().set(videoId=video_id, media_body=media).execute()
+        logger.info(f"Thumbnail set for {video_id}")
+    except HttpError as e:
+        # 403 means the channel isn't verified for custom thumbnails (>100 subs)
+        logger.warning(f"Could not set thumbnail (skipping): {e}")
+
+
 def _fill_timestamps(description: str, script: VideoScript) -> str:
     """Replace (TIMESTAMPS_AUTOFILL) with real chapter markers from scene durations."""
     if "(TIMESTAMPS_AUTOFILL)" not in description:
@@ -132,6 +148,7 @@ def publish_episode(
     script: VideoScript,
     long_video: Path,
     short_video: Path | None = None,
+    thumbnail: Path | None = None,
 ) -> dict:
     """Upload both long-form and Short. Returns {long_id, short_id}."""
     desc = _fill_timestamps(script.description, script)
@@ -144,6 +161,9 @@ def publish_episode(
         tags=script.tags,
         is_short=False,
     )
+
+    if thumbnail and thumbnail.exists():
+        set_thumbnail(result["long_id"], thumbnail)
 
     if short_video and short_video.exists():
         result["short_id"] = upload_video(
