@@ -23,6 +23,7 @@ from pathlib import Path
 
 import requests
 from loguru import logger
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 from moviepy.editor import (
     AudioFileClip,
     CompositeVideoClip,
@@ -46,6 +47,17 @@ POLL_TIMEOUT = 600  # 10 min per clip
 
 # --------------------- RunwayML API ---------------------
 
+def _is_retryable_runway(exc: BaseException) -> bool:
+    # TaskFailedError means the prompt was rejected or the job itself failed — don't retry.
+    return not isinstance(exc, TaskFailedError)
+
+
+def _log_runway_retry(retry_state) -> None:
+    logger.warning(
+        f"RunwayML retry {retry_state.attempt_number}: {retry_state.outcome.exception()}"
+    )
+
+
 def _runway_headers() -> dict:
     return {
         "Authorization": f"Bearer {settings.runwayml_api_key}",
@@ -53,6 +65,13 @@ def _runway_headers() -> dict:
         "X-Runway-Version": "2024-11-06",
     }
 
+@retry(
+    retry=retry_if_exception(_is_retryable_runway),
+    wait=wait_exponential(multiplier=2, min=4, max=120),
+    stop=stop_after_attempt(4),
+    before_sleep=_log_runway_retry,
+    reraise=True,
+)
 def generate_runway_clip(prompt: str, duration: int = 10, seed: int | None = None) -> bytes:
     """Submit a text-to-video job using the official SDK and return mp4 bytes."""
     client = RunwayML(api_key=settings.runwayml_api_key)
