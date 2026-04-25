@@ -1,0 +1,62 @@
+name: Daily AI News Video
+
+on:
+  schedule:
+    - cron: "0 8 * * *"  # 08:00 UTC every day
+  workflow_dispatch:      # manual trigger button
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg imagemagick fonts-dejavu
+          sudo sed -i 's|<policy domain="path" rights="none" pattern="@\*"/>||' /etc/ImageMagick-6/policy.xml
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Restore YouTube OAuth credentials
+        run: |
+          mkdir -p config
+          echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}" | base64 -d > config/token.pickle
+          echo "${{ secrets.YOUTUBE_CLIENT_SECRETS_B64 }}" | base64 -d > config/client_secrets.json
+
+      - name: Run pipeline
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: gpt-4o-mini
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVENLABS_VOICE_ID: ${{ secrets.ELEVENLABS_VOICE_ID }}
+          ELEVENLABS_MODEL: eleven_turbo_v2_5
+          RUNWAYML_API_KEY: ${{ secrets.RUNWAYML_API_KEY }}
+          RUNWAYML_MODEL: gen4.5
+          YOUTUBE_CLIENT_SECRETS: config/client_secrets.json
+          YOUTUBE_TOKEN_FILE: config/token.pickle
+          YOUTUBE_CATEGORY_ID: "28"
+          YOUTUBE_PRIVACY: unlisted
+          SCRIPT_TARGET_WORDS: "2200"
+          OUTPUT_DIR: output
+          LOG_DIR: logs
+        run: python src/main.py
+
+      - name: Archive logs and script
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-logs
+          path: |
+            logs/
+            output/*/run.log
+            output/*/script.json
+            output/*/news.json
+          retention-days: 14
