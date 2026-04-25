@@ -8,6 +8,15 @@ RunwayML API flow:
 """
 from __future__ import annotations
 
+"""RunwayML video generation - updated for current SDK."""
+from runwayml import RunwayML, TaskFailedError
+
+
+# Replace the OLD constants:
+# RUNWAY_BASE = "https://api.dev.runwayml.com/v1"
+# Remove _runway_headers() entirely
+# Keep RUNWAY_CLIP_SECONDS, POLL_INTERVAL, POLL_TIMEOUT
+
 import sys
 import time
 from pathlib import Path
@@ -44,50 +53,32 @@ def _runway_headers() -> dict:
         "X-Runway-Version": "2024-11-06",
     }
 
-
 def generate_runway_clip(prompt: str, duration: int = 10, seed: int | None = None) -> bytes:
-    """Submit a text-to-video job and return downloaded mp4 bytes."""
-    payload = {
-        "promptText": prompt,
-        "model": settings.runwayml_model,
-        "duration": 10 if duration > 5 else 5,
-        "ratio": "1280:768",  # 16:9 horizontal
-        "watermark": False,
-    }
-    if seed is not None:
-        payload["seed"] = seed
-
+    """Submit a text-to-video job using the official SDK and return mp4 bytes."""
+    client = RunwayML(api_key=settings.runwayml_api_key)
+    
     logger.info(f"RunwayML: submitting prompt: {prompt[:80]}...")
-    r = requests.post(
-        f"{RUNWAY_BASE}/text_to_video",
-        headers=_runway_headers(),
-        json=payload,
-        timeout=30,
-    )
-    r.raise_for_status()
-    task_id = r.json()["id"]
-
-    # Poll until done
-    start = time.time()
-    while time.time() - start < POLL_TIMEOUT:
-        time.sleep(POLL_INTERVAL)
-        status = requests.get(
-            f"{RUNWAY_BASE}/tasks/{task_id}",
-            headers=_runway_headers(),
-            timeout=30,
-        ).json()
-
-        state = status.get("status")
-        logger.debug(f"  task {task_id}: {state}")
-        if state == "SUCCEEDED":
-            url = status["output"][0]
-            dl = requests.get(url, timeout=120)
-            dl.raise_for_status()
-            return dl.content
-        if state in ("FAILED", "CANCELLED"):
-            raise RuntimeError(f"Runway task failed: {status}")
-
-    raise TimeoutError(f"Runway task {task_id} timed out")
+    
+    try:
+        kwargs = {
+            "model": "gen4.5",        # ← was "gen4_turbo"
+            "prompt_text": prompt,
+            "ratio": "1280:720",
+            "duration": 10 if duration > 5 else 5,
+        }
+        if seed is not None:
+            kwargs["seed"] = seed
+        
+        # text_to_video, NOT image_to_video
+        task = client.text_to_video.create(**kwargs).wait_for_task_output()
+        
+        video_url = task.output[0]
+        dl = requests.get(video_url, timeout=120)
+        dl.raise_for_status()
+        return dl.content
+        
+    except TaskFailedError as e:
+        raise RuntimeError(f"Runway task failed: {e.task_details}")
 
 
 def generate_clips_for_scene(scene: Scene, out_dir: Path) -> list[Path]:
