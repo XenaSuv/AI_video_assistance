@@ -8,20 +8,24 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import numpy as np
 from loguru import logger
 from moviepy.editor import (
     AudioFileClip,
     CompositeVideoClip,
-    TextClip,
+    ImageClip,
     VideoFileClip,
     concatenate_videoclips,
     ColorClip,
 )
 from moviepy.video.fx.all import fadein, fadeout, loop
+from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.script_generator import Scene, VideoScript
 from src.image_generator import generate_scene_clip
+
+_FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 
 # --------------------- Per-scene clip generation ---------------------
@@ -33,17 +37,31 @@ def generate_clips_for_scene(scene: Scene, out_dir: Path) -> list[Path]:
 
 # --------------------- Assembly ---------------------
 
-def _chyron(heading: str, duration: float) -> TextClip:
-    """Lower-third text graphic for scene heading."""
-    txt = TextClip(
-        heading,
-        fontsize=48,
-        color="white",
-        font="DejaVu-Sans-Bold",
-        stroke_color="black",
-        stroke_width=2,
-    ).set_duration(duration).set_position(("center", 650))
-    return fadein(fadeout(txt, 0.5), 0.5)
+def _chyron(heading: str, duration: float) -> ImageClip:
+    """Lower-third text graphic rendered with PIL — no ImageMagick required."""
+    try:
+        font = ImageFont.truetype(_FONT_PATH, 48)
+    except OSError:
+        font = ImageFont.load_default()
+
+    # Draw heading onto a transparent 1280×720 canvas
+    canvas = Image.new("RGBA", (1280, 720), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(canvas)
+    bbox = font.getbbox(heading)
+    text_w = bbox[2] - bbox[0]
+    x = (1280 - text_w) // 2
+    y = 640
+    draw.text((x + 2, y + 2), heading, font=font, fill=(0, 0, 0, 200))   # shadow
+    draw.text((x,     y    ), heading, font=font, fill=(255, 255, 255, 255))
+
+    rgb   = np.array(canvas.convert("RGB"))
+    alpha = np.array(canvas.split()[3]) / 255.0
+
+    clip = (
+        ImageClip(rgb, duration=duration)
+        .set_mask(ImageClip(alpha, ismask=True, duration=duration))
+    )
+    return fadein(fadeout(clip, 0.5), 0.5)
 
 
 def _fit_clip_to_duration(video_path: Path, target_seconds: int) -> VideoFileClip:

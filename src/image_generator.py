@@ -10,10 +10,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import numpy as np
 import requests
 from loguru import logger
-from moviepy.editor import ColorClip, ImageClip
+from moviepy.editor import ColorClip, VideoClip
 from openai import BadRequestError, OpenAI, RateLimitError, APIStatusError
+from PIL import Image as PILImage
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -76,31 +78,27 @@ def generate_dalle_image(prompt: str, out_path: Path) -> Path:
 
 # --------------------- Ken Burns effect ---------------------
 
-def _ken_burns_clip(img_path: Path, duration: float) -> ImageClip:
+def _ken_burns_clip(img_path: Path, duration: float) -> VideoClip:
     """
     Animate a static image with a gentle horizontal pan (Ken Burns style).
 
-    DALL-E 3 produces 1792×1024; we crop a 1280×720 window and drift it
-    35% of the available 512px horizontal range over the clip duration.
+    Loads the 1792×1024 DALL-E image once, pre-converts to a numpy array,
+    then drifts a 1280×720 crop window using pure numpy slicing per frame
+    (no per-frame PIL resize — fast).
     """
-    clip = ImageClip(str(img_path), duration=duration)
-    iw, ih = clip.size                  # 1792 × 1024 from DALL-E 3
+    img_arr = np.array(PILImage.open(str(img_path)).convert("RGB"))
+    ih, iw = img_arr.shape[:2]          # 1024 × 1792 from DALL-E 3
 
-    max_x = max(0, iw - OUT_W)         # 512px horizontal headroom
-    max_y = max(0, ih - OUT_H)         # 304px vertical headroom
-    pan_x = int(max_x * 0.35)          # drift 35% of headroom → ~179px
-    y0    = int(max_y * 0.25)          # anchor 25% down from top
+    max_x = max(0, iw - OUT_W)          # 512px horizontal headroom
+    max_y = max(0, ih - OUT_H)          # 304px vertical headroom
+    pan_x = int(max_x * 0.35)           # drift 35% of headroom → ~179px
+    y0    = int(max_y * 0.25)           # anchor 25% down from top
 
-    return (
-        clip
-        .crop(
-            x1=lambda t: int(pan_x * t / duration),
-            y1=y0,
-            width=OUT_W,
-            height=OUT_H,
-        )
-        .set_fps(24)
-    )
+    def make_frame(t: float) -> np.ndarray:
+        x = int(pan_x * t / duration)
+        return img_arr[y0:y0 + OUT_H, x:x + OUT_W]
+
+    return VideoClip(make_frame, duration=duration).set_fps(24)
 
 
 # --------------------- Fallback ---------------------
