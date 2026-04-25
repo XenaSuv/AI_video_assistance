@@ -1,29 +1,14 @@
-"""Generate b-roll clips via RunwayML Gen-3 Alpha Turbo, then assemble
-the full 15-minute video by stitching clips, overlaying chyrons, and
-mixing in the narration audio.
+"""Assemble the final 15-minute video by stitching DALL-E + Ken Burns clips,
+overlaying chyrons, and mixing in narration audio.
 
-RunwayML API flow:
-  POST /v1/image_to_video or /v1/text_to_video  →  {"id": "<task_id>"}
-  GET  /v1/tasks/<task_id>                       →  poll until status == "SUCCEEDED"
+B-roll generation is handled by image_generator.generate_scene_clip().
 """
 from __future__ import annotations
 
-"""RunwayML video generation - updated for current SDK."""
-from runwayml import RunwayML, TaskFailedError
-
-
-# Replace the OLD constants:
-# RUNWAY_BASE = "https://api.dev.runwayml.com/v1"
-# Remove _runway_headers() entirely
-# Keep RUNWAY_CLIP_SECONDS, POLL_INTERVAL, POLL_TIMEOUT
-
 import sys
-import time
 from pathlib import Path
 
-import requests
 from loguru import logger
-from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 from moviepy.editor import (
     AudioFileClip,
     CompositeVideoClip,
@@ -35,109 +20,15 @@ from moviepy.editor import (
 from moviepy.video.fx.all import fadein, fadeout, loop
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from config import settings
 from src.script_generator import Scene, VideoScript
+from src.image_generator import generate_scene_clip
 
 
-RUNWAY_BASE = "https://api.dev.runwayml.com/v1"
-RUNWAY_CLIP_SECONDS = 10  # Gen-3 Turbo produces 5s or 10s clips
-POLL_INTERVAL = 8
-POLL_TIMEOUT = 600  # 10 min per clip
-
-
-# --------------------- RunwayML API ---------------------
-
-def _is_retryable_runway(exc: BaseException) -> bool:
-    # TaskFailedError means the prompt was rejected or the job itself failed — don't retry.
-    return not isinstance(exc, TaskFailedError)
-
-
-def _log_runway_retry(retry_state) -> None:
-    logger.warning(
-        f"RunwayML retry {retry_state.attempt_number}: {retry_state.outcome.exception()}"
-    )
-
-
-def _runway_headers() -> dict:
-    return {
-        "Authorization": f"Bearer {settings.runwayml_api_key}",
-        "Content-Type": "application/json",
-        "X-Runway-Version": "2024-11-06",
-    }
-
-@retry(
-    retry=retry_if_exception(_is_retryable_runway),
-    wait=wait_exponential(multiplier=2, min=4, max=120),
-    stop=stop_after_attempt(4),
-    before_sleep=_log_runway_retry,
-    reraise=True,
-)
-def generate_runway_clip(prompt: str, duration: int = 10, seed: int | None = None) -> bytes:
-    """Submit a text-to-video job using the official SDK and return mp4 bytes."""
-    client = RunwayML(api_key=settings.runwayml_api_key)
-    
-    logger.info(f"RunwayML: submitting prompt: {prompt[:80]}...")
-    
-    try:
-        kwargs = {
-            "model": "gen4.5",        # ← was "gen4_turbo"
-            "prompt_text": prompt,
-            "ratio": "1280:720",
-            "duration": 10 if duration > 5 else 5,
-        }
-        if seed is not None:
-            kwargs["seed"] = seed
-        
-        # text_to_video, NOT image_to_video
-        task = client.text_to_video.create(**kwargs).wait_for_task_output()
-        
-        video_url = task.output[0]
-        dl = requests.get(video_url, timeout=120)
-        dl.raise_for_status()
-        return dl.content
-        
-    except TaskFailedError as e:
-        raise RuntimeError(f"Runway task failed: {e.task_details}")
-
+# --------------------- Per-scene clip generation ---------------------
 
 def generate_clips_for_scene(scene: Scene, out_dir: Path) -> list[Path]:
-    """Produce as many ~10s clips as needed to cover the scene's narration."""
-    n_clips = max(1, (scene.duration_sec + RUNWAY_CLIP_SECONDS - 1) // RUNWAY_CLIP_SECONDS)
-    paths: list[Path] = []
-
-    for i in range(n_clips):
-        out = out_dir / f"scene_{scene.idx:02d}_clip_{i}.mp4"
-        if out.exists():
-            logger.info(f"Reusing cached clip: {out.name}")
-            paths.append(out)
-            continue
-        try:
-            # Slight prompt variation across clips of same scene to avoid
-            # looking like a loop.
-            prompt = scene.visual_prompt
-            if i > 0:
-                prompt += f" --variation {i}"
-            data = generate_runway_clip(prompt, duration=RUNWAY_CLIP_SECONDS, seed=scene.idx * 100 + i)
-            out.write_bytes(data)
-            paths.append(out)
-        except Exception as e:
-            logger.error(f"Runway clip failed for scene {scene.idx} clip {i}: {e}")
-            # Graceful fallback: reuse first clip of this scene if we have one
-            if paths:
-                paths.append(paths[0])
-            else:
-                # Last resort: plain black placeholder
-                paths.append(_make_black_placeholder(out, RUNWAY_CLIP_SECONDS))
-
-    return paths
-
-
-def _make_black_placeholder(path: Path, duration: int) -> Path:
-    """Fallback if Runway can't produce a clip. Dark gradient, not pure black."""
-    clip = ColorClip(size=(1280, 768), color=(15, 20, 30), duration=duration)
-    clip.write_videofile(str(path), fps=24, codec="libx264", audio=False, logger=None)
-    clip.close()
-    return path
+    """Return a list containing the single Ken Burns clip for this scene."""
+    return [generate_scene_clip(scene, out_dir)]
 
 
 # --------------------- Assembly ---------------------
@@ -173,7 +64,6 @@ def assemble_video(
     segments = []
 
     for scene in script.scenes:
-        # Concatenate the scene's Runway clips, then trim/loop to narration length
         scene_clips = [VideoFileClip(str(p)).without_audio()
                        for p in clip_paths_by_scene[scene.idx]]
         video_seg = concatenate_videoclips(scene_clips, method="compose")
@@ -181,11 +71,9 @@ def assemble_video(
             video_seg = loop(video_seg, duration=scene.duration_sec)
         video_seg = video_seg.subclip(0, scene.duration_sec)
 
-        # Overlay chyron for first 4 seconds
         chyron = _chyron(scene.heading, min(4.0, scene.duration_sec))
         composite = CompositeVideoClip([video_seg, chyron])
 
-        # Attach narration audio for this scene
         narration = AudioFileClip(str(audio_paths_by_scene[scene.idx]))
         composite = composite.set_audio(narration)
 
