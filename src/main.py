@@ -19,6 +19,7 @@ from config import settings
 from src.scraper import scrape_all
 from src.script_generator import Scene, VideoScript, generate_script
 from src.shorts_generator import build_short
+from src.thumbnail_generator import generate_thumbnail
 from src.video_generator import build_video
 from src.voice_generator import synthesize_script
 from src.youtube_uploader import publish_episode
@@ -111,12 +112,15 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         else:
             logger.info(f"Reusing cached {short_video.name}")
 
-        # 6. Upload
+        # 6. Thumbnail
+        thumbnail = generate_thumbnail(long_video, script.title, run_dir)
+
+        # 7. Upload
         if skip_upload:
             logger.info("--skip-upload specified; leaving files on disk")
             summary["status"] = "built_not_uploaded"
         else:
-            ids = publish_episode(script, long_video, short_video)
+            ids = publish_episode(script, long_video, short_video, thumbnail=thumbnail)
             summary.update(ids)
             summary["status"] = "published"
 
