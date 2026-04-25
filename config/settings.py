@@ -30,8 +30,8 @@ class Settings:
     elevenlabs_voice_id: str = _env("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
     elevenlabs_model: str = _env("ELEVENLABS_MODEL", "eleven_turbo_v2_5")
 
-    # Video
-    runwayml_api_key: str = _env("RUNWAYML_API_KEY", required=True)
+    # Video (RunwayML no longer used; key kept optional for backward compat)
+    runwayml_api_key: str = _env("RUNWAYML_API_KEY", "")
     runwayml_model: str = _env("RUNWAYML_MODEL", "gen3a_turbo")
 
     # YouTube
