@@ -34,18 +34,44 @@ jobs:
       - name: Restore YouTube OAuth credentials
         run: |
           mkdir -p config
-          # --ignore-garbage tolerates any stray whitespace GitHub injects around secrets
           echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}"   | base64 --ignore-garbage -d > config/token.pickle
           echo "${{ secrets.YOUTUBE_CLIENT_SECRETS_B64 }}" | base64 --ignore-garbage -d > config/client_secrets.json
 
-          # Russian channel credentials — written only when BOTH secrets exist.
-          # Failures here are non-fatal so a bad RU secret never blocks English upload.
+          # Russian credentials — decoded inside set +e so any failure is non-fatal.
           RU_TOKEN="${{ secrets.YOUTUBE_TOKEN_PICKLE_RU_B64 }}"
           RU_SECRETS="${{ secrets.YOUTUBE_CLIENT_SECRETS_RU_B64 }}"
           if [ -n "$RU_TOKEN" ] && [ -n "$RU_SECRETS" ]; then
-            echo "$RU_TOKEN"   | base64 --ignore-garbage -d > config/token_ru.pickle        || echo "::warning::RU token decode failed — Russian upload will be skipped"
-            echo "$RU_SECRETS" | base64 --ignore-garbage -d > config/client_secrets_ru.json || echo "::warning::RU secrets decode failed — Russian upload will be skipped"
+            set +e
+            echo "$RU_TOKEN"   | base64 --ignore-garbage -d > config/token_ru.pickle
+            echo "$RU_SECRETS" | base64 --ignore-garbage -d > config/client_secrets_ru.json
+            set -e
           fi
+
+      - name: Validate credentials
+        run: |
+          python3 - <<'EOF'
+          import pickle, json, sys, pathlib
+
+          def check(label, path, loader):
+              p = pathlib.Path(path)
+              if not p.exists():
+                  print(f"  {label}: not present")
+                  return
+              try:
+                  loader(p)
+                  print(f"  {label}: OK ({p.stat().st_size} bytes)")
+              except Exception as e:
+                  print(f"  {label}: INVALID — {e}", file=sys.stderr)
+                  sys.exit(1)
+
+          print("English channel:")
+          check("token.pickle",       "config/token.pickle",       lambda p: pickle.load(p.open("rb")))
+          check("client_secrets.json","config/client_secrets.json",lambda p: json.load(p.open()))
+
+          print("Russian channel:")
+          check("token_ru.pickle",         "config/token_ru.pickle",         lambda p: pickle.load(p.open("rb")))
+          check("client_secrets_ru.json",  "config/client_secrets_ru.json",  lambda p: json.load(p.open()))
+          EOF
 
       - name: Run pipeline
         env:
