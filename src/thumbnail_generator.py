@@ -103,12 +103,20 @@ def _overlay_title(img: Image.Image, title: str) -> Image.Image:
 
 # --------------------- Public API ---------------------
 
-def generate_thumbnail(video_path: Path, title: str, out_dir: Path) -> Path:
+def generate_thumbnail(
+    video_path: Path,
+    title: str,
+    out_dir: Path,
+    *,
+    out_name: str = "thumbnail.jpg",
+) -> Path:
+    """Extract the best frame from *video_path*, overlay *title*, and save
+    as *out_name* inside *out_dir*.  Returns the saved path.
+
+    *out_name* lets language variants write ``thumbnail_ru.jpg`` alongside
+    the default ``thumbnail.jpg``.
     """
-    Extract the best frame from *video_path*, overlay *title*, and save
-    as ``thumbnail.jpg`` inside *out_dir*.  Returns the saved path.
-    """
-    out_path = out_dir / "thumbnail.jpg"
+    out_path = out_dir / out_name
     if out_path.exists():
         logger.info(f"Reusing cached thumbnail: {out_path.name}")
         return out_path

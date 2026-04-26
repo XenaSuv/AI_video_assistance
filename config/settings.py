@@ -31,9 +31,9 @@ class Settings:
     openai_model: str = _env("OPENAI_MODEL", "gpt-4o-mini")
 
     # TTS
-    elevenlabs_api_key: str = _env("ELEVENLABS_API_KEY", required=True)
-    elevenlabs_voice_id: str = _env("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
-    elevenlabs_model: str = _env("ELEVENLABS_MODEL", "eleven_turbo_v2_5")
+    elevenlabs_api_key:   str = _env("ELEVENLABS_API_KEY", required=True)
+    elevenlabs_voice_id:  str = _env("ELEVENLABS_VOICE_ID",  "Gfpl8Yo74Is0W6cPUWWT")
+    elevenlabs_model:     str = _env("ELEVENLABS_MODEL",     "eleven_turbo_v2_5")
 
     # Video (RunwayML no longer used; key kept optional for backward compat)
     runwayml_api_key: str = _env("RUNWAYML_API_KEY", "")
@@ -44,6 +44,13 @@ class Settings:
     youtube_token_file: Path = ROOT / _env("YOUTUBE_TOKEN_FILE", "config/token.pickle")
     youtube_category_id: str = _env("YOUTUBE_CATEGORY_ID", "28")
     youtube_privacy: str = _env("YOUTUBE_PRIVACY", "public")
+
+    # Russian language variant
+    ru_enabled:                  bool = _env("RU_ENABLED", "false").lower() in ("1", "true", "yes")
+    ru_elevenlabs_voice_id:      str  = _env("RU_ELEVENLABS_VOICE_ID",  "TUQNWEvVPBLzMBSVDPUA")
+    ru_elevenlabs_model:         str  = _env("RU_ELEVENLABS_MODEL",     "eleven_multilingual_v2")
+    ru_youtube_client_secrets:   Path = ROOT / _env("RU_YOUTUBE_CLIENT_SECRETS", "config/client_secrets_ru.json")
+    ru_youtube_token_file:       Path = ROOT / _env("RU_YOUTUBE_TOKEN_FILE",     "config/token_ru.pickle")
 
     # Pipeline
     script_target_words: int = int(_env("SCRIPT_TARGET_WORDS", "2200"))

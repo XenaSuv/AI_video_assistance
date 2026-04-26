@@ -120,10 +120,21 @@ def _burn_captions(clip: VideoFileClip, text: str) -> CompositeVideoClip:
 
 # --------------------- Public API ---------------------
 
-def build_short(script: VideoScript, main_video: Path, out_dir: Path) -> Path:
-    """Produce the Shorts-ready mp4."""
+def build_short(
+    script: VideoScript,
+    main_video: Path,
+    out_dir: Path,
+    *,
+    audio_subdir: str = "audio",
+    out_name: str = "shorts.mp4",
+) -> Path:
+    """Produce the Shorts-ready mp4.
+
+    *audio_subdir* lets language variants point at e.g. ``audio_ru/``.
+    *out_name* lets variants write ``shorts_ru.mp4`` alongside ``shorts.mp4``.
+    """
     # Audio is the master clock — video is trimmed to match, not the other way.
-    audio_path = out_dir / "audio" / "scene_00.mp3"
+    audio_path = out_dir / audio_subdir / "scene_00.mp3"
     if audio_path.exists():
         narration       = AudioFileClip(str(audio_path))
         target_duration = min(narration.duration, SHORT_MAX_SECONDS)
@@ -156,7 +167,7 @@ def build_short(script: VideoScript, main_video: Path, out_dir: Path) -> Path:
 
     captioned = _burn_captions(base, script.hook)
 
-    out = out_dir / "shorts.mp4"
+    out = out_dir / out_name
     logger.info(f"Writing Short to {out} ({captioned.duration:.0f}s)")
     captioned.write_videofile(
         str(out),
