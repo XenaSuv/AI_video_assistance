@@ -5,6 +5,7 @@ B-roll generation is handled by image_generator.generate_scene_clip().
 """
 from __future__ import annotations
 
+import textwrap
 import sys
 from pathlib import Path
 
@@ -64,6 +65,61 @@ def _chyron(heading: str, duration: float) -> ImageClip:
     return fadein(fadeout(clip, 0.5), 0.5)
 
 
+_CARD_BG     = (13,  17,  23)   # dark navy
+_CARD_ACCENT = (56, 189, 248)   # sky blue
+_CARD_DUR    = 2.5              # seconds each title card is shown
+
+
+def _title_card(heading: str) -> ImageClip:
+    """Full-screen scene-divider card: dark background, accent bars, centered heading.
+
+    Shown for _CARD_DUR seconds before each scene (except the opening hook) so
+    viewers always know which topic is starting.
+    """
+    W, H = 1280, 720
+    canvas = Image.new("RGB", (W, H), _CARD_BG)
+    draw   = ImageDraw.Draw(canvas)
+
+    try:
+        font = ImageFont.truetype(_FONT_PATH, 56)
+    except OSError:
+        font = ImageFont.load_default()
+
+    # Wrap long headings to at most 2 lines
+    lines: list[str] = []
+    for width in (34, 48):
+        lines = textwrap.wrap(heading, width=width)
+        if len(lines) <= 2:
+            break
+
+    line_h  = 56 + 14          # font size + leading
+    total_h = len(lines) * line_h
+    mid     = H // 2
+
+    # Accent bar above text
+    draw.rectangle(
+        [(80, mid - total_h // 2 - 20), (W - 80, mid - total_h // 2 - 17)],
+        fill=_CARD_ACCENT,
+    )
+    # Accent bar below text
+    draw.rectangle(
+        [(80, mid + total_h // 2 + 14), (W - 80, mid + total_h // 2 + 17)],
+        fill=_CARD_ACCENT,
+    )
+
+    y_start = mid - total_h // 2
+    for i, line in enumerate(lines):
+        bbox  = font.getbbox(line)
+        x     = (W - (bbox[2] - bbox[0])) // 2
+        y     = y_start + i * line_h
+        draw.text((x + 2, y + 2), line, font=font, fill=(0, 0, 0))        # shadow
+        draw.text((x,     y    ), line, font=font, fill=(255, 255, 255))   # text
+
+    arr  = np.array(canvas)
+    clip = ImageClip(arr, duration=_CARD_DUR)
+    return fadein(fadeout(clip, 0.4), 0.4)
+
+
 def _fit_clip_to_duration(video_path: Path, target_seconds: int) -> VideoFileClip:
     """Loop or trim a clip to exactly target_seconds."""
     clip = VideoFileClip(str(video_path)).without_audio()
@@ -82,9 +138,13 @@ def assemble_video(
     segments = []
 
     for scene in script.scenes:
+        # Title card before every scene except the opening hook (idx 0)
+        if scene.idx > 0:
+            segments.append(_title_card(scene.heading))
+
         # Audio is the master clock — trim video to exactly match it.
-        narration   = AudioFileClip(str(audio_paths_by_scene[scene.idx]))
-        target_dur  = narration.duration   # float, authoritative
+        narration  = AudioFileClip(str(audio_paths_by_scene[scene.idx]))
+        target_dur = narration.duration
 
         scene_clips = [VideoFileClip(str(p)).without_audio()
                        for p in clip_paths_by_scene[scene.idx]]
@@ -98,7 +158,8 @@ def assemble_video(
         composite = composite.set_audio(narration)
 
         segments.append(composite)
-        logger.info(f"Scene {scene.idx} assembled: {target_dur:.1f}s")
+        logger.info(f"Scene {scene.idx} assembled: {target_dur:.1f}s (+ title card)"
+                    if scene.idx > 0 else f"Scene {scene.idx} assembled: {target_dur:.1f}s")
 
     final = concatenate_videoclips(segments, method="compose")
     final = fadein(fadeout(final, 1.0), 1.0)
