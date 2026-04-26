@@ -82,21 +82,23 @@ def assemble_video(
     segments = []
 
     for scene in script.scenes:
+        # Audio is the master clock — trim video to exactly match it.
+        narration   = AudioFileClip(str(audio_paths_by_scene[scene.idx]))
+        target_dur  = narration.duration   # float, authoritative
+
         scene_clips = [VideoFileClip(str(p)).without_audio()
                        for p in clip_paths_by_scene[scene.idx]]
         video_seg = concatenate_videoclips(scene_clips, method="compose")
-        if video_seg.duration < scene.duration_sec:
-            video_seg = loop(video_seg, duration=scene.duration_sec)
-        video_seg = video_seg.subclip(0, scene.duration_sec)
+        if video_seg.duration < target_dur:
+            video_seg = loop(video_seg, duration=target_dur)
+        video_seg = video_seg.subclip(0, target_dur)
 
-        chyron = _chyron(scene.heading, min(4.0, scene.duration_sec))
+        chyron    = _chyron(scene.heading, min(4.0, target_dur))
         composite = CompositeVideoClip([video_seg, chyron])
-
-        narration = AudioFileClip(str(audio_paths_by_scene[scene.idx]))
         composite = composite.set_audio(narration)
 
         segments.append(composite)
-        logger.info(f"Scene {scene.idx} assembled: {composite.duration:.1f}s")
+        logger.info(f"Scene {scene.idx} assembled: {target_dur:.1f}s")
 
     final = concatenate_videoclips(segments, method="compose")
     final = fadein(fadeout(final, 1.0), 1.0)
