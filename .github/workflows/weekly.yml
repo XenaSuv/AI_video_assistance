@@ -46,6 +46,16 @@ jobs:
           echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}"   | base64 --ignore-garbage -d > config/token.pickle
           echo "${{ secrets.YOUTUBE_CLIENT_SECRETS_B64 }}" | base64 --ignore-garbage -d > config/client_secrets.json
 
+          # Russian credentials — decoded inside set +e so any failure is non-fatal.
+          RU_TOKEN="${{ secrets.YOUTUBE_TOKEN_PICKLE_RU_B64 }}"
+          RU_SECRETS="${{ secrets.YOUTUBE_CLIENT_SECRETS_RU_B64 }}"
+          if [ -n "$RU_TOKEN" ] && [ -n "$RU_SECRETS" ]; then
+            set +e
+            echo "$RU_TOKEN"   | base64 --ignore-garbage -d > config/token_ru.pickle
+            echo "$RU_SECRETS" | base64 --ignore-garbage -d > config/client_secrets_ru.json
+            set -e
+          fi
+
       - name: Validate credentials
         run: |
           python3 - <<'EOF'
@@ -54,8 +64,8 @@ jobs:
           def check(label, path, loader):
               p = pathlib.Path(path)
               if not p.exists():
-                  print(f"  {label}: not present", file=sys.stderr)
-                  sys.exit(1)
+                  print(f"  {label}: not present")
+                  return
               try:
                   loader(p)
                   print(f"  {label}: OK ({p.stat().st_size} bytes)")
@@ -63,34 +73,45 @@ jobs:
                   print(f"  {label}: INVALID — {e}", file=sys.stderr)
                   sys.exit(1)
 
-          check("token.pickle",        "config/token.pickle",        lambda p: pickle.load(p.open("rb")))
-          check("client_secrets.json", "config/client_secrets.json", lambda p: json.load(p.open()))
+          print("English channel:")
+          check("token.pickle",       "config/token.pickle",       lambda p: pickle.load(p.open("rb")))
+          check("client_secrets.json","config/client_secrets.json",lambda p: json.load(p.open()))
+
+          print("Russian channel:")
+          check("token_ru.pickle",        "config/token_ru.pickle",        lambda p: pickle.load(p.open("rb")))
+          check("client_secrets_ru.json", "config/client_secrets_ru.json", lambda p: json.load(p.open()))
           EOF
 
       - name: Run weekly pipeline
         env:
-          OPENAI_API_KEY:        ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_MODEL:          gpt-4o-mini
-          ELEVENLABS_API_KEY:    ${{ secrets.ELEVENLABS_API_KEY }}
-          ELEVENLABS_VOICE_ID:   ${{ secrets.ELEVENLABS_VOICE_ID }}
-          ELEVENLABS_MODEL:      eleven_turbo_v2_5
+          OPENAI_API_KEY:         ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL:           gpt-4o-mini
+          ELEVENLABS_API_KEY:     ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVENLABS_VOICE_ID:    ${{ secrets.ELEVENLABS_VOICE_ID }}
+          ELEVENLABS_MODEL:       eleven_turbo_v2_5
           YOUTUBE_CLIENT_SECRETS: config/client_secrets.json
-          YOUTUBE_TOKEN_FILE:    config/token.pickle
-          YOUTUBE_CATEGORY_ID:   "27"   # Education category
-          YOUTUBE_PRIVACY:       unlisted
-          SCRIPT_TARGET_WORDS:   "2200"
-          OUTPUT_DIR:            output
-          LOG_DIR:               logs
-          DATA_DIR:              data
+          YOUTUBE_TOKEN_FILE:     config/token.pickle
+          YOUTUBE_CATEGORY_ID:    "27"   # Education category
+          YOUTUBE_PRIVACY:        unlisted
+          SCRIPT_TARGET_WORDS:    "2200"
+          OUTPUT_DIR:             output
+          LOG_DIR:                logs
+          DATA_DIR:               data
+          # Russian variant — set RU_ENABLED=true once credentials are configured
+          RU_ENABLED:             ${{ vars.RU_ENABLED || 'false' }}
+          RU_ELEVENLABS_VOICE_ID: ${{ secrets.RU_ELEVENLABS_VOICE_ID }}
+          RU_ELEVENLABS_MODEL:    eleven_multilingual_v2
+          RU_YOUTUBE_CLIENT_SECRETS: config/client_secrets_ru.json
+          RU_YOUTUBE_TOKEN_FILE:  config/token_ru.pickle
         run: |
           ARGS=""
           if [ -n "${{ github.event.inputs.topic }}" ]; then
-            ARGS="--topic ${{ github.event.inputs.topic }}"
+            ARGS="--topic \"${{ github.event.inputs.topic }}\""
           fi
           if [ "${{ github.event.inputs.skip_upload }}" = "true" ]; then
             ARGS="$ARGS --skip-upload"
           fi
-          python src/weekly_main.py $ARGS
+          eval python src/weekly_main.py $ARGS
 
       - name: Archive logs and artifacts
         if: always()
@@ -101,6 +122,8 @@ jobs:
             logs/
             output/weekly/*/run.log
             output/weekly/*/script.json
+            output/weekly/*/script_ru.json
             output/weekly/*/topic.txt
             output/weekly/*/thumbnail.jpg
+            output/weekly/*/thumbnail_ru.jpg
           retention-days: 30
