@@ -34,16 +34,17 @@ jobs:
       - name: Restore YouTube OAuth credentials
         run: |
           mkdir -p config
-          echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}"   | base64 -d > config/token.pickle
-          echo "${{ secrets.YOUTUBE_CLIENT_SECRETS_B64 }}" | base64 -d > config/client_secrets.json
+          # --ignore-garbage tolerates any stray whitespace GitHub injects around secrets
+          echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}"   | base64 --ignore-garbage -d > config/token.pickle
+          echo "${{ secrets.YOUTUBE_CLIENT_SECRETS_B64 }}" | base64 --ignore-garbage -d > config/client_secrets.json
 
           # Russian channel credentials — written only when BOTH secrets exist.
           # Failures here are non-fatal so a bad RU secret never blocks English upload.
           RU_TOKEN="${{ secrets.YOUTUBE_TOKEN_PICKLE_RU_B64 }}"
           RU_SECRETS="${{ secrets.YOUTUBE_CLIENT_SECRETS_RU_B64 }}"
           if [ -n "$RU_TOKEN" ] && [ -n "$RU_SECRETS" ]; then
-            echo "$RU_TOKEN"   | base64 -d > config/token_ru.pickle        || echo "::warning::RU token decode failed — Russian upload will be skipped"
-            echo "$RU_SECRETS" | base64 -d > config/client_secrets_ru.json || echo "::warning::RU secrets decode failed — Russian upload will be skipped"
+            echo "$RU_TOKEN"   | base64 --ignore-garbage -d > config/token_ru.pickle        || echo "::warning::RU token decode failed — Russian upload will be skipped"
+            echo "$RU_SECRETS" | base64 --ignore-garbage -d > config/client_secrets_ru.json || echo "::warning::RU secrets decode failed — Russian upload will be skipped"
           fi
 
       - name: Run pipeline
