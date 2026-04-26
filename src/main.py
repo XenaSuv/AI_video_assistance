@@ -27,6 +27,7 @@ from src.translator import translate_script
 from src.video_generator import assemble_video, build_video
 from src.voice_generator import synthesize_script
 from src.youtube_uploader import publish_episode
+from src.tiktok_uploader import post_short as tiktok_post_short
 
 
 def _setup_logging(run_dir: Path) -> None:
@@ -234,7 +235,16 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
             summary.update(ids)
             summary["status"] = "published"
 
-        # 8. Russian variant (optional)
+        # 8. TikTok Short (optional)
+        if settings.tiktok_enabled and not skip_upload and short_video.exists():
+            try:
+                caption = f"{script.hook}\n\n#AI #ArtificialIntelligence #TechNews #AINews"
+                summary["tiktok_id"] = tiktok_post_short(short_video, caption)
+            except Exception as e:
+                logger.warning(f"TikTok upload failed (non-fatal): {e}")
+                summary["tiktok_error"] = str(e)
+
+        # 9. Russian variant (optional)
         if settings.ru_enabled:
             ru = _run_language_variant(
                 english_script = script,

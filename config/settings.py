@@ -52,6 +52,13 @@ class Settings:
     ru_youtube_client_secrets:   Path = ROOT / _env("RU_YOUTUBE_CLIENT_SECRETS", "config/client_secrets_ru.json")
     ru_youtube_token_file:       Path = ROOT / _env("RU_YOUTUBE_TOKEN_FILE",     "config/token_ru.pickle")
 
+    # TikTok
+    tiktok_enabled:       bool = _env("TIKTOK_ENABLED", "false").lower() in ("1", "true", "yes")
+    tiktok_client_key:    str  = _env("TIKTOK_CLIENT_KEY",    "")
+    tiktok_client_secret: str  = _env("TIKTOK_CLIENT_SECRET", "")
+    tiktok_token_file:    Path = ROOT / _env("TIKTOK_TOKEN_FILE", "config/tiktok_token.json")
+    tiktok_privacy:       str  = _env("TIKTOK_PRIVACY", "PUBLIC_TO_EVERYONE")
+
     # Pipeline
     script_target_words: int = int(_env("SCRIPT_TARGET_WORDS", "2200"))
     daily_run_hour_utc: int = int(_env("DAILY_RUN_HOUR_UTC", "8"))

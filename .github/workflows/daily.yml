@@ -31,6 +31,23 @@ jobs:
           key: seen-stories-${{ github.run_id }}
           restore-keys: seen-stories-
 
+      - name: Restore TikTok token
+        uses: actions/cache@v4
+        with:
+          path: config/tiktok_token.json
+          key: tiktok-token-${{ github.run_id }}
+          restore-keys: tiktok-token-
+
+      - name: Bootstrap TikTok token from secret (if cache miss)
+        run: |
+          if [ ! -f config/tiktok_token.json ]; then
+            TT="${{ secrets.TIKTOK_TOKEN_JSON_B64 }}"
+            if [ -n "$TT" ]; then
+              mkdir -p config
+              echo "$TT" | base64 --ignore-garbage -d > config/tiktok_token.json
+            fi
+          fi
+
       - name: Restore YouTube OAuth credentials
         run: |
           mkdir -p config
@@ -89,6 +106,12 @@ jobs:
           LOG_DIR: logs
           DATA_DIR: data
           DEDUP_TTL_DAYS: "30"
+          # TikTok — set TIKTOK_ENABLED=true once auth is configured
+          TIKTOK_ENABLED:        ${{ vars.TIKTOK_ENABLED || 'false' }}
+          TIKTOK_CLIENT_KEY:     ${{ secrets.TIKTOK_CLIENT_KEY }}
+          TIKTOK_CLIENT_SECRET:  ${{ secrets.TIKTOK_CLIENT_SECRET }}
+          TIKTOK_TOKEN_FILE:     config/tiktok_token.json
+          TIKTOK_PRIVACY:        PUBLIC_TO_EVERYONE
           # Russian variant — set RU_ENABLED=true once credentials are configured
           RU_ENABLED: ${{ vars.RU_ENABLED || 'false' }}
           RU_ELEVENLABS_VOICE_ID: ${{ secrets.RU_ELEVENLABS_VOICE_ID }}
