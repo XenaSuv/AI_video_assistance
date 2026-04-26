@@ -34,8 +34,13 @@ jobs:
       - name: Restore YouTube OAuth credentials
         run: |
           mkdir -p config
-          echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}" | base64 -d > config/token.pickle
-          echo "${{ secrets.YOUTUBE_CLIENT_SECRETS_B64 }}" | base64 -d > config/client_secrets.json
+          echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}"    | base64 -d > config/token.pickle
+          echo "${{ secrets.YOUTUBE_CLIENT_SECRETS_B64 }}"  | base64 -d > config/client_secrets.json
+          # Russian channel credentials (only written if secrets are set)
+          if [ -n "${{ secrets.YOUTUBE_TOKEN_PICKLE_RU_B64 }}" ]; then
+            echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_RU_B64 }}"   | base64 -d > config/token_ru.pickle
+            echo "${{ secrets.YOUTUBE_CLIENT_SECRETS_RU_B64 }}" | base64 -d > config/client_secrets_ru.json
+          fi
 
       - name: Run pipeline
         env:
@@ -53,6 +58,12 @@ jobs:
           LOG_DIR: logs
           DATA_DIR: data
           DEDUP_TTL_DAYS: "30"
+          # Russian variant — set RU_ENABLED=true once credentials are configured
+          RU_ENABLED: ${{ vars.RU_ENABLED || 'false' }}
+          RU_ELEVENLABS_VOICE_ID: ${{ secrets.RU_ELEVENLABS_VOICE_ID }}
+          RU_ELEVENLABS_MODEL: eleven_multilingual_v2
+          RU_YOUTUBE_CLIENT_SECRETS: config/client_secrets_ru.json
+          RU_YOUTUBE_TOKEN_FILE: config/token_ru.pickle
         run: python src/main.py
 
       - name: Archive logs and script

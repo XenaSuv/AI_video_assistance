@@ -38,10 +38,10 @@ def _log_retry(retry_state) -> None:
     before_sleep=_log_retry,
     reraise=True,
 )
-def _tts_convert(client: ElevenLabs, text: str) -> object:
+def _tts_convert(client: ElevenLabs, text: str, voice_id: str, model_id: str) -> object:
     return client.text_to_speech.convert(
-        voice_id=settings.elevenlabs_voice_id,
-        model_id=settings.elevenlabs_model,
+        voice_id=voice_id,
+        model_id=model_id,
         text=text,
         output_format="mp3_44100_128",
         voice_settings={
@@ -53,10 +53,24 @@ def _tts_convert(client: ElevenLabs, text: str) -> object:
     )
 
 
-def synthesize_script(script: VideoScript, out_dir: Path) -> list[Path]:
-    """Generate one mp3 per scene. Mutates script.scenes[*].duration_sec."""
+def synthesize_script(
+    script: VideoScript,
+    out_dir: Path,
+    *,
+    voice_id: str | None = None,
+    model_id: str | None = None,
+    audio_subdir: str = "audio",
+) -> list[Path]:
+    """Generate one mp3 per scene. Mutates script.scenes[*].duration_sec.
+
+    *voice_id* and *model_id* default to the values in settings, allowing
+    language-variant pipelines to pass a different voice without touching config.
+    *audio_subdir* lets variants write to e.g. ``audio_ru/`` alongside ``audio/``.
+    """
+    v_id = voice_id or settings.elevenlabs_voice_id
+    m_id = model_id or settings.elevenlabs_model
     client = ElevenLabs(api_key=settings.elevenlabs_api_key)
-    audio_dir = out_dir / "audio"
+    audio_dir = out_dir / audio_subdir
     audio_dir.mkdir(parents=True, exist_ok=True)
 
     paths: list[Path] = []
@@ -65,7 +79,7 @@ def synthesize_script(script: VideoScript, out_dir: Path) -> list[Path]:
         logger.info(f"TTS scene {scene.idx}: {scene.heading!r} "
                     f"({len(scene.narration.split())} words)")
 
-        audio_bytes = _tts_convert(client, scene.narration)
+        audio_bytes = _tts_convert(client, scene.narration, v_id, m_id)
 
         with open(path, "wb") as f:
             for chunk in audio_bytes:

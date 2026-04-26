@@ -29,31 +29,41 @@ SCOPES = [
 ]
 
 
-def _get_creds():
+def _get_creds(
+    client_secrets: Path | None = None,
+    token_file: Path | None = None,
+):
+    client_secrets = client_secrets or settings.youtube_client_secrets
+    token_file     = token_file     or settings.youtube_token_file
+
     creds = None
-    token_file = settings.youtube_token_file
     if token_file.exists():
         with open(token_file, "rb") as f:
             creds = pickle.load(f)
     if creds and creds.expired and creds.refresh_token:
         creds.refresh(Request())
     if not creds or not creds.valid:
-        if not settings.youtube_client_secrets.exists():
+        if not client_secrets.exists():
             raise FileNotFoundError(
-                f"Missing {settings.youtube_client_secrets}. "
+                f"Missing {client_secrets}. "
                 "Download OAuth client_secrets.json from Google Cloud Console."
             )
-        flow = InstalledAppFlow.from_client_secrets_file(
-            str(settings.youtube_client_secrets), SCOPES
-        )
+        flow = InstalledAppFlow.from_client_secrets_file(str(client_secrets), SCOPES)
         creds = flow.run_local_server(port=0)
         with open(token_file, "wb") as f:
             pickle.dump(creds, f)
     return creds
 
 
-def _youtube_client():
-    return build("youtube", "v3", credentials=_get_creds(), cache_discovery=False)
+def _youtube_client(
+    client_secrets: Path | None = None,
+    token_file: Path | None = None,
+):
+    return build(
+        "youtube", "v3",
+        credentials=_get_creds(client_secrets, token_file),
+        cache_discovery=False,
+    )
 
 
 # --------------------- Upload ---------------------
@@ -66,9 +76,11 @@ def upload_video(
     category_id: str | None = None,
     privacy: str | None = None,
     is_short: bool = False,
+    client_secrets: Path | None = None,
+    token_file: Path | None = None,
 ) -> str:
     """Upload a video. Returns the YouTube video id."""
-    youtube = _youtube_client()
+    youtube = _youtube_client(client_secrets, token_file)
 
     # Shorts are identified by hashtag + vertical aspect; YT figures it out.
     final_title = title
@@ -118,9 +130,14 @@ def upload_video(
     return video_id
 
 
-def set_thumbnail(video_id: str, thumbnail_path: Path) -> None:
+def set_thumbnail(
+    video_id: str,
+    thumbnail_path: Path,
+    client_secrets: Path | None = None,
+    token_file: Path | None = None,
+) -> None:
     """Upload a custom thumbnail for an already-uploaded video."""
-    youtube = _youtube_client()
+    youtube = _youtube_client(client_secrets, token_file)
     media = MediaFileUpload(str(thumbnail_path), mimetype="image/jpeg")
     try:
         youtube.thumbnails().set(videoId=video_id, media_body=media).execute()
@@ -149,9 +166,16 @@ def publish_episode(
     long_video: Path,
     short_video: Path | None = None,
     thumbnail: Path | None = None,
+    client_secrets: Path | None = None,
+    token_file: Path | None = None,
 ) -> dict:
-    """Upload both long-form and Short. Returns {long_id, short_id}."""
+    """Upload both long-form and Short. Returns {long_id, short_id}.
+
+    Pass *client_secrets* / *token_file* to publish to a channel other than
+    the default one configured in settings (e.g. a Russian-language channel).
+    """
     desc = _fill_timestamps(script.description, script)
+    creds_kwargs = {"client_secrets": client_secrets, "token_file": token_file}
 
     result = {}
     result["long_id"] = upload_video(
@@ -160,10 +184,11 @@ def publish_episode(
         description=desc,
         tags=script.tags,
         is_short=False,
+        **creds_kwargs,
     )
 
     if thumbnail and thumbnail.exists():
-        set_thumbnail(result["long_id"], thumbnail)
+        set_thumbnail(result["long_id"], thumbnail, **creds_kwargs)
 
     if short_video and short_video.exists():
         result["short_id"] = upload_video(
@@ -172,6 +197,7 @@ def publish_episode(
             description=script.hook,
             tags=script.tags[:10] + ["shorts", "ainews"],
             is_short=True,
+            **creds_kwargs,
         )
     return result
 
@@ -180,12 +206,18 @@ def publish_episode(
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--auth", action="store_true", help="Run OAuth flow only")
+    parser.add_argument("--auth",    action="store_true", help="Run OAuth flow only")
+    parser.add_argument("--profile", default="default",   choices=["default", "ru"],
+                        help="Which channel credentials to use")
     args = parser.parse_args()
 
     if args.auth:
-        _get_creds()
-        logger.info(f"OAuth token saved to {settings.youtube_token_file}")
+        if args.profile == "ru":
+            _get_creds(settings.ru_youtube_client_secrets, settings.ru_youtube_token_file)
+            logger.info(f"RU OAuth token saved to {settings.ru_youtube_token_file}")
+        else:
+            _get_creds()
+            logger.info(f"OAuth token saved to {settings.youtube_token_file}")
 
 
 if __name__ == "__main__":
