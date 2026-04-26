@@ -6,6 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
+import PIL.Image
+
+# PIL.Image.ANTIALIAS was removed in Pillow 10; MoviePy 1.x still uses it.
+if not hasattr(PIL.Image, "ANTIALIAS"):
+    PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
 
 load_dotenv()
 
