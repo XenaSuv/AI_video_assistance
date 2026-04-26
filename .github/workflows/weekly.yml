@@ -1,12 +1,20 @@
-name: Weekly Claude Tutorial
+name: Weekly AI Tutorials
 
 on:
   schedule:
-    - cron: "0 9 * * 0"   # 09:00 UTC every Sunday
+    - cron: "0 9 * * 1"   # Monday    09:00 UTC — Claude
+    - cron: "0 9 * * 3"   # Wednesday 09:00 UTC — ChatGPT
+    - cron: "0 9 * * 5"   # Friday    09:00 UTC — Gemini
   workflow_dispatch:
     inputs:
+      tool:
+        description: "AI tool tutorial to produce"
+        required: false
+        default: "claude"
+        type: choice
+        options: [claude, chatgpt, gemini]
       topic:
-        description: "Override topic (leave blank to use automatic rotation)"
+        description: "Override topic (leave blank for automatic rotation)"
         required: false
         default: ""
       skip_upload:
@@ -33,10 +41,13 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Restore weekly topics log
+      - name: Restore weekly topic logs
         uses: actions/cache@v4
         with:
-          path: data/weekly_topics.json
+          path: |
+            data/weekly_topics_claude.json
+            data/weekly_topics_chatgpt.json
+            data/weekly_topics_gemini.json
           key: weekly-topics-${{ github.run_id }}
           restore-keys: weekly-topics-
 
@@ -70,7 +81,7 @@ jobs:
                   loader(p)
                   print(f"  {label}: OK ({p.stat().st_size} bytes)")
               except Exception as e:
-                  print(f"  {label}: INVALID — {e}", file=sys.stderr)
+                  print(f"  {label}: INVALID - {e}", file=sys.stderr)
                   sys.exit(1)
 
           print("English channel:")
@@ -82,6 +93,23 @@ jobs:
           check("client_secrets_ru.json", "config/client_secrets_ru.json", lambda p: json.load(p.open()))
           EOF
 
+      - name: Determine tool from schedule or input
+        id: tool
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            case $(date +%u) in   # 1=Mon 3=Wed 5=Fri
+              1) TOOL=claude   ;;
+              3) TOOL=chatgpt  ;;
+              5) TOOL=gemini   ;;
+              *) TOOL=claude   ;;
+            esac
+          else
+            TOOL="${{ github.event.inputs.tool }}"
+            TOOL="${TOOL:-claude}"
+          fi
+          echo "tool=$TOOL" >> $GITHUB_OUTPUT
+          echo "Running tutorial pipeline for tool: $TOOL"
+
       - name: Run weekly pipeline
         env:
           OPENAI_API_KEY:         ${{ secrets.OPENAI_API_KEY }}
@@ -91,22 +119,23 @@ jobs:
           ELEVENLABS_MODEL:       eleven_turbo_v2_5
           YOUTUBE_CLIENT_SECRETS: config/client_secrets.json
           YOUTUBE_TOKEN_FILE:     config/token.pickle
-          YOUTUBE_CATEGORY_ID:    "27"   # Education category
+          YOUTUBE_CATEGORY_ID:    "27"   # Education
           YOUTUBE_PRIVACY:        unlisted
           SCRIPT_TARGET_WORDS:    "2200"
           OUTPUT_DIR:             output
           LOG_DIR:                logs
           DATA_DIR:               data
-          # Russian variant — set RU_ENABLED=true once credentials are configured
+          # Russian variant
           RU_ENABLED:             ${{ vars.RU_ENABLED || 'false' }}
           RU_ELEVENLABS_VOICE_ID: ${{ secrets.RU_ELEVENLABS_VOICE_ID }}
           RU_ELEVENLABS_MODEL:    eleven_multilingual_v2
           RU_YOUTUBE_CLIENT_SECRETS: config/client_secrets_ru.json
           RU_YOUTUBE_TOKEN_FILE:  config/token_ru.pickle
         run: |
-          ARGS=""
+          TOOL="${{ steps.tool.outputs.tool }}"
+          ARGS="--tool $TOOL"
           if [ -n "${{ github.event.inputs.topic }}" ]; then
-            ARGS="--topic \"${{ github.event.inputs.topic }}\""
+            ARGS="$ARGS --topic \"${{ github.event.inputs.topic }}\""
           fi
           if [ "${{ github.event.inputs.skip_upload }}" = "true" ]; then
             ARGS="$ARGS --skip-upload"
@@ -117,13 +146,13 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: weekly-run-${{ github.run_id }}
+          name: weekly-${{ steps.tool.outputs.tool }}-${{ github.run_id }}
           path: |
             logs/
-            output/weekly/*/run.log
-            output/weekly/*/script.json
-            output/weekly/*/script_ru.json
-            output/weekly/*/topic.txt
-            output/weekly/*/thumbnail.jpg
-            output/weekly/*/thumbnail_ru.jpg
+            output/weekly/${{ steps.tool.outputs.tool }}/*/run.log
+            output/weekly/${{ steps.tool.outputs.tool }}/*/script.json
+            output/weekly/${{ steps.tool.outputs.tool }}/*/script_ru.json
+            output/weekly/${{ steps.tool.outputs.tool }}/*/topic.txt
+            output/weekly/${{ steps.tool.outputs.tool }}/*/thumbnail.jpg
+            output/weekly/${{ steps.tool.outputs.tool }}/*/thumbnail_ru.jpg
           retention-days: 30

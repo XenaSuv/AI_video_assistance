@@ -1,13 +1,16 @@
-"""Weekly Claude tutorial pipeline.
+"""Weekly AI tutorial pipeline — Claude (Mon), ChatGPT (Wed), Gemini (Fri).
 
     pick_topic → script → voice → video → shorts → thumbnail → upload
     └─ if RU_ENABLED: translate → ru-voice → reassemble → ru-shorts → ru-thumbnail → ru-upload
 
-Safe to re-run: cached artifacts in output/weekly/YYYY-MM-DD/ are reused.
+Output lives in output/weekly/{tool}/YYYY-MM-DD/ so each tool's content
+stays separate even when runs overlap.
+
+Safe to re-run: cached artifacts are reused.
 Run manually:
-    python src/weekly_main.py
-    python src/weekly_main.py --skip-upload
-    python src/weekly_main.py --topic "Custom topic override"
+    python src/weekly_main.py --tool claude
+    python src/weekly_main.py --tool chatgpt --skip-upload
+    python src/weekly_main.py --tool gemini  --topic "Custom topic override"
 """
 from __future__ import annotations
 
@@ -23,6 +26,7 @@ from moviepy.editor import AudioFileClip
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.main import _run_language_variant
 from src.script_generator import Scene, VideoScript
 from src.shorts_generator import build_short
 from src.thumbnail_generator import generate_thumbnail
@@ -30,11 +34,13 @@ from src.video_generator import assemble_video, build_video
 from src.voice_generator import synthesize_script
 from src.weekly_script_generator import (
     generate_tutorial_script,
+    get_tool,
     pick_topic,
-    _save_used_topic,
+    save_used_topic,
 )
 from src.youtube_uploader import publish_episode
-from src.main import _run_language_variant
+
+_VALID_TOOLS = ["claude", "chatgpt", "gemini"]
 
 
 def _setup_logging(run_dir: Path) -> None:
@@ -66,17 +72,22 @@ def _load_audio_durations(script: VideoScript, audio_dir: Path) -> None:
 
 
 def run_weekly_pipeline(
+    tool_key: str = "claude",
     topic_override: str | None = None,
     skip_upload: bool = False,
 ) -> dict:
-    """Execute the weekly tutorial pipeline. Returns a summary dict."""
+    """Execute the weekly tutorial pipeline for *tool_key*. Returns a summary dict."""
+    if tool_key not in _VALID_TOOLS:
+        raise ValueError(f"tool must be one of {_VALID_TOOLS}, got {tool_key!r}")
+
+    tool     = get_tool(tool_key)
     date_str = dt.date.today().isoformat()
-    run_dir  = settings.output_dir / "weekly" / date_str
+    run_dir  = settings.output_dir / "weekly" / tool_key / date_str
     run_dir.mkdir(parents=True, exist_ok=True)
     _setup_logging(run_dir)
-    logger.info(f"=== Weekly Claude Tutorial Pipeline: {date_str} ===")
+    logger.info(f"=== Weekly {tool.name} Tutorial Pipeline: {date_str} ===")
 
-    summary: dict = {"date": date_str, "run_dir": str(run_dir)}
+    summary: dict = {"date": date_str, "tool": tool_key, "run_dir": str(run_dir)}
 
     try:
         # 1. Pick / confirm topic
@@ -88,7 +99,7 @@ def run_weekly_pipeline(
             topic = topic_file.read_text().strip()
             logger.info(f"Reusing cached topic: {topic}")
         else:
-            topic = pick_topic(settings.data_dir)
+            topic = pick_topic(settings.data_dir, tool_key)
             topic_file.write_text(topic)
         summary["topic"] = topic
 
@@ -96,7 +107,7 @@ def run_weekly_pipeline(
         script_cache = run_dir / "script.json"
         script = _load_cached_script(script_cache)
         if script is None:
-            script = generate_tutorial_script(topic)
+            script = generate_tutorial_script(topic, tool_key)
             script.save(script_cache)
         summary["title"]      = script.title
         summary["num_scenes"] = len(script.scenes)
@@ -116,7 +127,7 @@ def run_weekly_pipeline(
         long_video = run_dir / "final_video.mp4"
         if not long_video.exists():
             build_video(script, run_dir)
-            _save_used_topic(settings.data_dir, topic)
+            save_used_topic(settings.data_dir, tool_key, topic)
         else:
             logger.info(f"Reusing cached {long_video.name}")
 
@@ -130,7 +141,7 @@ def run_weekly_pipeline(
         # 6. Thumbnail
         thumbnail = generate_thumbnail(long_video, script.title, run_dir)
 
-        # 7. Upload
+        # 7. Upload (English)
         if skip_upload:
             logger.info("--skip-upload; files on disk")
             summary["status"] = "built_not_uploaded"
@@ -154,10 +165,10 @@ def run_weekly_pipeline(
             )
             summary["ru"] = ru
 
-        logger.info(f"=== WEEKLY DONE ===  {json.dumps(summary, indent=2)}")
+        logger.info(f"=== WEEKLY {tool.name.upper()} DONE ===  {json.dumps(summary, indent=2)}")
 
     except Exception as e:
-        logger.error(f"Weekly pipeline failed: {e}")
+        logger.error(f"Weekly {tool.name} pipeline failed: {e}")
         logger.error(traceback.format_exc())
         summary["status"] = "failed"
         summary["error"]  = str(e)
@@ -167,12 +178,17 @@ def run_weekly_pipeline(
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="Weekly Claude tutorial pipeline")
+    ap = argparse.ArgumentParser(description="Weekly AI tutorial pipeline")
+    ap.add_argument(
+        "--tool", default="claude", choices=_VALID_TOOLS,
+        help="Which AI tool tutorial to produce (default: claude)",
+    )
     ap.add_argument("--skip-upload", action="store_true", help="Build video but don't upload")
-    ap.add_argument("--topic", default=None, help="Override topic (skip rotation)")
+    ap.add_argument("--topic", default=None, help="Override topic (skips rotation)")
     args = ap.parse_args()
 
     run_weekly_pipeline(
-        topic_override=args.topic,
-        skip_upload=args.skip_upload,
+        tool_key       = args.tool,
+        topic_override = args.topic,
+        skip_upload    = args.skip_upload,
     )
