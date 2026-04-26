@@ -1,6 +1,7 @@
 """Weekly Claude tutorial pipeline.
 
     pick_topic → script → voice → video → shorts → thumbnail → upload
+    └─ if RU_ENABLED: translate → ru-voice → reassemble → ru-shorts → ru-thumbnail → ru-upload
 
 Safe to re-run: cached artifacts in output/weekly/YYYY-MM-DD/ are reused.
 Run manually:
@@ -33,6 +34,7 @@ from src.weekly_script_generator import (
     _save_used_topic,
 )
 from src.youtube_uploader import publish_episode
+from src.main import _run_language_variant
 
 
 def _setup_logging(run_dir: Path) -> None:
@@ -136,6 +138,21 @@ def run_weekly_pipeline(
             ids = publish_episode(script, long_video, short_video, thumbnail=thumbnail)
             summary.update(ids)
             summary["status"] = "published"
+
+        # 8. Russian variant (optional)
+        if settings.ru_enabled:
+            ru = _run_language_variant(
+                english_script = script,
+                run_dir        = run_dir,
+                lang_code      = "ru",
+                lang_name      = "Russian",
+                voice_id       = settings.ru_elevenlabs_voice_id,
+                voice_model    = settings.ru_elevenlabs_model,
+                client_secrets = settings.ru_youtube_client_secrets,
+                token_file     = settings.ru_youtube_token_file,
+                skip_upload    = skip_upload,
+            )
+            summary["ru"] = ru
 
         logger.info(f"=== WEEKLY DONE ===  {json.dumps(summary, indent=2)}")
 
