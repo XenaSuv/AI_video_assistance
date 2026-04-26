@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+.env.*
+config/token.pickle
+config/token_ru.pickle
+config/client_secrets.json
+config/client_secrets_ru.json
+
+# Pipeline output (large generated files)
+output/
+logs/
+
+# Data (SQLite dedup DB is restored from CI cache)
+data/seen_stories.db
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
