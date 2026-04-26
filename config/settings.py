@@ -45,8 +45,11 @@ class Settings:
     daily_run_hour_utc: int = int(_env("DAILY_RUN_HOUR_UTC", "8"))
     output_dir: Path = ROOT / _env("OUTPUT_DIR", "output")
     log_dir: Path = ROOT / _env("LOG_DIR", "logs")
+    data_dir: Path = ROOT / _env("DATA_DIR", "data")
+    dedup_ttl_days: int = int(_env("DEDUP_TTL_DAYS", "30"))
 
 
 settings = Settings()
 settings.output_dir.mkdir(parents=True, exist_ok=True)
 settings.log_dir.mkdir(parents=True, exist_ok=True)
+settings.data_dir.mkdir(parents=True, exist_ok=True)

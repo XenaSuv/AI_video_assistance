@@ -16,6 +16,7 @@ from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.deduplicator import SeenStories
 from src.scraper import scrape_all
 from src.script_generator import Scene, VideoScript, generate_script
 from src.shorts_generator import build_short
@@ -55,6 +56,10 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
     logger.info(f"=== AI News Pipeline: {date_str} ===")
 
     summary = {"date": date_str, "run_dir": str(run_dir)}
+    seen = SeenStories(
+        settings.data_dir / "seen_stories.db",
+        ttl_days=settings.dedup_ttl_days,
+    )
 
     try:
         # 1. Scrape
@@ -67,6 +72,14 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         else:
             news = scrape_all(top_n=10)
             news_cache.write_text(json.dumps([n.to_dict() for n in news], indent=2))
+
+        # 1b. Dedup — filter stories already featured in the TTL window
+        dedup_stats = seen.stats()
+        logger.info(
+            f"Dedup DB: {dedup_stats['in_ttl_window']} stories in window "
+            f"({dedup_stats['total_seen']} total)"
+        )
+        news = seen.filter_new(news)
         summary["num_news_items"] = len(news)
 
         if dry_run:
@@ -102,6 +115,9 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         long_video = run_dir / "final_video.mp4"
         if not long_video.exists():
             build_video(script, run_dir)
+            # Mark stories as featured only after a successful build so a
+            # crashed run doesn't permanently consume the stories.
+            seen.mark_featured(news)
         else:
             logger.info(f"Reusing cached {long_video.name}")
 
