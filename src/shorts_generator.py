@@ -122,6 +122,17 @@ def _burn_captions(clip: VideoFileClip, text: str) -> CompositeVideoClip:
 
 def build_short(script: VideoScript, main_video: Path, out_dir: Path) -> Path:
     """Produce the Shorts-ready mp4."""
+    # Audio is the master clock — video is trimmed to match, not the other way.
+    audio_path = out_dir / "audio" / "scene_00.mp3"
+    if audio_path.exists():
+        narration       = AudioFileClip(str(audio_path))
+        target_duration = min(narration.duration, SHORT_MAX_SECONDS)
+    else:
+        narration       = None
+        target_duration = SHORT_MAX_SECONDS
+
+    logger.info(f"Short target duration: {target_duration:.1f}s")
+
     clip_dir     = out_dir / "clips"
     source_clips = sorted(clip_dir.glob("scene_00_clip_*.mp4")) \
                  + sorted(clip_dir.glob("scene_01_clip_*.mp4"))
@@ -129,19 +140,19 @@ def build_short(script: VideoScript, main_video: Path, out_dir: Path) -> Path:
         logger.warning("No source clips found, falling back to main video head")
         source_clips = [main_video]
 
-    raw_duration = sum(VideoFileClip(str(p)).duration for p in source_clips)
     base = concatenate_videoclips(
         [VideoFileClip(str(p)).without_audio() for p in source_clips],
         method="compose",
-    ).subclip(0, min(SHORT_MAX_SECONDS, raw_duration))
-
+    )
+    # Loop if the clips are shorter than the narration, then trim to exact length
+    if base.duration < target_duration:
+        from moviepy.video.fx.all import loop as fx_loop
+        base = fx_loop(base, duration=target_duration)
+    base = base.subclip(0, target_duration)
     base = _make_vertical(base)
 
-    audio_path = out_dir / "audio" / "scene_00.mp3"
-    if audio_path.exists():
-        narration = AudioFileClip(str(audio_path))
-        narration = narration.subclip(0, min(narration.duration, base.duration))
-        base      = base.set_audio(narration)
+    if narration is not None:
+        base = base.set_audio(narration.subclip(0, target_duration))
 
     captioned = _burn_captions(base, script.hook)
 
