@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.hook_selector import record_usage
 from src.main import _load_cached_script, _run_language_variant
+from src.subtitle_generator import generate_subtitles
 from src.script_generator import VideoScript
 from src.shorts_generator import build_short
 from src.thumbnail_ab import (
@@ -116,7 +117,16 @@ def run_weekly_pipeline(
 
         summary["total_duration_sec"] = sum(s.duration_sec for s in script.scenes)
 
-        # 4. Video
+        # 4. Subtitles (non-fatal)
+        subtitle_path = None
+        try:
+            subtitle_path = generate_subtitles(
+                script, run_dir / "audio", run_dir / "subtitles.srt",
+            )
+        except Exception as exc:
+            logger.warning(f"Subtitle generation failed (non-fatal): {exc}")
+
+        # 5. Video
         long_video = run_dir / "final_video.mp4"
         if not long_video.exists():
             build_video(script, run_dir, tool=tool_key)
@@ -124,28 +134,32 @@ def run_weekly_pipeline(
         else:
             logger.info(f"Reusing cached {long_video.name}")
 
-        # 5. Tutorial Shorts (one per scene that has short_narration)
+        # 6. Tutorial Shorts (one per scene that has short_narration)
         tutorial_shorts = build_tutorial_shorts(script, run_dir)
         summary["tutorial_shorts_count"] = len(tutorial_shorts)
 
-        # 6. Digest Short (hook-based, from first scene clip)
+        # 7. Digest Short (hook-based, from first scene clip)
         digest_short = run_dir / "shorts.mp4"
         if not digest_short.exists():
             build_short(script, long_video, run_dir)
         else:
             logger.info(f"Reusing cached {digest_short.name}")
 
-        # 7. Thumbnail A/B
+        # 8. Thumbnail A/B
         thumb_variants = generate_thumbnail_variants(long_video, script.title, run_dir)
         thumbnail      = pick_thumbnail(thumb_variants, settings.data_dir, tool_key)
         summary["thumbnail_style"] = thumbnail.stem.removeprefix("thumbnail_")
 
-        # 8. Upload (English)
+        # 9. Upload (English)
         if skip_upload:
             logger.info("--skip-upload; files on disk")
             summary["status"] = "built_not_uploaded"
         else:
-            ids = publish_episode(script, long_video, digest_short, thumbnail=thumbnail)
+            ids = publish_episode(
+                script, long_video, digest_short,
+                thumbnail=thumbnail,
+                subtitle_path=subtitle_path,
+            )
             summary.update(ids)
             summary["status"] = "published"
             if video_id := ids.get("video_id"):
@@ -172,7 +186,7 @@ def run_weekly_pipeline(
                 short_ids.append(short_id)
             summary["tutorial_short_ids"] = short_ids
 
-        # 9. Russian variant (optional)
+        # 10. Russian variant (optional)
         if settings.ru_enabled:
             ru = _run_language_variant(
                 english_script = script,
