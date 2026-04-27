@@ -79,24 +79,65 @@ def generate_dalle_image(prompt: str, out_path: Path) -> Path:
 # --------------------- Ken Burns effect ---------------------
 
 def _ken_burns_clip(img_path: Path, duration: float) -> VideoClip:
-    """
-    Animate a static image with a gentle horizontal pan (Ken Burns style).
+    """Animate a static image with one of four Ken Burns movements.
 
-    Loads the 1792×1024 DALL-E image once, pre-converts to a numpy array,
-    then drifts a 1280×720 crop window using pure numpy slicing per frame
-    (no per-frame PIL resize — fast).
+    Variant is chosen deterministically from the filename so re-runs produce
+    the same clip and consecutive scenes always differ.
+
+    Variants:
+      0 — pan left → right
+      1 — pan right → left
+      2 — zoom in  (window shrinks from full headroom to centre)
+      3 — zoom out (window grows from centre to full headroom)
     """
     img_arr = np.array(PILImage.open(str(img_path)).convert("RGB"))
-    ih, iw = img_arr.shape[:2]          # 1024 × 1792 from DALL-E 3
+    ih, iw = img_arr.shape[:2]          # 1024 × 1792 from DALL-E 3 HD
 
-    max_x = max(0, iw - OUT_W)          # 512px horizontal headroom
-    max_y = max(0, ih - OUT_H)          # 304px vertical headroom
-    pan_x = int(max_x * 0.35)           # drift 35% of headroom → ~179px
-    y0    = int(max_y * 0.25)           # anchor 25% down from top
+    max_x = max(0, iw - OUT_W)          # 512 px horizontal headroom
+    max_y = max(0, ih - OUT_H)          # 304 px vertical headroom
 
-    def make_frame(t: float) -> np.ndarray:
-        x = int(pan_x * t / duration)
-        return img_arr[y0:y0 + OUT_H, x:x + OUT_W]
+    # Deterministic variant: hash the stem so the same image always moves the same way
+    variant = int(img_path.stem.split("_")[-1]) % 4 if img_path.stem.split("_")[-1].isdigit() else (hash(img_path.stem) % 4)
+
+    if variant == 0:
+        # Pan left → right
+        pan = int(max_x * 0.40)
+        y0  = int(max_y * 0.25)
+        def make_frame(t: float) -> np.ndarray:
+            x = int(pan * t / duration)
+            return img_arr[y0:y0 + OUT_H, x:x + OUT_W]
+
+    elif variant == 1:
+        # Pan right → left
+        pan = int(max_x * 0.40)
+        y0  = int(max_y * 0.25)
+        def make_frame(t: float) -> np.ndarray:
+            x = pan - int(pan * t / duration)
+            return img_arr[y0:y0 + OUT_H, x:x + OUT_W]
+
+    elif variant == 2:
+        # Zoom in: start wide (use all headroom), end centred (no headroom)
+        def make_frame(t: float) -> np.ndarray:
+            p   = t / duration              # 0 → 1
+            ease = p * p                    # ease-in: slow start, fast finish
+            x0  = int(max_x * 0.5 * (1 - ease))
+            y0  = int(max_y * 0.5 * (1 - ease))
+            x1  = iw - int(max_x * 0.5 * (1 - ease))
+            y1  = ih - int(max_y * 0.5 * (1 - ease))
+            patch = img_arr[y0:y1, x0:x1]
+            return np.array(PILImage.fromarray(patch).resize((OUT_W, OUT_H), PILImage.LANCZOS))
+
+    else:
+        # Zoom out: start centred (no headroom), end wide (all headroom)
+        def make_frame(t: float) -> np.ndarray:
+            p    = t / duration
+            ease = 1 - (1 - p) ** 2        # ease-out: fast start, slow finish
+            x0   = int(max_x * 0.5 * ease)
+            y0   = int(max_y * 0.5 * ease)
+            x1   = iw - int(max_x * 0.5 * ease)
+            y1   = ih - int(max_y * 0.5 * ease)
+            patch = img_arr[y0:y1, x0:x1]
+            return np.array(PILImage.fromarray(patch).resize((OUT_W, OUT_H), PILImage.LANCZOS))
 
     return VideoClip(make_frame, duration=duration).set_fps(24)
 
