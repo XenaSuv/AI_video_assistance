@@ -106,9 +106,13 @@ def run_digest_pipeline(
         summary["total_duration_sec"] = sum(s.duration_sec for s in script.scenes)
 
         # 4. Video
+        _en_intro = settings.source_dir / "ai-digest-intro-en.mp4"
+        _en_outro = settings.source_dir / "ai-news-outro.mp4"
         long_video = run_dir / "final_video.mp4"
         if not long_video.exists():
-            build_video(script, run_dir)
+            build_video(script, run_dir,
+                        intro_path=_en_intro if _en_intro.exists() else None,
+                        outro_path=_en_outro if _en_outro.exists() else None)
         else:
             logger.info(f"Reusing cached {long_video.name}")
 
@@ -133,6 +137,8 @@ def run_digest_pipeline(
 
         # 8. Russian variant (optional)
         if settings.ru_enabled:
+            _ru_intro = settings.source_dir / "ai-digest-intro.mp4"
+            _ru_outro = settings.source_dir / "ai-novosti-outro.mp4"
             ru = _run_language_variant(
                 english_script = script,
                 run_dir        = run_dir,
@@ -143,6 +149,8 @@ def run_digest_pipeline(
                 client_secrets = settings.ru_youtube_client_secrets,
                 token_file     = settings.ru_youtube_token_file,
                 skip_upload    = skip_upload,
+                intro_path     = _ru_intro if _ru_intro.exists() else None,
+                outro_path     = _ru_outro if _ru_outro.exists() else None,
             )
             summary["ru"] = ru
 
