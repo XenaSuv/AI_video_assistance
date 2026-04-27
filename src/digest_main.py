@@ -27,7 +27,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.digest_script_generator import collect_week_scripts, generate_digest_script
 from src.hook_selector import record_usage
-from src.main import _load_audio_durations, _load_cached_script, _run_language_variant
+from src.main import _load_audio_durations, _load_cached_script, _run_language_variant, _get_intro_duration
+from src.subtitle_generator import generate_subtitles
 from src.script_generator import Scene, VideoScript
 from src.shorts_generator import build_short
 from src.thumbnail_ab import (
@@ -98,9 +99,21 @@ def run_digest_pipeline(
 
         summary["total_duration_sec"] = sum(s.duration_sec for s in script.scenes)
 
-        # 4. Video
+        # 4. Subtitles (non-fatal)
         _en_intro = settings.source_dir / "ai-digest-intro-en.mp4"
         _en_outro = settings.source_dir / "ai-news-outro.mp4"
+        subtitle_path = None
+        try:
+            subtitle_path = generate_subtitles(
+                script,
+                run_dir / "audio",
+                run_dir / "subtitles.srt",
+                intro_duration=_get_intro_duration(_en_intro if _en_intro.exists() else None),
+            )
+        except Exception as exc:
+            logger.warning(f"Subtitle generation failed (non-fatal): {exc}")
+
+        # 5. Video
         long_video = run_dir / "final_video.mp4"
         if not long_video.exists():
             build_video(script, run_dir,
@@ -109,31 +122,35 @@ def run_digest_pipeline(
         else:
             logger.info(f"Reusing cached {long_video.name}")
 
-        # 5. Shorts
+        # 6. Shorts
         short_video = run_dir / "shorts.mp4"
         if not short_video.exists():
             build_short(script, long_video, run_dir)
         else:
             logger.info(f"Reusing cached {short_video.name}")
 
-        # 6. Thumbnail A/B
+        # 7. Thumbnail A/B
         thumb_variants = generate_thumbnail_variants(long_video, script.title, run_dir)
         thumbnail      = pick_thumbnail(thumb_variants, settings.data_dir, "digest")
         summary["thumbnail_style"] = thumbnail.stem.removeprefix("thumbnail_")
 
-        # 7. Upload (English)
+        # 8. Upload (English)
         if skip_upload:
             logger.info("--skip-upload; files on disk")
             summary["status"] = "built_not_uploaded"
         else:
-            ids = publish_episode(script, long_video, short_video, thumbnail=thumbnail)
+            ids = publish_episode(
+                script, long_video, short_video,
+                thumbnail=thumbnail,
+                subtitle_path=subtitle_path,
+            )
             summary.update(ids)
             summary["status"] = "published"
             if video_id := ids.get("video_id"):
                 record_usage(script.hook, video_id, settings.data_dir, "digest")
                 record_thumbnail_usage(thumbnail, video_id, settings.data_dir, "digest")
 
-        # 8. Russian variant (optional)
+        # 9. Russian variant (optional)
         if settings.ru_enabled:
             _ru_intro = settings.source_dir / "ai-digest-intro.mp4"
             _ru_outro = settings.source_dir / "ai-novosti-outro.mp4"

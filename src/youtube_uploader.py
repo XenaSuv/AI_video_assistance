@@ -24,9 +24,17 @@ from src.script_generator import VideoScript
 
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
-    # Required for thumbnails.set
+    # Required for thumbnails.set and captions.insert
     "https://www.googleapis.com/auth/youtube.force-ssl",
 ]
+
+_CAPTION_TRACK_NAMES: dict[str, str] = {
+    "en": "English",
+    "ru": "Русский",
+    "de": "Deutsch",
+    "fr": "Français",
+    "es": "Español",
+}
 
 
 def _get_creds(
@@ -147,6 +155,39 @@ def set_thumbnail(
         logger.warning(f"Could not set thumbnail (skipping): {e}")
 
 
+def upload_captions(
+    video_id: str,
+    srt_path: Path,
+    language: str = "en",
+    client_secrets: Path | None = None,
+    token_file: Path | None = None,
+) -> None:
+    """Upload an SRT caption track for an already-uploaded video.
+
+    Fails silently with a warning — captions are a nice-to-have and should
+    never block the main publish flow.
+    """
+    youtube = _youtube_client(client_secrets, token_file)
+    name = _CAPTION_TRACK_NAMES.get(language, language.upper())
+    media = MediaFileUpload(str(srt_path), mimetype="text/plain", resumable=False)
+    try:
+        youtube.captions().insert(
+            part="snippet",
+            body={
+                "snippet": {
+                    "videoId": video_id,
+                    "language": language,
+                    "name": name,
+                    "isDraft": False,
+                }
+            },
+            media_body=media,
+        ).execute()
+        logger.info(f"Captions [{language}] uploaded for {video_id}")
+    except HttpError as e:
+        logger.warning(f"Caption upload failed (non-fatal): {e}")
+
+
 def _fill_timestamps(description: str, script: VideoScript) -> str:
     """Replace (TIMESTAMPS_AUTOFILL) with real chapter markers from scene durations."""
     if "(TIMESTAMPS_AUTOFILL)" not in description:
@@ -166,6 +207,8 @@ def publish_episode(
     long_video: Path,
     short_video: Path | None = None,
     thumbnail: Path | None = None,
+    subtitle_path: Path | None = None,
+    subtitle_language: str = "en",
     client_secrets: Path | None = None,
     token_file: Path | None = None,
 ) -> dict:
@@ -173,6 +216,7 @@ def publish_episode(
 
     Pass *client_secrets* / *token_file* to publish to a channel other than
     the default one configured in settings (e.g. a Russian-language channel).
+    Pass *subtitle_path* to upload an SRT caption track alongside the video.
     """
     desc = _fill_timestamps(script.description, script)
     creds_kwargs = {"client_secrets": client_secrets, "token_file": token_file}
@@ -189,6 +233,13 @@ def publish_episode(
 
     if thumbnail and thumbnail.exists():
         set_thumbnail(result["long_id"], thumbnail, **creds_kwargs)
+
+    if subtitle_path and subtitle_path.exists():
+        upload_captions(
+            result["long_id"], subtitle_path,
+            language=subtitle_language,
+            **creds_kwargs,
+        )
 
     if short_video and short_video.exists():
         result["short_id"] = upload_video(
