@@ -26,7 +26,8 @@ from moviepy.editor import AudioFileClip
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.digest_script_generator import collect_week_scripts, generate_digest_script
-from src.main import _load_audio_durations, _run_language_variant
+from src.hook_selector import record_usage
+from src.main import _load_audio_durations, _load_cached_script, _run_language_variant
 from src.script_generator import Scene, VideoScript
 from src.shorts_generator import build_short
 from src.thumbnail_generator import generate_thumbnail
@@ -41,19 +42,6 @@ def _setup_logging(run_dir: Path) -> None:
                format="<green>{time:HH:mm:ss}</green> | <level>{level:<7}</level> | {message}")
     logger.add(run_dir / "run.log", level="DEBUG", rotation="10 MB")
 
-
-def _load_cached_script(path: Path) -> VideoScript | None:
-    if not path.exists():
-        return None
-    data = json.loads(path.read_text())
-    return VideoScript(
-        title=data["title"],
-        description=data["description"],
-        tags=data["tags"],
-        hook=data["hook"],
-        scenes=[Scene(idx=i, **{k: v for k, v in s.items() if k != "idx"})
-                for i, s in enumerate(data["scenes"])],
-    )
 
 
 def run_digest_pipeline(
@@ -89,7 +77,7 @@ def run_digest_pipeline(
         script_cache = run_dir / "script.json"
         script = _load_cached_script(script_cache)
         if script is None:
-            script = generate_digest_script(week_blocks, week_of)
+            script = generate_digest_script(week_blocks, week_of, data_dir=settings.data_dir)
             script.save(script_cache)
         summary["title"]      = script.title
         summary["num_scenes"] = len(script.scenes)
@@ -134,6 +122,8 @@ def run_digest_pipeline(
             ids = publish_episode(script, long_video, short_video, thumbnail=thumbnail)
             summary.update(ids)
             summary["status"] = "published"
+            if video_id := ids.get("video_id"):
+                record_usage(script.hook, video_id, settings.data_dir, "digest")
 
         # 8. Russian variant (optional)
         if settings.ru_enabled:
