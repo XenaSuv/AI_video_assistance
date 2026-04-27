@@ -72,10 +72,13 @@ def _run_language_variant(
     client_secrets: Path,
     token_file: Path,
     skip_upload: bool = False,
+    intro_path: Path | None = None,
+    outro_path: Path | None = None,
 ) -> dict:
     """Translate + re-voice + reassemble for a non-English language variant.
 
     DALL-E images and Ken Burns clips are fully reused — only TTS is re-run.
+    *intro_path* / *outro_path* are prepended / appended when supplied.
     Returns a summary dict.
     """
     logger.info(f"=== {lang_name} variant ===")
@@ -113,7 +116,8 @@ def _run_language_variant(
             s.idx: audio_dir / f"scene_{s.idx:02d}.mp3"
             for s in script.scenes
         }
-        assemble_video(script, clip_paths_by_scene, audio_paths_by_scene, long_video)
+        assemble_video(script, clip_paths_by_scene, audio_paths_by_scene, long_video,
+                       intro_path=intro_path, outro_path=outro_path)
     else:
         logger.info(f"Reusing cached {long_video.name}")
 
@@ -212,9 +216,13 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         summary["total_duration_sec"] = sum(s.duration_sec for s in script.scenes)
 
         # 4. Video
+        _en_intro = settings.source_dir / "ai-news-intro.mp4"
+        _en_outro = settings.source_dir / "ai-news-outro.mp4"
         long_video = run_dir / "final_video.mp4"
         if not long_video.exists():
-            build_video(script, run_dir)
+            build_video(script, run_dir,
+                        intro_path=_en_intro if _en_intro.exists() else None,
+                        outro_path=_en_outro if _en_outro.exists() else None)
             seen.mark_featured(news)
         else:
             logger.info(f"Reusing cached {long_video.name}")
@@ -249,6 +257,8 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
 
         # 9. Russian variant (optional)
         if settings.ru_enabled:
+            _ru_intro = settings.source_dir / "ai-novosti-intro.mp4"
+            _ru_outro = settings.source_dir / "ai-novosti-outro.mp4"
             ru = _run_language_variant(
                 english_script = script,
                 run_dir        = run_dir,
@@ -259,6 +269,8 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
                 client_secrets = settings.ru_youtube_client_secrets,
                 token_file     = settings.ru_youtube_token_file,
                 skip_upload    = skip_upload,
+                intro_path     = _ru_intro if _ru_intro.exists() else None,
+                outro_path     = _ru_outro if _ru_outro.exists() else None,
             )
             summary["ru"] = ru
 
