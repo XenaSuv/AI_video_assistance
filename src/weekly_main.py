@@ -47,6 +47,7 @@ from src.weekly_script_generator import (
 )
 from src.weekly_shorts_generator import build_tutorial_shorts
 from src.youtube_uploader import publish_episode, upload_video
+from src.slack_notifier import notify_success, notify_failure
 
 _VALID_TOOLS = ["claude", "chatgpt", "gemini"]
 
@@ -201,6 +202,7 @@ def run_weekly_pipeline(
             )
             summary["ru"] = ru
 
+        notify_success(summary, "weekly")
         logger.info(f"=== WEEKLY {tool.name.upper()} DONE ===  {json.dumps(summary, indent=2)}")
 
     except Exception as e:
@@ -208,6 +210,7 @@ def run_weekly_pipeline(
         logger.error(traceback.format_exc())
         summary["status"] = "failed"
         summary["error"]  = str(e)
+        notify_failure(e, "weekly", summary, traceback.format_exc())
         raise
 
     return summary

@@ -56,6 +56,9 @@ class Settings:
     pexels_api_key:  str = _env("PEXELS_API_KEY",  "")
     pixabay_api_key: str = _env("PIXABAY_API_KEY", "")
 
+    # Slack notifications (optional — leave blank to disable)
+    slack_webhook_url: str = _env("SLACK_WEBHOOK_URL", "")
+
     # TikTok
     tiktok_enabled:       bool = _env("TIKTOK_ENABLED", "false").lower() in ("1", "true", "yes")
     tiktok_client_key:    str  = _env("TIKTOK_CLIENT_KEY",    "")
