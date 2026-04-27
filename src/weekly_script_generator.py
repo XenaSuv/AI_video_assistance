@@ -99,6 +99,10 @@ Rules:
 - visual_prompt: vivid DALL-E 3 description of what should appear on screen
   (UI mockups, code on screen, person at laptop, abstract tech visuals, etc.)
   Do NOT include text overlays or watermarks in the visual description.
+- short_narration: for exactly 3-4 scenes that are SELF-CONTAINED (understandable
+  without watching the rest of the video), write a punchy ~120-word Shorts script.
+  Hook immediately ("Here's a trick...", "Did you know...", "Stop doing X...").
+  End with a CTA: "Watch the full tutorial for more". For the other scenes set null.
 - Return ONLY valid JSON, no markdown fences.""",
     ),
 
@@ -160,6 +164,10 @@ Rules:
 - visual_prompt: vivid DALL-E 3 description of what should appear on screen
   (ChatGPT interface, code editor, person using laptop, abstract tech visuals, etc.)
   Do NOT include text overlays, logos, or watermarks in the visual description.
+- short_narration: for exactly 3-4 scenes that are SELF-CONTAINED (understandable
+  without watching the rest of the video), write a punchy ~120-word Shorts script.
+  Hook immediately ("Here's a trick...", "Did you know...", "Stop doing X...").
+  End with a CTA: "Watch the full tutorial for more". For the other scenes set null.
 - Return ONLY valid JSON, no markdown fences.""",
     ),
 
@@ -221,6 +229,10 @@ Rules:
 - visual_prompt: vivid DALL-E 3 description of what should appear on screen
   (Google interface, code editor, person at desk, abstract colorful visuals, etc.)
   Do NOT include text overlays, logos, or watermarks in the visual description.
+- short_narration: for exactly 3-4 scenes that are SELF-CONTAINED (understandable
+  without watching the rest of the video), write a punchy ~120-word Shorts script.
+  Hook immediately ("Here's a trick...", "Did you know...", "Stop doing X...").
+  End with a CTA: "Watch the full tutorial for more". For the other scenes set null.
 - Return ONLY valid JSON, no markdown fences.""",
     ),
 }
@@ -294,7 +306,8 @@ Return JSON with this exact structure:
       "heading": "...",            // short chapter title
       "narration": "...",          // full spoken text, 280-340 words
       "visual_prompt": "...",      // DALL-E 3 image prompt, 2-3 sentences (always required as fallback)
-      "screenshot_key": null        // or one of the keys listed above
+      "screenshot_key": null,      // or one of the keys listed above
+      "short_narration": null      // ~120-word standalone Shorts script, or null
     }},
     ... (7 scenes total)
   ]
@@ -338,13 +351,16 @@ def generate_tutorial_script(topic: str, tool_key: str) -> VideoScript:
         if key and not has_key(tool_key, key):
             logger.warning(f"Scene {i}: GPT picked unknown screenshot_key '{key}' — falling back to DALL-E")
             key = None
+        short_nar = s.get("short_narration") or None
         scenes.append(Scene(
             idx=i,
             heading=s["heading"],
             narration=s["narration"],
             visual_prompt=s["visual_prompt"],
             screenshot_key=key,
+            short_narration=short_nar,
         ))
+    shorts_count = sum(1 for sc in scenes if sc.short_narration)
     script = VideoScript(
         title=raw["title"],
         description=raw["description"],
@@ -352,5 +368,5 @@ def generate_tutorial_script(topic: str, tool_key: str) -> VideoScript:
         hook=raw["hook"],
         scenes=scenes,
     )
-    logger.info(f"{tool.name} tutorial: '{script.title}' | {len(scenes)} scenes")
+    logger.info(f"{tool.name} tutorial: '{script.title}' | {len(scenes)} scenes | {shorts_count} shorts")
     return script
