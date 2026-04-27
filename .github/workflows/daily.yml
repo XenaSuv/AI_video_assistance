@@ -2,7 +2,7 @@ name: Daily AI News Video
 
 on:
   schedule:
-    - cron: "0 8 * * *"   # 08:00 UTC every day
+    - cron: "0 8 * * 1-6"   # 08:00 UTC Monday–Saturday
   workflow_dispatch:        # manual trigger button
 
 jobs:
