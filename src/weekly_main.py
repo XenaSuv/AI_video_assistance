@@ -38,7 +38,8 @@ from src.weekly_script_generator import (
     pick_topic,
     save_used_topic,
 )
-from src.youtube_uploader import publish_episode
+from src.weekly_shorts_generator import build_tutorial_shorts
+from src.youtube_uploader import publish_episode, upload_video
 
 _VALID_TOOLS = ["claude", "chatgpt", "gemini"]
 
@@ -131,26 +132,50 @@ def run_weekly_pipeline(
         else:
             logger.info(f"Reusing cached {long_video.name}")
 
-        # 5. Shorts
-        short_video = run_dir / "shorts.mp4"
-        if not short_video.exists():
+        # 5. Tutorial Shorts (one per scene that has short_narration)
+        tutorial_shorts = build_tutorial_shorts(script, run_dir)
+        summary["tutorial_shorts_count"] = len(tutorial_shorts)
+
+        # 6. Digest Short (hook-based, from first scene clip)
+        digest_short = run_dir / "shorts.mp4"
+        if not digest_short.exists():
             build_short(script, long_video, run_dir)
         else:
-            logger.info(f"Reusing cached {short_video.name}")
+            logger.info(f"Reusing cached {digest_short.name}")
 
-        # 6. Thumbnail
+        # 7. Thumbnail
         thumbnail = generate_thumbnail(long_video, script.title, run_dir)
 
-        # 7. Upload (English)
+        # 8. Upload (English)
         if skip_upload:
             logger.info("--skip-upload; files on disk")
             summary["status"] = "built_not_uploaded"
         else:
-            ids = publish_episode(script, long_video, short_video, thumbnail=thumbnail)
+            ids = publish_episode(script, long_video, digest_short, thumbnail=thumbnail)
             summary.update(ids)
             summary["status"] = "published"
 
-        # 8. Russian variant (optional)
+            # Upload each tutorial Short separately
+            short_ids: list[str] = []
+            for short_path in tutorial_shorts:
+                scene_idx = int(short_path.stem.split("_")[1])
+                scene     = script.scenes[scene_idx]
+                short_title = f"{scene.heading} | {tool.name} Tutorial"
+                short_id = upload_video(
+                    short_path,
+                    title=short_title,
+                    description=(
+                        f"{scene.short_narration or scene.heading}\n\n"
+                        f"Watch the full tutorial: {script.title}\n\n"
+                        "#Shorts #AI #Tutorial"
+                    ),
+                    tags=script.tags + ["shorts", "tutorial"],
+                    is_short=True,
+                )
+                short_ids.append(short_id)
+            summary["tutorial_short_ids"] = short_ids
+
+        # 9. Russian variant (optional)
         if settings.ru_enabled:
             ru = _run_language_variant(
                 english_script = script,
