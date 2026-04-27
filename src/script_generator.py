@@ -111,6 +111,12 @@ For each scene provide:
   "person presenting screen", "smartphone app scrolling", "AI robot arm factory"
 - infographic_data: animated chart data when the scene has concrete numbers
   or comparisons — otherwise null. See the infographic guide below.
+- short_narration: YOU MUST fill this for EXACTLY 2-3 middle scenes
+  (not scene 0 intro, not the last sign-off scene). Each must be a
+  self-contained ~120-word Shorts script a viewer can watch without seeing
+  the full video. Hook immediately ("Breaking:", "Just in:", "Here's what
+  happened with..."). End with: "Subscribe for daily AI news."
+  Set null only for the opening and closing scenes.
 {infographic_guide}
 Close with a sign-off that invites likes/subscribes without being cringey.
 
@@ -140,11 +146,36 @@ Return this JSON schema exactly:
       "narration": "...",
       "visual_prompt": "...",
       "video_query": null,
-      "infographic_data": null
+      "infographic_data": null,
+      "short_narration": null
+    }},
+    {{
+      "heading": "...",
+      "narration": "...",
+      "visual_prompt": "...",
+      "video_query": null,
+      "infographic_data": null,
+      "short_narration": "Breaking: [~120 words ending with 'Subscribe for daily AI news.']"
     }},
     ...
   ]
 }}"""
+
+
+_DAILY_SHORTS_FILL_PROMPT = """\
+For each news scene below, write a standalone YouTube Shorts script (~120 words).
+
+Rules:
+- First sentence must be a hook: "Breaking:", "Just in:", "Here's what happened with..."
+- Cover exactly ONE story from that scene — self-contained, no context needed
+- Last sentence: "Subscribe for daily AI news."
+- No filler, no "In today's video", direct and punchy
+
+Return JSON: {{"scenes": [{{"idx": <N>, "short_narration": "..."}}]}}
+
+Scenes to fill:
+{scenes_block}
+"""
 
 
 def _build_items_block(items: list[NewsItem]) -> str:
@@ -158,6 +189,50 @@ def _build_items_block(items: list[NewsItem]) -> str:
             f"   Summary: {it.summary[:500]}\n"
         )
     return "\n".join(lines)
+
+
+def _fill_missing_short_narrations(
+    scenes: list[Scene],
+    client: OpenAI,
+    min_count: int = 2,
+) -> None:
+    """Ensure at least *min_count* scenes have short_narration; fill gaps via GPT."""
+    have = [s for s in scenes if s.short_narration]
+    if len(have) >= min_count:
+        return
+    needed    = min_count - len(have)
+    candidates = [s for s in scenes[1:-1] if not s.short_narration]
+    if not candidates:
+        candidates = [s for s in scenes if not s.short_narration]
+    to_fill = candidates[:needed]
+    if not to_fill:
+        return
+
+    logger.info(f"GPT returned {len(have)} short_narrations; auto-filling {len(to_fill)} more")
+    scenes_block = "\n\n".join(
+        f"idx={s.idx}, heading={s.heading!r}:\n{s.narration[:500]}"
+        for s in to_fill
+    )
+    try:
+        resp = client.chat.completions.create(
+            model=settings.openai_model,
+            response_format={"type": "json_object"},
+            messages=[{
+                "role": "user",
+                "content": _DAILY_SHORTS_FILL_PROMPT.format(scenes_block=scenes_block),
+            }],
+            temperature=0.7,
+        )
+        data = json.loads(resp.choices[0].message.content or "{}")
+        idx_map = {s.idx: s for s in to_fill}
+        for item in data.get("scenes", []):
+            idx  = item.get("idx")
+            text = (item.get("short_narration") or "").strip()
+            if text and idx in idx_map:
+                idx_map[idx].short_narration = text
+                logger.info(f"  auto-filled short_narration for scene {idx}")
+    except Exception as exc:
+        logger.warning(f"short_narration auto-fill failed (non-fatal): {exc}")
 
 
 def generate_script(
@@ -202,7 +277,8 @@ def generate_script(
         infographic = s.get("infographic_data") or None
         if infographic and not isinstance(infographic, dict):
             infographic = None
-        video_q = (s.get("video_query") or "").strip() or None
+        video_q   = (s.get("video_query") or "").strip() or None
+        short_nar = (s.get("short_narration") or "").strip() or None
         scenes.append(Scene(
             idx=i,
             heading=s["heading"],
@@ -210,9 +286,12 @@ def generate_script(
             visual_prompt=s["visual_prompt"],
             infographic_data=infographic,
             video_query=video_q,
+            short_narration=short_nar,
         ))
     infographic_count = sum(1 for sc in scenes if sc.infographic_data)
     broll_count       = sum(1 for sc in scenes if sc.video_query)
+
+    _fill_missing_short_narrations(scenes, client, min_count=2)
 
     # Dynamic hook selection
     hook_variants: list[str] = data.get("hook_variants") or []
@@ -237,11 +316,12 @@ def generate_script(
         raw_json=data,
     )
 
-    word_count = sum(len(s.narration.split()) for s in scenes)
+    shorts_count = sum(1 for sc in scenes if sc.short_narration)
+    word_count   = sum(len(s.narration.split()) for s in scenes)
     logger.info(
         f"Generated script: {word_count} words across {len(scenes)} scenes | "
         f"hook variant {hook_variants.index(chosen_hook) + 1}/{len(hook_variants)} | "
-        f"{broll_count} B-roll | {infographic_count} infographic"
+        f"{broll_count} B-roll | {infographic_count} infographic | {shorts_count} shorts"
     )
     return script
 

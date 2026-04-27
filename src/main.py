@@ -37,6 +37,8 @@ from src.voice_generator import synthesize_script
 from src.youtube_uploader import publish_episode
 from src.tiktok_uploader import post_short as tiktok_post_short
 from src.slack_notifier import notify_success, notify_failure
+from src.weekly_shorts_generator import build_tutorial_shorts
+from src.youtube_uploader import upload_video
 
 
 def _setup_logging(run_dir: Path) -> None:
@@ -276,12 +278,16 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         if credits:
             script.description += "\n\nVideo clips provided by Pexels:\n" + "\n".join(credits)
 
-        # 5. Shorts
+        # 5. Shorts (hook-based digest short)
         short_video = run_dir / "shorts.mp4"
         if not short_video.exists():
             build_short(script, long_video, run_dir)
         else:
             logger.info(f"Reusing cached {short_video.name}")
+
+        # 5b. Per-scene Shorts (one per scene with short_narration)
+        scene_shorts = build_tutorial_shorts(script, run_dir)
+        summary["scene_shorts_count"] = len(scene_shorts)
 
         # 7. Thumbnail A/B
         thumb_variants = generate_thumbnail_variants(long_video, script.title, run_dir)
@@ -303,6 +309,29 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
             if video_id := ids.get("video_id"):
                 record_usage(script.hook, video_id, settings.data_dir, "daily")
                 record_thumbnail_usage(thumbnail, video_id, settings.data_dir, "daily")
+
+        # 8b. Upload per-scene Shorts
+        if not skip_upload and scene_shorts:
+            scene_short_ids: list[str] = []
+            for short_path in scene_shorts:
+                try:
+                    scene_idx = int(short_path.stem.split("_")[1])
+                    scene     = script.scenes[scene_idx]
+                    sid = upload_video(
+                        short_path,
+                        title=f"{scene.heading} | AI News",
+                        description=(
+                            f"{scene.short_narration or scene.heading}\n\n"
+                            f"Full video: {script.title}\n\n"
+                            "#Shorts #AI #AINews #ArtificialIntelligence"
+                        ),
+                        tags=script.tags + ["shorts", "ai news"],
+                        is_short=True,
+                    )
+                    scene_short_ids.append(sid)
+                except Exception as exc:
+                    logger.warning(f"Per-scene Short upload failed (non-fatal): {exc}")
+            summary["scene_short_ids"] = scene_short_ids
 
         # 9. TikTok Short (optional)
         if settings.tiktok_enabled and not skip_upload and short_video.exists():
