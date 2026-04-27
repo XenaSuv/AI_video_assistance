@@ -26,6 +26,22 @@ from src.script_generator import Scene, VideoScript
 
 _REUSE_COOLDOWN_WEEKS = 26   # ~6 months before a topic repeats
 
+_SHORTS_FILL_PROMPT = """\
+For each scene below, write a standalone YouTube Shorts script (~120 words).
+
+Rules:
+- First sentence must be a hook: "Here's a trick...", "Did you know...", "Stop doing X..."
+- Cover exactly ONE actionable tip from that scene
+- Must make sense without watching the rest of the video
+- Last sentence: "Watch the full tutorial for more tips like this."
+- No filler, no "In this video", direct and punchy
+
+Return JSON: {{"scenes": [{{"idx": <N>, "short_narration": "..."}}]}}
+
+Scenes to fill:
+{scenes_block}
+"""
+
 
 # ─────────────────── Tool definitions ───────────────────
 
@@ -99,10 +115,11 @@ Rules:
 - visual_prompt: vivid DALL-E 3 description of what should appear on screen
   (UI mockups, code on screen, person at laptop, abstract tech visuals, etc.)
   Do NOT include text overlays or watermarks in the visual description.
-- short_narration: for exactly 3-4 scenes that are SELF-CONTAINED (understandable
-  without watching the rest of the video), write a punchy ~120-word Shorts script.
-  Hook immediately ("Here's a trick...", "Did you know...", "Stop doing X...").
-  End with a CTA: "Watch the full tutorial for more". For the other scenes set null.
+- short_narration: YOU MUST fill this for EXACTLY 3-4 middle scenes (not scene 0 intro,
+  not the last scene). Each must be self-contained (~120 words), hook first
+  ("Here's a trick...", "Did you know...", "Stop doing X..."), end with
+  "Watch the full tutorial for more tips like this." Setting it null for every
+  scene is an error — the channel depends on these Shorts for growth.
 - Return ONLY valid JSON, no markdown fences.""",
     ),
 
@@ -164,10 +181,11 @@ Rules:
 - visual_prompt: vivid DALL-E 3 description of what should appear on screen
   (ChatGPT interface, code editor, person using laptop, abstract tech visuals, etc.)
   Do NOT include text overlays, logos, or watermarks in the visual description.
-- short_narration: for exactly 3-4 scenes that are SELF-CONTAINED (understandable
-  without watching the rest of the video), write a punchy ~120-word Shorts script.
-  Hook immediately ("Here's a trick...", "Did you know...", "Stop doing X...").
-  End with a CTA: "Watch the full tutorial for more". For the other scenes set null.
+- short_narration: YOU MUST fill this for EXACTLY 3-4 middle scenes (not scene 0 intro,
+  not the last scene). Each must be self-contained (~120 words), hook first
+  ("Here's a trick...", "Did you know...", "Stop doing X..."), end with
+  "Watch the full tutorial for more tips like this." Setting it null for every
+  scene is an error — the channel depends on these Shorts for growth.
 - Return ONLY valid JSON, no markdown fences.""",
     ),
 
@@ -229,10 +247,11 @@ Rules:
 - visual_prompt: vivid DALL-E 3 description of what should appear on screen
   (Google interface, code editor, person at desk, abstract colorful visuals, etc.)
   Do NOT include text overlays, logos, or watermarks in the visual description.
-- short_narration: for exactly 3-4 scenes that are SELF-CONTAINED (understandable
-  without watching the rest of the video), write a punchy ~120-word Shorts script.
-  Hook immediately ("Here's a trick...", "Did you know...", "Stop doing X...").
-  End with a CTA: "Watch the full tutorial for more". For the other scenes set null.
+- short_narration: YOU MUST fill this for EXACTLY 3-4 middle scenes (not scene 0 intro,
+  not the last scene). Each must be self-contained (~120 words), hook first
+  ("Here's a trick...", "Did you know...", "Stop doing X..."), end with
+  "Watch the full tutorial for more tips like this." Setting it null for every
+  scene is an error — the channel depends on these Shorts for growth.
 - Return ONLY valid JSON, no markdown fences.""",
     ),
 }
@@ -302,6 +321,16 @@ Set all unused source fields to null.
 Available screenshot keys for {tool_name}:
 {keys_block}
 
+SHORTS REQUIREMENT — MANDATORY:
+Exactly 3-4 scenes MUST have short_narration filled (non-null).
+Choose scenes 1-5 (not the opening intro or closing outro) that each cover
+ONE self-contained tip a viewer can use immediately without watching the full video.
+Each short_narration must:
+  - Open with a hook: "Here's a trick...", "Did you know...", "Stop doing X..."
+  - Cover the ONE key point of that scene in ~120 words
+  - End with: "Watch the full tutorial for more tips like this."
+Do NOT set short_narration to null for all scenes — that is an error.
+
 Return JSON with this exact structure:
 {{
   "title": "...",           // YouTube title, <= 70 chars, include the tool name
@@ -313,15 +342,24 @@ Return JSON with this exact structure:
                                            //   2 = bold statement of biggest benefit
   "scenes": [
     {{
-      "heading": "...",            // short chapter title
+      "heading": "...",
       "narration": "...",          // full spoken text, 280-340 words
-      "visual_prompt": "...",      // DALL-E 3 image prompt, 2-3 sentences (always required as fallback)
-      "screenshot_key": null,      // or one of the keys listed above
-      "short_narration": null,     // ~120-word standalone Shorts script, or null
-      "video_query": null,         // Pexels search term for action scenes, or null
-      "infographic_data": null     // animated chart for scenes with concrete data
+      "visual_prompt": "...",      // DALL-E 3 image prompt (always required)
+      "screenshot_key": null,      // or a key from the list above
+      "short_narration": null,     // NULL for intro/outro scenes only
+      "video_query": null,
+      "infographic_data": null
     }},
-    ... (7 scenes total)
+    {{
+      "heading": "...",
+      "narration": "...",
+      "visual_prompt": "...",
+      "screenshot_key": null,
+      "short_narration": "Here's a trick most people miss... [~120 words ending with CTA]",
+      "video_query": null,
+      "infographic_data": null
+    }},
+    ... (7 scenes total, short_narration filled for 3-4 of the middle scenes)
   ]
 }}
 """
@@ -332,6 +370,52 @@ def _format_keys_block(tool_key: str) -> str:
     if not keys:
         return "  (none — use DALL-E for every scene)"
     return "\n".join(f"  - {k}: {url_for(tool_key, k)}" for k in keys)
+
+
+def _fill_missing_short_narrations(
+    scenes: list[Scene],
+    client: OpenAI,
+    min_count: int = 3,
+) -> None:
+    """Ensure at least *min_count* scenes have short_narration; fill gaps via GPT."""
+    have = [s for s in scenes if s.short_narration]
+    if len(have) >= min_count:
+        return
+
+    needed = min_count - len(have)
+    # Prefer middle scenes (skip first intro + last outro)
+    candidates = [s for s in scenes[1:-1] if not s.short_narration]
+    if not candidates:
+        candidates = [s for s in scenes if not s.short_narration]
+    to_fill = candidates[:needed]
+    if not to_fill:
+        return
+
+    logger.info(f"GPT returned {len(have)} short_narrations; auto-filling {len(to_fill)} more")
+    scenes_block = "\n\n".join(
+        f"idx={s.idx}, heading={s.heading!r}:\n{s.narration[:500]}"
+        for s in to_fill
+    )
+    try:
+        resp = client.chat.completions.create(
+            model=settings.openai_model,
+            response_format={"type": "json_object"},
+            messages=[{
+                "role": "user",
+                "content": _SHORTS_FILL_PROMPT.format(scenes_block=scenes_block),
+            }],
+            temperature=0.7,
+        )
+        data = json.loads(resp.choices[0].message.content or "{}")
+        idx_to_scene = {s.idx: s for s in to_fill}
+        for item in data.get("scenes", []):
+            idx  = item.get("idx")
+            text = (item.get("short_narration") or "").strip()
+            if text and idx in idx_to_scene:
+                idx_to_scene[idx].short_narration = text
+                logger.info(f"  auto-filled short_narration for scene {idx}")
+    except Exception as exc:
+        logger.warning(f"short_narration auto-fill failed (non-fatal): {exc}")
 
 
 def generate_tutorial_script(
@@ -382,6 +466,9 @@ def generate_tutorial_script(
             infographic_data=infographic,
             video_query=video_q,
         ))
+
+    # Ensure 3-4 Shorts are present; auto-fill any missing ones
+    _fill_missing_short_narrations(scenes, client, min_count=3)
 
     # Dynamic hook selection
     hook_variants: list[str] = raw.get("hook_variants") or []
