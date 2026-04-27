@@ -24,8 +24,9 @@ class Scene:
     idx: int
     heading: str
     narration: str              # what the voice says
-    visual_prompt: str          # text-to-video prompt for RunwayML
+    visual_prompt: str          # DALL-E 3 prompt; used as fallback when no screenshot
     duration_sec: int = 0       # filled after TTS timing is known
+    screenshot_key: str | None = None   # weekly tutorials: real screenshot from curated library
 
 
 @dataclass

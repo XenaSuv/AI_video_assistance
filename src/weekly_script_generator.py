@@ -21,6 +21,7 @@ from openai import OpenAI
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.screenshot_capturer import available_keys, has_key, url_for
 from src.script_generator import Scene, VideoScript
 
 _REUSE_COOLDOWN_WEEKS = 26   # ~6 months before a topic repeats
@@ -273,6 +274,15 @@ Create a complete YouTube tutorial script for this topic:
 
 "{topic}"
 
+For each scene, you may optionally set "screenshot_key" to one of the
+keys below to use a REAL screenshot from the {tool_name} ecosystem
+instead of a DALL-E mockup. Pick the key whose page best matches what
+the narration is teaching at that moment. If no key fits, set it to null
+and a DALL-E image will be generated from "visual_prompt" instead.
+
+Available screenshot keys for {tool_name}:
+{keys_block}
+
 Return JSON with this exact structure:
 {{
   "title": "...",           // YouTube title, <= 70 chars, include the tool name
@@ -281,14 +291,22 @@ Return JSON with this exact structure:
   "hook": "...",           // 1-2 punchy sentences read in the first 5 seconds
   "scenes": [
     {{
-      "heading": "...",        // short chapter title
-      "narration": "...",      // full spoken text, 280-340 words
-      "visual_prompt": "..."   // DALL-E 3 image prompt, 2-3 sentences
+      "heading": "...",            // short chapter title
+      "narration": "...",          // full spoken text, 280-340 words
+      "visual_prompt": "...",      // DALL-E 3 image prompt, 2-3 sentences (always required as fallback)
+      "screenshot_key": null        // or one of the keys listed above
     }},
     ... (7 scenes total)
   ]
 }}
 """
+
+
+def _format_keys_block(tool_key: str) -> str:
+    keys = available_keys(tool_key)
+    if not keys:
+        return "  (none — use DALL-E for every scene)"
+    return "\n".join(f"  - {k}: {url_for(tool_key, k)}" for k in keys)
 
 
 def generate_tutorial_script(topic: str, tool_key: str) -> VideoScript:
@@ -297,26 +315,36 @@ def generate_tutorial_script(topic: str, tool_key: str) -> VideoScript:
     client = OpenAI(api_key=settings.openai_api_key)
     logger.info(f"Generating {tool.name} tutorial script for: {topic}")
 
+    user_prompt = _USER_TEMPLATE.format(
+        topic       = topic,
+        tool_name   = tool.name,
+        keys_block  = _format_keys_block(tool_key),
+    )
+
     resp = client.chat.completions.create(
         model=settings.openai_model,
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": tool.system_prompt},
-            {"role": "user",   "content": _USER_TEMPLATE.format(topic=topic)},
+            {"role": "user",   "content": user_prompt},
         ],
         temperature=0.8,
     )
 
     raw    = json.loads(resp.choices[0].message.content)
-    scenes = [
-        Scene(
+    scenes = []
+    for i, s in enumerate(raw["scenes"]):
+        key = s.get("screenshot_key") or None
+        if key and not has_key(tool_key, key):
+            logger.warning(f"Scene {i}: GPT picked unknown screenshot_key '{key}' — falling back to DALL-E")
+            key = None
+        scenes.append(Scene(
             idx=i,
             heading=s["heading"],
             narration=s["narration"],
             visual_prompt=s["visual_prompt"],
-        )
-        for i, s in enumerate(raw["scenes"])
-    ]
+            screenshot_key=key,
+        ))
     script = VideoScript(
         title=raw["title"],
         description=raw["description"],

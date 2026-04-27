@@ -112,11 +112,32 @@ def _black_placeholder(path: Path, duration: int) -> Path:
 
 # --------------------- Public API ---------------------
 
-def generate_scene_clip(scene: Scene, clip_dir: Path) -> Path:
+def _try_real_screenshot(scene: Scene, tool: str | None, img_path: Path) -> bool:
+    """If *scene* has a valid screenshot_key for *tool*, capture it to *img_path*.
+
+    Returns True on success. Any failure (Playwright missing, network error,
+    timeout) is logged and False is returned so the caller falls back to DALL-E.
+    """
+    if not tool or not scene.screenshot_key:
+        return False
+    try:
+        from src.screenshot_capturer import capture, has_key
+        if not has_key(tool, scene.screenshot_key):
+            return False
+        capture(tool, scene.screenshot_key, img_path)
+        return img_path.exists()
+    except Exception as e:
+        logger.warning(f"Scene {scene.idx} screenshot failed ({tool}/{scene.screenshot_key}): {e} — falling back to DALL-E")
+        return False
+
+
+def generate_scene_clip(scene: Scene, clip_dir: Path, *, tool: str | None = None) -> Path:
     """
     Produce a single .mp4 clip for *scene* at exactly scene.duration_sec length.
-    Generates one DALL-E 3 image and applies a Ken Burns pan.
-    Falls back to a dark placeholder if DALL-E fails.
+    For weekly tutorials, if scene.screenshot_key is set and *tool* is provided,
+    a real screenshot of that page is captured; otherwise DALL-E generates the
+    image. Either way the result is animated with a Ken Burns pan.
+    Falls back to a dark placeholder if everything fails.
     """
     img_dir = clip_dir.parent / "images"
     img_dir.mkdir(parents=True, exist_ok=True)
@@ -129,7 +150,12 @@ def generate_scene_clip(scene: Scene, clip_dir: Path) -> Path:
         return clip_path
 
     try:
-        generate_dalle_image(scene.visual_prompt, img_path)
+        if not img_path.exists():
+            if not _try_real_screenshot(scene, tool, img_path):
+                generate_dalle_image(scene.visual_prompt, img_path)
+        else:
+            logger.info(f"Reusing cached image: {img_path.name}")
+
         video = _ken_burns_clip(img_path, float(scene.duration_sec))
         video.write_videofile(
             str(clip_path),
