@@ -53,7 +53,7 @@ def _call_dalle(client: OpenAI, prompt: str) -> bytes:
         model="dall-e-3",
         prompt=prompt,
         size="1792x1024",   # landscape; gives 512px horizontal + 304px vertical pan room
-        quality="standard",
+        quality="hd",
         n=1,
     )
     url = response.data[0].url
