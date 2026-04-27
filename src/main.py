@@ -234,6 +234,12 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         else:
             logger.info(f"Reusing cached {long_video.name}")
 
+        # 4b. Append B-roll credits to description (Pexels attribution)
+        from src.broll_fetcher import get_pexels_credits
+        credits = get_pexels_credits(run_dir)
+        if credits:
+            script.description += "\n\nVideo clips provided by Pexels:\n" + "\n".join(credits)
+
         # 5. Shorts
         short_video = run_dir / "shorts.mp4"
         if not short_video.exists():

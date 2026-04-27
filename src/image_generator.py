@@ -131,15 +131,25 @@ def _try_real_screenshot(scene: Scene, tool: str | None, img_path: Path) -> bool
         return False
 
 
-def generate_scene_clip(scene: Scene, clip_dir: Path, *, tool: str | None = None) -> Path:
+def generate_scene_clip(
+    scene: Scene,
+    clip_dir: Path,
+    *,
+    tool: str | None = None,
+    run_dir: Path | None = None,
+) -> Path:
     """
     Produce a single .mp4 clip for *scene* at exactly scene.duration_sec length.
 
     Priority order:
       1. infographic_data — animated chart/stat rendered entirely in Python
-      2. screenshot_key   — real UI screenshot (weekly tutorials only)
-      3. DALL-E 3         — AI-generated image with Ken Burns effect
-      4. placeholder      — solid dark frame if all else fails
+      2. video_query      — stock B-roll from Pexels / Pixabay (real motion)
+      3. screenshot_key   — real UI screenshot with Ken Burns (weekly tutorials)
+      4. visual_prompt    — DALL-E 3 image with Ken Burns effect
+      5. placeholder      — solid dark frame if all else fails
+
+    *run_dir* is passed to the B-roll fetcher so Pexels credits are saved
+    alongside the video output.
     """
     img_dir = clip_dir.parent / "images"
     img_dir.mkdir(parents=True, exist_ok=True)
@@ -161,7 +171,15 @@ def generate_scene_clip(scene: Scene, clip_dir: Path, *, tool: str | None = None
                 duration_sec=float(max(scene.duration_sec, 4)),
             )
 
-        # 2 & 3. Image → Ken Burns
+        # 2. Stock video B-roll
+        if scene.video_query:
+            from src.broll_fetcher import fetch_broll_clip
+            result = fetch_broll_clip(scene, clip_path, run_dir=run_dir)
+            if result:
+                return result
+            logger.info(f"Scene {scene.idx}: B-roll unavailable — falling back to DALL-E")
+
+        # 3 & 4. Screenshot / DALL-E → Ken Burns
         if not img_path.exists():
             if not _try_real_screenshot(scene, tool, img_path):
                 generate_dalle_image(scene.visual_prompt, img_path)

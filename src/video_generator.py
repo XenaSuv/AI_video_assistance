@@ -31,13 +31,19 @@ VIDEO_W, VIDEO_H = 1280, 720   # canonical output resolution
 
 # --------------------- Per-scene clip generation ---------------------
 
-def generate_clips_for_scene(scene: Scene, out_dir: Path, *, tool: str | None = None) -> list[Path]:
-    """Return a list containing the single Ken Burns clip for this scene.
+def generate_clips_for_scene(
+    scene: Scene,
+    out_dir: Path,
+    *,
+    tool: str | None = None,
+    run_dir: Path | None = None,
+) -> list[Path]:
+    """Return a list containing the single clip for this scene.
 
-    *tool* enables real-screenshot capture for weekly tutorials when the scene
-    has a screenshot_key. Daily news passes tool=None and always uses DALL-E.
+    *tool*    — enables real-screenshot capture for weekly tutorials.
+    *run_dir* — passed to broll_fetcher so Pexels credits are recorded.
     """
-    return [generate_scene_clip(scene, out_dir, tool=tool)]
+    return [generate_scene_clip(scene, out_dir, tool=tool, run_dir=run_dir)]
 
 
 # --------------------- Assembly ---------------------
@@ -230,16 +236,16 @@ def build_video(
 ) -> Path:
     """End-to-end video creation.
 
-    *tool*        – pass claude/chatgpt/gemini for weekly tutorials (enables
-                    real-screenshot capture); None always uses DALL-E.
-    *intro_path*  – prepended as-is (with audio) when the file exists.
-    *outro_path*  – appended as-is (with audio) when the file exists.
+    *tool*      – pass claude/chatgpt/gemini for weekly tutorials (enables
+                  real-screenshot capture); None → DALL-E / B-roll / infographic.
+    *intro_path / outro_path* – prepended / appended when the file exists.
     """
     clip_dir = out_dir / "clips"
     clip_dir.mkdir(parents=True, exist_ok=True)
 
     clip_paths_by_scene = {
-        s.idx: generate_clips_for_scene(s, clip_dir, tool=tool) for s in script.scenes
+        s.idx: generate_clips_for_scene(s, clip_dir, tool=tool, run_dir=out_dir)
+        for s in script.scenes
     }
     audio_paths_by_scene = {
         s.idx: out_dir / "audio" / f"scene_{s.idx:02d}.mp3" for s in script.scenes
