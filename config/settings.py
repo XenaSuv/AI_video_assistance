@@ -52,6 +52,10 @@ class Settings:
     ru_youtube_client_secrets:   Path = ROOT / _env("RU_YOUTUBE_CLIENT_SECRETS", "config/client_secrets_ru.json")
     ru_youtube_token_file:       Path = ROOT / _env("RU_YOUTUBE_TOKEN_FILE",     "config/token_ru.pickle")
 
+    # Stock B-roll (Pexels primary, Pixabay fallback)
+    pexels_api_key:  str = _env("PEXELS_API_KEY",  "")
+    pixabay_api_key: str = _env("PIXABAY_API_KEY", "")
+
     # TikTok
     tiktok_enabled:       bool = _env("TIKTOK_ENABLED", "false").lower() in ("1", "true", "yes")
     tiktok_client_key:    str  = _env("TIKTOK_CLIENT_KEY",    "")

@@ -286,16 +286,18 @@ Create a complete YouTube tutorial script for this topic:
 
 "{topic}"
 
-VISUAL SOURCES (priority order per scene):
-1. screenshot_key — pick from the list below to use a real {tool_name} UI screenshot
-2. infographic_data — animated chart when the scene shows pricing, benchmarks,
-   comparisons, or step counts. Supported types (choose one):
-     bar_chart: {{"type":"bar_chart","title":"...","unit":"...","items":[{{"label":"...","value":0}}, ...]}}
+VISUAL SOURCES (priority order per scene — pick at most one non-null):
+1. screenshot_key   — real {tool_name} UI screenshot (list below)
+2. infographic_data — animated chart for pricing, benchmarks, step counts:
+     bar_chart: {{"type":"bar_chart","title":"...","unit":"...","items":[{{"label":"...","value":0}}]}}
      stat_card: {{"type":"stat_card","value":"70B","label":"Parameters","context":"10× GPT-3"}}
      comparison: {{"type":"comparison","title":"...","unit":"%","left":{{"label":"A","value":0}},"right":{{"label":"B","value":0}}}}
      timeline: {{"type":"timeline","title":"...","events":[{{"date":"Jan 2024","label":"..."}}]}}
-3. visual_prompt — DALL-E fallback (always required)
-Set unused fields to null.
+3. video_query      — 2-5 word Pexels stock-video search for 1-2 tutorial scenes
+     with physical action (typing, presenting, whiteboard). Generic only — no brands.
+     Examples: "developer coding laptop", "person presenting whiteboard", "team discussing screen"
+4. visual_prompt    — DALL-E fallback (always required regardless of other fields)
+Set all unused source fields to null.
 
 Available screenshot keys for {tool_name}:
 {keys_block}
@@ -316,6 +318,7 @@ Return JSON with this exact structure:
       "visual_prompt": "...",      // DALL-E 3 image prompt, 2-3 sentences (always required as fallback)
       "screenshot_key": null,      // or one of the keys listed above
       "short_narration": null,     // ~120-word standalone Shorts script, or null
+      "video_query": null,         // Pexels search term for action scenes, or null
       "infographic_data": null     // animated chart for scenes with concrete data
     }},
     ... (7 scenes total)
@@ -364,10 +367,11 @@ def generate_tutorial_script(
         if key and not has_key(tool_key, key):
             logger.warning(f"Scene {i}: GPT picked unknown screenshot_key '{key}' — falling back to DALL-E")
             key = None
-        short_nar    = s.get("short_narration") or None
-        infographic  = s.get("infographic_data") or None
+        short_nar   = s.get("short_narration") or None
+        infographic = s.get("infographic_data") or None
         if infographic and not isinstance(infographic, dict):
             infographic = None
+        video_q = (s.get("video_query") or "").strip() or None
         scenes.append(Scene(
             idx=i,
             heading=s["heading"],
@@ -376,6 +380,7 @@ def generate_tutorial_script(
             screenshot_key=key,
             short_narration=short_nar,
             infographic_data=infographic,
+            video_query=video_q,
         ))
 
     # Dynamic hook selection
@@ -392,6 +397,7 @@ def generate_tutorial_script(
 
     shorts_count      = sum(1 for sc in scenes if sc.short_narration)
     infographic_count = sum(1 for sc in scenes if sc.infographic_data)
+    broll_count       = sum(1 for sc in scenes if sc.video_query)
     script = VideoScript(
         title=raw["title"],
         description=raw["description"],
@@ -402,7 +408,8 @@ def generate_tutorial_script(
     )
     logger.info(
         f"{tool.name} tutorial: '{script.title}' | {len(scenes)} scenes | "
-        f"{shorts_count} shorts | {infographic_count} infographics | "
+        f"{shorts_count} shorts | {broll_count} B-roll | "
+        f"{infographic_count} infographics | "
         f"hook variant {hook_variants.index(chosen_hook) + 1}/{len(hook_variants)}"
     )
     return script

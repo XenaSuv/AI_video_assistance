@@ -26,9 +26,10 @@ class Scene:
     narration: str              # what the voice says
     visual_prompt: str          # DALL-E 3 prompt; used as fallback when no screenshot
     duration_sec: int = 0       # filled after TTS timing is known
-    screenshot_key: str | None = None   # weekly tutorials: real screenshot from curated library
-    short_narration: str | None = None  # ~120 words written for a standalone Shorts cut
-    infographic_data: dict | None = None  # animated chart/stat; skips DALL-E when set
+    screenshot_key: str | None = None    # weekly tutorials: real screenshot from curated library
+    short_narration: str | None = None   # ~120 words written for a standalone Shorts cut
+    infographic_data: dict | None = None # animated chart/stat; skips DALL-E when set
+    video_query: str | None = None       # stock B-roll search term; beats DALL-E, loses to infographic
 
 
 @dataclass
@@ -101,6 +102,13 @@ For each scene provide:
 - heading: short chyron-style title (max 8 words)
 - narration: the actual spoken text (natural, conversational, contractions OK)
 - visual_prompt: a DALL-E 3 image prompt (always required as fallback)
+- video_query: a 2-5 word stock-video search term for scenes with real-world
+  action (people working, server rooms, office, phone, typing, presenting).
+  Set for 2-3 scenes out of {num_scenes} — the ones with most physical activity.
+  Use null for data scenes (use infographic instead) and abstract concepts.
+  Keep generic — avoid brand names, logos, or overly specific interfaces.
+  Examples: "developer coding laptop", "data center servers", "team meeting office",
+  "person presenting screen", "smartphone app scrolling", "AI robot arm factory"
 - infographic_data: animated chart data when the scene has concrete numbers
   or comparisons — otherwise null. See the infographic guide below.
 {infographic_guide}
@@ -131,6 +139,7 @@ Return this JSON schema exactly:
       "heading": "...",
       "narration": "...",
       "visual_prompt": "...",
+      "video_query": null,
       "infographic_data": null
     }},
     ...
@@ -193,14 +202,17 @@ def generate_script(
         infographic = s.get("infographic_data") or None
         if infographic and not isinstance(infographic, dict):
             infographic = None
+        video_q = (s.get("video_query") or "").strip() or None
         scenes.append(Scene(
             idx=i,
             heading=s["heading"],
             narration=s["narration"],
             visual_prompt=s["visual_prompt"],
             infographic_data=infographic,
+            video_query=video_q,
         ))
     infographic_count = sum(1 for sc in scenes if sc.infographic_data)
+    broll_count       = sum(1 for sc in scenes if sc.video_query)
 
     # Dynamic hook selection
     hook_variants: list[str] = data.get("hook_variants") or []
@@ -229,7 +241,7 @@ def generate_script(
     logger.info(
         f"Generated script: {word_count} words across {len(scenes)} scenes | "
         f"hook variant {hook_variants.index(chosen_hook) + 1}/{len(hook_variants)} | "
-        f"{infographic_count} infographic scene(s)"
+        f"{broll_count} B-roll | {infographic_count} infographic"
     )
     return script
 
