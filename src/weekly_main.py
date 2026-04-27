@@ -30,6 +30,11 @@ from src.hook_selector import record_usage
 from src.main import _load_cached_script, _run_language_variant
 from src.script_generator import VideoScript
 from src.shorts_generator import build_short
+from src.thumbnail_ab import (
+    generate_thumbnail_variants,
+    pick_thumbnail,
+    record_thumbnail_usage,
+)
 from src.thumbnail_generator import generate_thumbnail
 from src.video_generator import build_video
 from src.voice_generator import synthesize_script
@@ -130,8 +135,10 @@ def run_weekly_pipeline(
         else:
             logger.info(f"Reusing cached {digest_short.name}")
 
-        # 7. Thumbnail
-        thumbnail = generate_thumbnail(long_video, script.title, run_dir)
+        # 7. Thumbnail A/B
+        thumb_variants = generate_thumbnail_variants(long_video, script.title, run_dir)
+        thumbnail      = pick_thumbnail(thumb_variants, settings.data_dir, tool_key)
+        summary["thumbnail_style"] = thumbnail.stem.removeprefix("thumbnail_")
 
         # 8. Upload (English)
         if skip_upload:
@@ -143,6 +150,7 @@ def run_weekly_pipeline(
             summary["status"] = "published"
             if video_id := ids.get("video_id"):
                 record_usage(script.hook, video_id, settings.data_dir, tool_key)
+                record_thumbnail_usage(thumbnail, video_id, settings.data_dir, tool_key)
 
             # Upload each tutorial Short separately
             short_ids: list[str] = []

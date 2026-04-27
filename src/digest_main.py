@@ -30,6 +30,11 @@ from src.hook_selector import record_usage
 from src.main import _load_audio_durations, _load_cached_script, _run_language_variant
 from src.script_generator import Scene, VideoScript
 from src.shorts_generator import build_short
+from src.thumbnail_ab import (
+    generate_thumbnail_variants,
+    pick_thumbnail,
+    record_thumbnail_usage,
+)
 from src.thumbnail_generator import generate_thumbnail
 from src.video_generator import build_video
 from src.voice_generator import synthesize_script
@@ -111,8 +116,10 @@ def run_digest_pipeline(
         else:
             logger.info(f"Reusing cached {short_video.name}")
 
-        # 6. Thumbnail
-        thumbnail = generate_thumbnail(long_video, script.title, run_dir)
+        # 6. Thumbnail A/B
+        thumb_variants = generate_thumbnail_variants(long_video, script.title, run_dir)
+        thumbnail      = pick_thumbnail(thumb_variants, settings.data_dir, "digest")
+        summary["thumbnail_style"] = thumbnail.stem.removeprefix("thumbnail_")
 
         # 7. Upload (English)
         if skip_upload:
@@ -124,6 +131,7 @@ def run_digest_pipeline(
             summary["status"] = "published"
             if video_id := ids.get("video_id"):
                 record_usage(script.hook, video_id, settings.data_dir, "digest")
+                record_thumbnail_usage(thumbnail, video_id, settings.data_dir, "digest")
 
         # 8. Russian variant (optional)
         if settings.ru_enabled:
