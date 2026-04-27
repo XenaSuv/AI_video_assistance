@@ -20,6 +20,7 @@ from moviepy.editor import (
     ColorClip,
 )
 from moviepy.video.fx.all import fadein, fadeout, loop, resize
+from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.script_generator import Scene, VideoScript
