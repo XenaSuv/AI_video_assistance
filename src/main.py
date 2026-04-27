@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.deduplicator import SeenStories
 from src.digest_script_generator import save_for_digest
+from src.hook_selector import record_usage
 from src.scraper import scrape_all, NewsItem
 from src.script_generator import Scene, VideoScript, generate_script
 from src.shorts_generator import build_short
@@ -47,6 +48,7 @@ def _load_cached_script(path: Path) -> VideoScript | None:
         description=data["description"],
         tags=data["tags"],
         hook=data["hook"],
+        hook_variants=data.get("hook_variants", []),
         scenes=[Scene(idx=i, **{k: v for k, v in s.items() if k != "idx"})
                 for i, s in enumerate(data["scenes"])],
     )
@@ -197,7 +199,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         script_cache = run_dir / "script.json"
         script = _load_cached_script(script_cache)
         if script is None:
-            script = generate_script(news, num_scenes=8)
+            script = generate_script(news, num_scenes=8, data_dir=settings.data_dir)
             script.save(script_cache)
         # Persist a digest copy so the Sunday workflow can find it across CI runs
         save_for_digest(settings.data_dir, dt.date.today(), script_cache)
@@ -245,6 +247,8 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
             ids = publish_episode(script, long_video, short_video, thumbnail=thumbnail)
             summary.update(ids)
             summary["status"] = "published"
+            if video_id := ids.get("video_id"):
+                record_usage(script.hook, video_id, settings.data_dir, "daily")
 
         # 8. TikTok Short (optional)
         if settings.tiktok_enabled and not skip_upload and short_video.exists():

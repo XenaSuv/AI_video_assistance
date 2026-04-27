@@ -55,7 +55,10 @@ Return JSON with this exact structure:
   "title":       "...",   // e.g. "This Week in AI: [2-3 word theme] | Week of {week_of}"
   "description": "...",   // 2-4 sentence summary + (TIMESTAMPS_AUTOFILL)
   "tags":        ["..."], // 10-15 tags
-  "hook":        "...",   // 1-2 punchy sentences for the first 5 seconds
+  "hook_variants": ["...", "...", "..."],  // 3 distinct 5-10s hooks:
+                                           //   0 = most surprising stat/fact
+                                           //   1 = provocative question
+                                           //   2 = boldest implication
   "scenes": [
     {{
       "heading":      "...",  // short chapter title (max 8 words)
@@ -141,6 +144,7 @@ def collect_week_scripts(
 def generate_digest_script(
     week_blocks: list[str],
     week_of: str,
+    data_dir: Path | None = None,
 ) -> VideoScript:
     """Call GPT to produce a weekly digest VideoScript."""
     if not week_blocks:
@@ -177,14 +181,29 @@ def generate_digest_script(
         for i, s in enumerate(raw["scenes"])
     ]
 
+    hook_variants: list[str] = raw.get("hook_variants") or []
+    if not hook_variants:
+        hook_variants = [raw.get("hook", "")]
+    hook_variants = [h for h in hook_variants if h]
+
+    if data_dir and len(hook_variants) > 1:
+        from src.hook_selector import pick_hook
+        chosen_hook = pick_hook(hook_variants, data_dir, context_key="digest")
+    else:
+        chosen_hook = hook_variants[0] if hook_variants else ""
+
     script = VideoScript(
         title=raw["title"],
         description=raw["description"],
         tags=raw["tags"],
-        hook=raw["hook"],
+        hook=chosen_hook,
+        hook_variants=hook_variants,
         scenes=scenes,
     )
 
     word_count = sum(len(s.narration.split()) for s in scenes)
-    logger.info(f"Digest script: '{script.title}' | {len(scenes)} scenes | {word_count} words")
+    logger.info(
+        f"Digest script: '{script.title}' | {len(scenes)} scenes | {word_count} words | "
+        f"hook variant {hook_variants.index(chosen_hook) + 1}/{len(hook_variants)}"
+    )
     return script

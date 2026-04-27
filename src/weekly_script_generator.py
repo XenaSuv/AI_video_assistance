@@ -300,7 +300,10 @@ Return JSON with this exact structure:
   "title": "...",           // YouTube title, <= 70 chars, include the tool name
   "description": "...",    // YouTube description, 3-5 sentences + (TIMESTAMPS_AUTOFILL)
   "tags": ["...", ...],    // 10-15 tags
-  "hook": "...",           // 1-2 punchy sentences read in the first 5 seconds
+  "hook_variants": ["...", "...", "..."],  // 3 distinct 1-2 sentence hooks:
+                                           //   0 = most surprising fact or number
+                                           //   1 = provocative question
+                                           //   2 = bold statement of biggest benefit
   "scenes": [
     {{
       "heading": "...",            // short chapter title
@@ -322,7 +325,11 @@ def _format_keys_block(tool_key: str) -> str:
     return "\n".join(f"  - {k}: {url_for(tool_key, k)}" for k in keys)
 
 
-def generate_tutorial_script(topic: str, tool_key: str) -> VideoScript:
+def generate_tutorial_script(
+    topic: str,
+    tool_key: str,
+    data_dir: Path | None = None,
+) -> VideoScript:
     """Call GPT to write a full tutorial script for *topic* about *tool_key*."""
     tool   = get_tool(tool_key)
     client = OpenAI(api_key=settings.openai_api_key)
@@ -360,13 +367,30 @@ def generate_tutorial_script(topic: str, tool_key: str) -> VideoScript:
             screenshot_key=key,
             short_narration=short_nar,
         ))
+
+    # Dynamic hook selection
+    hook_variants: list[str] = raw.get("hook_variants") or []
+    if not hook_variants:
+        hook_variants = [raw.get("hook", "")]
+    hook_variants = [h for h in hook_variants if h]
+
+    if data_dir and len(hook_variants) > 1:
+        from src.hook_selector import pick_hook
+        chosen_hook = pick_hook(hook_variants, data_dir, context_key=tool_key)
+    else:
+        chosen_hook = hook_variants[0] if hook_variants else ""
+
     shorts_count = sum(1 for sc in scenes if sc.short_narration)
     script = VideoScript(
         title=raw["title"],
         description=raw["description"],
         tags=raw["tags"],
-        hook=raw["hook"],
+        hook=chosen_hook,
+        hook_variants=hook_variants,
         scenes=scenes,
     )
-    logger.info(f"{tool.name} tutorial: '{script.title}' | {len(scenes)} scenes | {shorts_count} shorts")
+    logger.info(
+        f"{tool.name} tutorial: '{script.title}' | {len(scenes)} scenes | "
+        f"{shorts_count} shorts | hook variant {hook_variants.index(chosen_hook) + 1}/{len(hook_variants)}"
+    )
     return script

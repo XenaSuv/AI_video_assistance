@@ -26,11 +26,12 @@ from moviepy.editor import AudioFileClip
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
-from src.main import _run_language_variant
-from src.script_generator import Scene, VideoScript
+from src.hook_selector import record_usage
+from src.main import _load_cached_script, _run_language_variant
+from src.script_generator import VideoScript
 from src.shorts_generator import build_short
 from src.thumbnail_generator import generate_thumbnail
-from src.video_generator import assemble_video, build_video
+from src.video_generator import build_video
 from src.voice_generator import synthesize_script
 from src.weekly_script_generator import (
     generate_tutorial_script,
@@ -49,20 +50,6 @@ def _setup_logging(run_dir: Path) -> None:
     logger.add(sys.stderr, level="INFO",
                format="<green>{time:HH:mm:ss}</green> | <level>{level:<7}</level> | {message}")
     logger.add(run_dir / "run.log", level="DEBUG", rotation="10 MB")
-
-
-def _load_cached_script(path: Path) -> VideoScript | None:
-    if not path.exists():
-        return None
-    data = json.loads(path.read_text())
-    return VideoScript(
-        title=data["title"],
-        description=data["description"],
-        tags=data["tags"],
-        hook=data["hook"],
-        scenes=[Scene(idx=i, **{k: v for k, v in s.items() if k != "idx"})
-                for i, s in enumerate(data["scenes"])],
-    )
 
 
 def _load_audio_durations(script: VideoScript, audio_dir: Path) -> None:
@@ -108,7 +95,7 @@ def run_weekly_pipeline(
         script_cache = run_dir / "script.json"
         script = _load_cached_script(script_cache)
         if script is None:
-            script = generate_tutorial_script(topic, tool_key)
+            script = generate_tutorial_script(topic, tool_key, data_dir=settings.data_dir)
             script.save(script_cache)
         summary["title"]      = script.title
         summary["num_scenes"] = len(script.scenes)
@@ -154,6 +141,8 @@ def run_weekly_pipeline(
             ids = publish_episode(script, long_video, digest_short, thumbnail=thumbnail)
             summary.update(ids)
             summary["status"] = "published"
+            if video_id := ids.get("video_id"):
+                record_usage(script.hook, video_id, settings.data_dir, tool_key)
 
             # Upload each tutorial Short separately
             short_ids: list[str] = []

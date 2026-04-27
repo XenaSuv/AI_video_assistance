@@ -35,7 +35,8 @@ class VideoScript:
     title: str
     description: str
     tags: list[str]
-    hook: str                   # 5-10s opening line used for the Shorts cut
+    hook: str                        # selected hook (best variant chosen at runtime)
+    hook_variants: list[str] = field(default_factory=list)  # all GPT-generated options
     scenes: list[Scene] = field(default_factory=list)
     raw_json: dict[str, Any] = field(default_factory=dict)
 
@@ -51,6 +52,7 @@ class VideoScript:
                     "description": self.description,
                     "tags": self.tags,
                     "hook": self.hook,
+                    "hook_variants": self.hook_variants,
                     "scenes": [s.__dict__ for s in self.scenes],
                 },
                 indent=2,
@@ -78,7 +80,6 @@ For each scene provide:
   cinematography, subject, setting, lighting, camera motion. Avoid real
   company logos or named public figures (generates safer / works better).
 
-Open with a 5-10s hook that teases the 2-3 biggest stories.
 Close with a sign-off that invites likes/subscribes without being cringey.
 
 Also produce:
@@ -86,6 +87,11 @@ Also produce:
 - description: 200-400 words, summary + chapter timestamps placeholder
   '(TIMESTAMPS_AUTOFILL)', plus 'Sources:' section with URLs
 - tags: 15-25 lowercase YouTube tags, comma-separated concepts
+- hook_variants: exactly 3 distinct 1-2 sentence hooks (each 5-10s when spoken).
+  Each must tease the 2-3 biggest stories differently:
+  variant 0 — lead with the most surprising fact or number
+  variant 1 — open with a provocative question
+  variant 2 — bold statement of the biggest implication
 
 News items (ranked by relevance):
 {items_block}
@@ -95,7 +101,7 @@ Return this JSON schema exactly:
   "title": "...",
   "description": "...",
   "tags": ["..."],
-  "hook": "...",
+  "hook_variants": ["...", "...", "..."],
   "scenes": [
     {{"heading": "...", "narration": "...", "visual_prompt": "..."}},
     ...
@@ -116,8 +122,16 @@ def _build_items_block(items: list[NewsItem]) -> str:
     return "\n".join(lines)
 
 
-def generate_script(items: list[NewsItem], num_scenes: int = 8) -> VideoScript:
-    """Call GPT to produce a structured VideoScript."""
+def generate_script(
+    items: list[NewsItem],
+    num_scenes: int = 8,
+    data_dir: Path | None = None,
+) -> VideoScript:
+    """Call GPT to produce a structured VideoScript.
+
+    *data_dir* is passed to hook_selector so the best hook variant is chosen
+    automatically. When omitted the first variant is used (useful in tests).
+    """
     if not items:
         raise ValueError("No news items provided")
 
@@ -154,17 +168,34 @@ def generate_script(items: list[NewsItem], num_scenes: int = 8) -> VideoScript:
         for i, s in enumerate(data.get("scenes", []))
     ]
 
+    # Dynamic hook selection
+    hook_variants: list[str] = data.get("hook_variants") or []
+    if not hook_variants:
+        # Fallback: GPT returned old-style single hook
+        hook_variants = [data.get("hook", "")]
+    hook_variants = [h for h in hook_variants if h]
+
+    if data_dir and len(hook_variants) > 1:
+        from src.hook_selector import pick_hook
+        chosen_hook = pick_hook(hook_variants, data_dir, context_key="daily")
+    else:
+        chosen_hook = hook_variants[0] if hook_variants else ""
+
     script = VideoScript(
         title=data["title"],
         description=data["description"],
         tags=data.get("tags", []),
-        hook=data["hook"],
+        hook=chosen_hook,
+        hook_variants=hook_variants,
         scenes=scenes,
         raw_json=data,
     )
 
     word_count = sum(len(s.narration.split()) for s in scenes)
-    logger.info(f"Generated script: {word_count} words across {len(scenes)} scenes")
+    logger.info(
+        f"Generated script: {word_count} words across {len(scenes)} scenes | "
+        f"hook variant {hook_variants.index(chosen_hook) + 1}/{len(hook_variants)}"
+    )
     return script
 
 
