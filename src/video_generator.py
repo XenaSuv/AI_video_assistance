@@ -19,14 +19,14 @@ from moviepy.editor import (
     concatenate_videoclips,
     ColorClip,
 )
-from moviepy.video.fx.all import fadein, fadeout, loop
-from PIL import Image, ImageDraw, ImageFont
+from moviepy.video.fx.all import fadein, fadeout, loop, resize
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.script_generator import Scene, VideoScript
 from src.image_generator import generate_scene_clip
 
 _FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+VIDEO_W, VIDEO_H = 1280, 720   # canonical output resolution
 
 
 # --------------------- Per-scene clip generation ---------------------
@@ -180,17 +180,28 @@ def assemble_video(
 
     if has_intro or has_outro:
         # Branded clips handle their own fades; skip global fade on content.
+        # Resize to the canonical resolution so concatenation never letterboxes.
         parts = []
         if has_intro:
             intro_clip = VideoFileClip(str(intro_path))
+            if (intro_clip.w, intro_clip.h) != (VIDEO_W, VIDEO_H):
+                logger.info(
+                    f"Intro: resizing {intro_clip.w}×{intro_clip.h} → {VIDEO_W}×{VIDEO_H}"
+                )
+                intro_clip = resize(intro_clip, (VIDEO_W, VIDEO_H))
             parts.append(intro_clip)
             logger.info(f"Intro: {intro_path.name} ({intro_clip.duration:.1f}s)")
         parts.append(content)
         if has_outro:
             outro_clip = VideoFileClip(str(outro_path))
+            if (outro_clip.w, outro_clip.h) != (VIDEO_W, VIDEO_H):
+                logger.info(
+                    f"Outro: resizing {outro_clip.w}×{outro_clip.h} → {VIDEO_W}×{VIDEO_H}"
+                )
+                outro_clip = resize(outro_clip, (VIDEO_W, VIDEO_H))
             parts.append(outro_clip)
             logger.info(f"Outro: {outro_path.name} ({outro_clip.duration:.1f}s)")
-        final = concatenate_videoclips(parts, method="compose")
+        final = concatenate_videoclips(parts, method="chain")
     else:
         final = fadein(fadeout(content, 1.0), 1.0)
 
