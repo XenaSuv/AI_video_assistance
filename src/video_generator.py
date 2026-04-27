@@ -31,9 +31,13 @@ _FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 # --------------------- Per-scene clip generation ---------------------
 
-def generate_clips_for_scene(scene: Scene, out_dir: Path) -> list[Path]:
-    """Return a list containing the single Ken Burns clip for this scene."""
-    return [generate_scene_clip(scene, out_dir)]
+def generate_clips_for_scene(scene: Scene, out_dir: Path, *, tool: str | None = None) -> list[Path]:
+    """Return a list containing the single Ken Burns clip for this scene.
+
+    *tool* enables real-screenshot capture for weekly tutorials when the scene
+    has a screenshot_key. Daily news passes tool=None and always uses DALL-E.
+    """
+    return [generate_scene_clip(scene, out_dir, tool=tool)]
 
 
 # --------------------- Assembly ---------------------
@@ -179,13 +183,18 @@ def assemble_video(
     return output_path
 
 
-def build_video(script: VideoScript, out_dir: Path) -> Path:
-    """End-to-end video creation."""
+def build_video(script: VideoScript, out_dir: Path, *, tool: str | None = None) -> Path:
+    """End-to-end video creation.
+
+    Pass *tool* (claude/chatgpt/gemini) for weekly tutorials so scenes with a
+    screenshot_key are captured live from the curated URL library; daily news
+    leaves it None and always uses DALL-E.
+    """
     clip_dir = out_dir / "clips"
     clip_dir.mkdir(parents=True, exist_ok=True)
 
     clip_paths_by_scene = {
-        s.idx: generate_clips_for_scene(s, clip_dir) for s in script.scenes
+        s.idx: generate_clips_for_scene(s, clip_dir, tool=tool) for s in script.scenes
     }
     audio_paths_by_scene = {
         s.idx: out_dir / "audio" / f"scene_{s.idx:02d}.mp3" for s in script.scenes

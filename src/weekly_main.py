@@ -126,7 +126,7 @@ def run_weekly_pipeline(
         # 4. Video
         long_video = run_dir / "final_video.mp4"
         if not long_video.exists():
-            build_video(script, run_dir)
+            build_video(script, run_dir, tool=tool_key)
             save_used_topic(settings.data_dir, tool_key, topic)
         else:
             logger.info(f"Reusing cached {long_video.name}")
