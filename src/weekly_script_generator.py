@@ -286,11 +286,16 @@ Create a complete YouTube tutorial script for this topic:
 
 "{topic}"
 
-For each scene, you may optionally set "screenshot_key" to one of the
-keys below to use a REAL screenshot from the {tool_name} ecosystem
-instead of a DALL-E mockup. Pick the key whose page best matches what
-the narration is teaching at that moment. If no key fits, set it to null
-and a DALL-E image will be generated from "visual_prompt" instead.
+VISUAL SOURCES (priority order per scene):
+1. screenshot_key — pick from the list below to use a real {tool_name} UI screenshot
+2. infographic_data — animated chart when the scene shows pricing, benchmarks,
+   comparisons, or step counts. Supported types (choose one):
+     bar_chart: {{"type":"bar_chart","title":"...","unit":"...","items":[{{"label":"...","value":0}}, ...]}}
+     stat_card: {{"type":"stat_card","value":"70B","label":"Parameters","context":"10× GPT-3"}}
+     comparison: {{"type":"comparison","title":"...","unit":"%","left":{{"label":"A","value":0}},"right":{{"label":"B","value":0}}}}
+     timeline: {{"type":"timeline","title":"...","events":[{{"date":"Jan 2024","label":"..."}}]}}
+3. visual_prompt — DALL-E fallback (always required)
+Set unused fields to null.
 
 Available screenshot keys for {tool_name}:
 {keys_block}
@@ -310,7 +315,8 @@ Return JSON with this exact structure:
       "narration": "...",          // full spoken text, 280-340 words
       "visual_prompt": "...",      // DALL-E 3 image prompt, 2-3 sentences (always required as fallback)
       "screenshot_key": null,      // or one of the keys listed above
-      "short_narration": null      // ~120-word standalone Shorts script, or null
+      "short_narration": null,     // ~120-word standalone Shorts script, or null
+      "infographic_data": null     // animated chart for scenes with concrete data
     }},
     ... (7 scenes total)
   ]
@@ -358,7 +364,10 @@ def generate_tutorial_script(
         if key and not has_key(tool_key, key):
             logger.warning(f"Scene {i}: GPT picked unknown screenshot_key '{key}' — falling back to DALL-E")
             key = None
-        short_nar = s.get("short_narration") or None
+        short_nar    = s.get("short_narration") or None
+        infographic  = s.get("infographic_data") or None
+        if infographic and not isinstance(infographic, dict):
+            infographic = None
         scenes.append(Scene(
             idx=i,
             heading=s["heading"],
@@ -366,6 +375,7 @@ def generate_tutorial_script(
             visual_prompt=s["visual_prompt"],
             screenshot_key=key,
             short_narration=short_nar,
+            infographic_data=infographic,
         ))
 
     # Dynamic hook selection
@@ -380,7 +390,8 @@ def generate_tutorial_script(
     else:
         chosen_hook = hook_variants[0] if hook_variants else ""
 
-    shorts_count = sum(1 for sc in scenes if sc.short_narration)
+    shorts_count      = sum(1 for sc in scenes if sc.short_narration)
+    infographic_count = sum(1 for sc in scenes if sc.infographic_data)
     script = VideoScript(
         title=raw["title"],
         description=raw["description"],
@@ -391,6 +402,7 @@ def generate_tutorial_script(
     )
     logger.info(
         f"{tool.name} tutorial: '{script.title}' | {len(scenes)} scenes | "
-        f"{shorts_count} shorts | hook variant {hook_variants.index(chosen_hook) + 1}/{len(hook_variants)}"
+        f"{shorts_count} shorts | {infographic_count} infographics | "
+        f"hook variant {hook_variants.index(chosen_hook) + 1}/{len(hook_variants)}"
     )
     return script
