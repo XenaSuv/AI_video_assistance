@@ -41,13 +41,32 @@ _MAX_TEXT_WIDTH    = SHORT_W - 120
 
 # ─────────────────── vertical crop helpers ───────────────────
 
+def _saliency_crop_x(frame: np.ndarray, crop_w: int) -> int:
+    """Return x-offset of the most visually interesting *crop_w*-wide window."""
+    h, w = frame.shape[:2]
+    max_offset = w - crop_w
+    if max_offset <= 0:
+        return 0
+    gray   = frame.mean(axis=2).astype(np.float32)
+    edges  = np.abs(np.diff(gray, axis=1))
+    col_sc = edges.sum(axis=0)
+    wins   = np.convolve(col_sc, np.ones(crop_w, dtype=np.float32), mode="valid")
+    best   = int(np.argmax(wins))
+    center = (w - crop_w) // 2
+    return int(best * 0.7 + center * 0.3)
+
+
 def _make_vertical(clip: VideoFileClip) -> VideoFileClip:
     target_ratio = SHORT_W / SHORT_H
     src_ratio    = clip.w / clip.h
     if src_ratio > target_ratio:
         new_w = int(clip.h * target_ratio)
-        x1    = (clip.w - new_w) // 2
-        clip  = crop(clip, x1=x1, x2=x1 + new_w)
+        try:
+            mid_frame = clip.get_frame(clip.duration / 2)
+            x1 = _saliency_crop_x(mid_frame, new_w)
+        except Exception:
+            x1 = (clip.w - new_w) // 2
+        clip = crop(clip, x1=x1, x2=x1 + new_w)
     return resize(clip, newsize=(SHORT_W, SHORT_H))
 
 

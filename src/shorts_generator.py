@@ -36,14 +36,44 @@ _CAPTION_Y_CENTER  = int(SHORT_H * 0.60)   # 60% down the frame
 _MAX_TEXT_WIDTH    = SHORT_W - 120          # 60 px padding each side
 
 
+def _saliency_crop_x(frame: np.ndarray, crop_w: int) -> int:
+    """Return x-offset of the most visually interesting *crop_w*-wide window.
+
+    Uses horizontal edge density (column-wise gradient magnitude) as a
+    proxy for visual saliency.  Pure numpy — no extra dependencies.
+    Falls back to center if the frame is too small.
+    """
+    h, w = frame.shape[:2]
+    max_offset = w - crop_w
+    if max_offset <= 0:
+        return 0
+    gray   = frame.mean(axis=2).astype(np.float32)
+    edges  = np.abs(np.diff(gray, axis=1))          # H × (W-1)
+    col_sc = edges.sum(axis=0)                       # saliency per column
+    wins   = np.convolve(col_sc, np.ones(crop_w, dtype=np.float32), mode="valid")
+    best   = int(np.argmax(wins))
+    # Blend toward center (weight 0.3) to avoid extreme off-center crops
+    center = (w - crop_w) // 2
+    return int(best * 0.7 + center * 0.3)
+
+
 def _make_vertical(clip: VideoFileClip) -> VideoFileClip:
-    """Scale+center-crop a 16:9 clip to 9:16 1080×1920."""
+    """Scale+smart-crop a 16:9 clip to 9:16 1080×1920.
+
+    Samples a frame from the middle of the clip, finds the most visually
+    interesting horizontal window via edge saliency, and crops there
+    instead of always taking the dead centre.
+    """
     target_ratio = SHORT_W / SHORT_H   # 0.5625
     src_ratio    = clip.w / clip.h
     if src_ratio > target_ratio:
         new_w = int(clip.h * target_ratio)
-        x1    = (clip.w - new_w) // 2
-        clip  = crop(clip, x1=x1, x2=x1 + new_w)
+        try:
+            mid_frame = clip.get_frame(clip.duration / 2)
+            x1 = _saliency_crop_x(mid_frame, new_w)
+        except Exception:
+            x1 = (clip.w - new_w) // 2
+        clip = crop(clip, x1=x1, x2=x1 + new_w)
     return resize(clip, newsize=(SHORT_W, SHORT_H))
 
 
