@@ -14,7 +14,7 @@ import traceback
 from pathlib import Path
 
 from loguru import logger
-from moviepy.editor import AudioFileClip
+from moviepy.editor import AudioFileClip, VideoFileClip
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
@@ -24,6 +24,7 @@ from src.hook_selector import record_usage
 from src.scraper import scrape_all, NewsItem
 from src.script_generator import Scene, VideoScript, generate_script
 from src.shorts_generator import build_short
+from src.subtitle_generator import generate_subtitles
 from src.thumbnail_ab import (
     generate_thumbnail_variants,
     pick_thumbnail,
@@ -42,6 +43,14 @@ def _setup_logging(run_dir: Path) -> None:
     logger.add(sys.stderr, level="INFO",
                format="<green>{time:HH:mm:ss}</green> | <level>{level:<7}</level> | {message}")
     logger.add(run_dir / "run.log", level="DEBUG", rotation="10 MB")
+
+
+def _get_intro_duration(intro_path: Path | None) -> float:
+    """Return duration in seconds of the intro clip, or 0.0 if not present."""
+    if not intro_path or not intro_path.exists():
+        return 0.0
+    with VideoFileClip(str(intro_path), audio=False) as clip:
+        return clip.duration
 
 
 def _load_cached_script(path: Path) -> VideoScript | None:
@@ -111,7 +120,19 @@ def _run_language_variant(
         logger.info(f"Reusing cached {audio_subdir}; measuring durations")
         _load_audio_durations(script, audio_dir)
 
-    # 3. Video — reuse existing clips, just reassemble with new audio
+    # 3. Subtitles — transcribe from translated audio
+    subtitle_path: Path | None = None
+    try:
+        subtitle_path = generate_subtitles(
+            script,
+            audio_dir,
+            run_dir / f"subtitles_{lang_code}.srt",
+            intro_duration=_get_intro_duration(intro_path),
+        )
+    except Exception as exc:
+        logger.warning(f"{lang_name}: subtitle generation failed (non-fatal): {exc}")
+
+    # 4. Video — reuse existing clips, just reassemble with new audio
     long_video = run_dir / f"final_video_{lang_code}.mp4"
     if not long_video.exists():
         clip_dir = run_dir / "clips"
@@ -151,6 +172,8 @@ def _run_language_variant(
         ids = publish_episode(
             script, long_video, short_video,
             thumbnail=thumbnail,
+            subtitle_path=subtitle_path,
+            subtitle_language=lang_code,
             client_secrets=client_secrets,
             token_file=token_file,
         )
@@ -222,9 +245,21 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
 
         summary["total_duration_sec"] = sum(s.duration_sec for s in script.scenes)
 
-        # 4. Video
+        # 4. Subtitles (non-fatal: errors are logged and pipeline continues)
         _en_intro = settings.source_dir / "ai-news-intro.mp4"
         _en_outro = settings.source_dir / "ai-news-outro.mp4"
+        subtitle_path: Path | None = None
+        try:
+            subtitle_path = generate_subtitles(
+                script,
+                run_dir / "audio",
+                run_dir / "subtitles.srt",
+                intro_duration=_get_intro_duration(_en_intro if _en_intro.exists() else None),
+            )
+        except Exception as exc:
+            logger.warning(f"Subtitle generation failed (non-fatal): {exc}")
+
+        # 5. Video
         long_video = run_dir / "final_video.mp4"
         if not long_video.exists():
             build_video(script, run_dir,
@@ -247,24 +282,28 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         else:
             logger.info(f"Reusing cached {short_video.name}")
 
-        # 6. Thumbnail A/B
+        # 7. Thumbnail A/B
         thumb_variants = generate_thumbnail_variants(long_video, script.title, run_dir)
         thumbnail      = pick_thumbnail(thumb_variants, settings.data_dir, "daily")
         summary["thumbnail_style"] = thumbnail.stem.removeprefix("thumbnail_")
 
-        # 7. Upload (English)
+        # 8. Upload (English)
         if skip_upload:
             logger.info("--skip-upload specified; leaving files on disk")
             summary["status"] = "built_not_uploaded"
         else:
-            ids = publish_episode(script, long_video, short_video, thumbnail=thumbnail)
+            ids = publish_episode(
+                script, long_video, short_video,
+                thumbnail=thumbnail,
+                subtitle_path=subtitle_path,
+            )
             summary.update(ids)
             summary["status"] = "published"
             if video_id := ids.get("video_id"):
                 record_usage(script.hook, video_id, settings.data_dir, "daily")
                 record_thumbnail_usage(thumbnail, video_id, settings.data_dir, "daily")
 
-        # 8. TikTok Short (optional)
+        # 9. TikTok Short (optional)
         if settings.tiktok_enabled and not skip_upload and short_video.exists():
             try:
                 caption = f"{script.hook}\n\n#AI #ArtificialIntelligence #TechNews #AINews"
@@ -273,7 +312,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
                 logger.warning(f"TikTok upload failed (non-fatal): {e}")
                 summary["tiktok_error"] = str(e)
 
-        # 9. Russian variant (optional)
+        # 10. Russian variant (optional)
         if settings.ru_enabled:
             _ru_intro = settings.source_dir / "ai-novosti-intro.mp4"
             _ru_outro = settings.source_dir / "ai-novosti-outro.mp4"

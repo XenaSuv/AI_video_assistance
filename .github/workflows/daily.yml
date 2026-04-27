@@ -15,7 +15,7 @@ jobs:
       - name: Install system deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-dejavu
+          sudo apt-get install -y ffmpeg fonts-dejavu libjpeg-dev zlib1g-dev libfreetype6-dev liblcms2-dev libwebp-dev
 
       - uses: actions/setup-python@v5
         with:

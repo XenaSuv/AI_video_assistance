@@ -29,6 +29,7 @@ from config import settings
 from src.breaking_detector import mark_published
 from src.breaking_script_generator import generate_breaking_script
 from src.main import _load_audio_durations, _run_language_variant
+from src.subtitle_generator import generate_subtitles
 from src.scraper import NewsItem
 from src.script_generator import Scene, VideoScript
 from src.shorts_generator import build_short
@@ -99,34 +100,47 @@ def run_breaking_pipeline(item: NewsItem, skip_upload: bool = False) -> dict:
 
         summary["total_duration_sec"] = sum(s.duration_sec for s in script.scenes)
 
-        # 3. Video
+        # 3. Subtitles (non-fatal)
+        subtitle_path = None
+        try:
+            subtitle_path = generate_subtitles(
+                script, run_dir / "audio", run_dir / "subtitles.srt",
+            )
+        except Exception as exc:
+            logger.warning(f"Subtitle generation failed (non-fatal): {exc}")
+
+        # 4. Video
         long_video = run_dir / "final_video.mp4"
         if not long_video.exists():
             build_video(script, run_dir)
         else:
             logger.info(f"Reusing cached {long_video.name}")
 
-        # 4. Shorts
+        # 5. Shorts
         short_video = run_dir / "shorts.mp4"
         if not short_video.exists():
             build_short(script, long_video, run_dir)
         else:
             logger.info(f"Reusing cached {short_video.name}")
 
-        # 5. Thumbnail
+        # 6. Thumbnail
         thumbnail = generate_thumbnail(long_video, script.title, run_dir)
 
-        # 6. Upload (English)
+        # 7. Upload (English)
         if skip_upload:
             logger.info("--skip-upload; files on disk")
             summary["status"] = "built_not_uploaded"
         else:
-            ids = publish_episode(script, long_video, short_video, thumbnail=thumbnail)
+            ids = publish_episode(
+                script, long_video, short_video,
+                thumbnail=thumbnail,
+                subtitle_path=subtitle_path,
+            )
             summary.update(ids)
             summary["status"] = "published"
             mark_published(settings.data_dir, item, video_id=ids.get("long_id", ""))
 
-        # 7. Russian variant (optional)
+        # 8. Russian variant (optional)
         if settings.ru_enabled:
             ru = _run_language_variant(
                 english_script = script,
