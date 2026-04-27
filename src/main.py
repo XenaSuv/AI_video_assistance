@@ -24,6 +24,11 @@ from src.hook_selector import record_usage
 from src.scraper import scrape_all, NewsItem
 from src.script_generator import Scene, VideoScript, generate_script
 from src.shorts_generator import build_short
+from src.thumbnail_ab import (
+    generate_thumbnail_variants,
+    pick_thumbnail,
+    record_thumbnail_usage,
+)
 from src.thumbnail_generator import generate_thumbnail
 from src.translator import translate_script
 from src.video_generator import assemble_video, build_video
@@ -236,8 +241,10 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         else:
             logger.info(f"Reusing cached {short_video.name}")
 
-        # 6. Thumbnail
-        thumbnail = generate_thumbnail(long_video, script.title, run_dir)
+        # 6. Thumbnail A/B
+        thumb_variants = generate_thumbnail_variants(long_video, script.title, run_dir)
+        thumbnail      = pick_thumbnail(thumb_variants, settings.data_dir, "daily")
+        summary["thumbnail_style"] = thumbnail.stem.removeprefix("thumbnail_")
 
         # 7. Upload (English)
         if skip_upload:
@@ -249,6 +256,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
             summary["status"] = "published"
             if video_id := ids.get("video_id"):
                 record_usage(script.hook, video_id, settings.data_dir, "daily")
+                record_thumbnail_usage(thumbnail, video_id, settings.data_dir, "daily")
 
         # 8. TikTok Short (optional)
         if settings.tiktok_enabled and not skip_upload and short_video.exists():
