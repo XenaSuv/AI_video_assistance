@@ -20,7 +20,13 @@ from moviepy.editor import (
     ColorClip,
 )
 from moviepy.video.fx.all import fadein, fadeout, loop, resize
-from PIL import Image, ImageDraw, ImageFont
+
+# Import PIL components with explicit error handling
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except ImportError as e:
+    logger.error(f"Failed to import PIL modules: {e}. Install with: pip install Pillow>=10.4.0")
+    raise ImportError("PIL/Pillow is required for video generation") from e
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.script_generator import Scene, VideoScript
@@ -28,6 +34,18 @@ from src.image_generator import generate_scene_clip
 
 _FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 VIDEO_W, VIDEO_H = 1280, 720   # canonical output resolution
+
+
+def _validate_dependencies() -> None:
+    """Verify all required dependencies are available at runtime."""
+    try:
+        # Test PIL access
+        _ = Image.new("RGB", (10, 10), (255, 255, 255))
+        _ = ImageFont.load_default()
+        logger.debug("PIL dependencies validated")
+    except Exception as e:
+        logger.error(f"PIL validation failed: {e}")
+        raise RuntimeError("PIL/Pillow initialization failed") from e
 
 
 # --------------------- Per-scene clip generation ---------------------
@@ -236,6 +254,9 @@ def build_video(
     *intro_path*  – prepended as-is (with audio) when the file exists.
     *outro_path*  – appended as-is (with audio) when the file exists.
     """
+    # Validate critical dependencies before processing
+    _validate_dependencies()
+    
     clip_dir = out_dir / "clips"
     clip_dir.mkdir(parents=True, exist_ok=True)
 
