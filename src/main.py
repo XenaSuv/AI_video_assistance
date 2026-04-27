@@ -19,6 +19,7 @@ from moviepy.editor import AudioFileClip
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.deduplicator import SeenStories
+from src.digest_script_generator import save_for_digest
 from src.scraper import scrape_all, NewsItem
 from src.script_generator import Scene, VideoScript, generate_script
 from src.shorts_generator import build_short
@@ -194,6 +195,8 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         if script is None:
             script = generate_script(news, num_scenes=8)
             script.save(script_cache)
+        # Persist a digest copy so the Sunday workflow can find it across CI runs
+        save_for_digest(settings.data_dir, dt.date.today(), script_cache)
         summary["title"]      = script.title
         summary["num_scenes"] = len(script.scenes)
 

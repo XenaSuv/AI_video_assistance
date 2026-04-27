@@ -31,6 +31,13 @@ jobs:
           key: seen-stories-${{ github.run_id }}
           restore-keys: seen-stories-
 
+      - name: Restore digest scripts cache
+        uses: actions/cache@v4
+        with:
+          path: data/digest_scripts/
+          key: digest-scripts-${{ github.run_id }}
+          restore-keys: digest-scripts-
+
       - name: Restore TikTok token
         uses: actions/cache@v4
         with:
