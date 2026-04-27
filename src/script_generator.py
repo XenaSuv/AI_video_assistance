@@ -28,6 +28,7 @@ class Scene:
     duration_sec: int = 0       # filled after TTS timing is known
     screenshot_key: str | None = None   # weekly tutorials: real screenshot from curated library
     short_narration: str | None = None  # ~120 words written for a standalone Shorts cut
+    infographic_data: dict | None = None  # animated chart/stat; skips DALL-E when set
 
 
 @dataclass
@@ -70,16 +71,39 @@ Avoid hype; be honest about limitations. No 'welcome back to the channel' filler
 Output MUST be a single valid JSON object, no commentary, no markdown fences."""
 
 
+_INFOGRAPHIC_GUIDE = """
+For each scene you may optionally set "infographic_data" to replace the
+static DALL-E image with an animated chart. Use it for scenes that quote
+specific numbers, compare models, or show a timeline of events. Leave it
+null for narrative/opinion scenes.  Supported types:
+
+  bar_chart   {"type":"bar_chart","title":"...","unit":"%",
+               "items":[{"label":"GPT-4o","value":87.2}, ...]}
+               Up to 8 items. Values are plain numbers (no units in value).
+
+  timeline    {"type":"timeline","title":"...",
+               "events":[{"date":"Jan 2024","label":"Sora"}, ...]}
+               Up to 6 events in chronological order.
+
+  stat_card   {"type":"stat_card","value":"70B","label":"Parameters",
+               "context":"10× more than GPT-3"}
+               value may include prefix/suffix: "$4.2B", "87%", "#1".
+
+  comparison  {"type":"comparison","title":"HumanEval Score","unit":"%",
+               "left":{"label":"GPT-3.5","value":48.1},
+               "right":{"label":"GPT-4o","value":90.2}}
+"""
+
 USER_PROMPT_TMPL = """Using the AI news items below, write a {target_words}-word script
 (roughly 15 minutes at 150 wpm) broken into {num_scenes} scenes.
 
 For each scene provide:
 - heading: short chyron-style title (max 8 words)
 - narration: the actual spoken text (natural, conversational, contractions OK)
-- visual_prompt: a concrete text-to-video prompt for RunwayML Gen-3. Describe
-  cinematography, subject, setting, lighting, camera motion. Avoid real
-  company logos or named public figures (generates safer / works better).
-
+- visual_prompt: a DALL-E 3 image prompt (always required as fallback)
+- infographic_data: animated chart data when the scene has concrete numbers
+  or comparisons — otherwise null. See the infographic guide below.
+{infographic_guide}
 Close with a sign-off that invites likes/subscribes without being cringey.
 
 Also produce:
@@ -103,7 +127,12 @@ Return this JSON schema exactly:
   "tags": ["..."],
   "hook_variants": ["...", "...", "..."],
   "scenes": [
-    {{"heading": "...", "narration": "...", "visual_prompt": "..."}},
+    {{
+      "heading": "...",
+      "narration": "...",
+      "visual_prompt": "...",
+      "infographic_data": null
+    }},
     ...
   ]
 }}"""
@@ -140,6 +169,7 @@ def generate_script(
         target_words=settings.script_target_words,
         num_scenes=num_scenes,
         items_block=_build_items_block(items),
+        infographic_guide=_INFOGRAPHIC_GUIDE,
     )
 
     logger.info(f"Requesting script from {settings.openai_model} "
@@ -158,15 +188,19 @@ def generate_script(
     raw = resp.choices[0].message.content or "{}"
     data = json.loads(raw)
 
-    scenes = [
-        Scene(
+    scenes = []
+    for i, s in enumerate(data.get("scenes", [])):
+        infographic = s.get("infographic_data") or None
+        if infographic and not isinstance(infographic, dict):
+            infographic = None
+        scenes.append(Scene(
             idx=i,
             heading=s["heading"],
             narration=s["narration"],
             visual_prompt=s["visual_prompt"],
-        )
-        for i, s in enumerate(data.get("scenes", []))
-    ]
+            infographic_data=infographic,
+        ))
+    infographic_count = sum(1 for sc in scenes if sc.infographic_data)
 
     # Dynamic hook selection
     hook_variants: list[str] = data.get("hook_variants") or []
@@ -194,7 +228,8 @@ def generate_script(
     word_count = sum(len(s.narration.split()) for s in scenes)
     logger.info(
         f"Generated script: {word_count} words across {len(scenes)} scenes | "
-        f"hook variant {hook_variants.index(chosen_hook) + 1}/{len(hook_variants)}"
+        f"hook variant {hook_variants.index(chosen_hook) + 1}/{len(hook_variants)} | "
+        f"{infographic_count} infographic scene(s)"
     )
     return script
 

@@ -134,10 +134,12 @@ def _try_real_screenshot(scene: Scene, tool: str | None, img_path: Path) -> bool
 def generate_scene_clip(scene: Scene, clip_dir: Path, *, tool: str | None = None) -> Path:
     """
     Produce a single .mp4 clip for *scene* at exactly scene.duration_sec length.
-    For weekly tutorials, if scene.screenshot_key is set and *tool* is provided,
-    a real screenshot of that page is captured; otherwise DALL-E generates the
-    image. Either way the result is animated with a Ken Burns pan.
-    Falls back to a dark placeholder if everything fails.
+
+    Priority order:
+      1. infographic_data — animated chart/stat rendered entirely in Python
+      2. screenshot_key   — real UI screenshot (weekly tutorials only)
+      3. DALL-E 3         — AI-generated image with Ken Burns effect
+      4. placeholder      — solid dark frame if all else fails
     """
     img_dir = clip_dir.parent / "images"
     img_dir.mkdir(parents=True, exist_ok=True)
@@ -150,6 +152,16 @@ def generate_scene_clip(scene: Scene, clip_dir: Path, *, tool: str | None = None
         return clip_path
 
     try:
+        # 1. Infographic — fully animated, skips the image→Ken-Burns pipeline
+        if scene.infographic_data:
+            from src.infographic_generator import generate_infographic_clip
+            return generate_infographic_clip(
+                scene.infographic_data,
+                clip_path,
+                duration_sec=float(max(scene.duration_sec, 4)),
+            )
+
+        # 2 & 3. Image → Ken Burns
         if not img_path.exists():
             if not _try_real_screenshot(scene, tool, img_path):
                 generate_dalle_image(scene.visual_prompt, img_path)
