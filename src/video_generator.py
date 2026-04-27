@@ -13,12 +13,14 @@ import numpy as np
 from loguru import logger
 from moviepy.editor import (
     AudioFileClip,
+    CompositeAudioClip,
     CompositeVideoClip,
     ImageClip,
     VideoFileClip,
     concatenate_videoclips,
     ColorClip,
 )
+from moviepy.audio.fx.all import audio_fadein, audio_fadeout, audio_loop
 from moviepy.video.fx.all import fadein, fadeout, loop, resize
 
 # Import PIL components with explicit error handling
@@ -29,11 +31,50 @@ except ImportError as e:
     raise ImportError("PIL/Pillow is required for video generation") from e
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from config import settings
 from src.script_generator import Scene, VideoScript
 from src.image_generator import generate_scene_clip
 
 _FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 VIDEO_W, VIDEO_H = 1280, 720   # canonical output resolution
+
+
+def _resolve_music_path() -> Path | None:
+    """Return the background music Path, or None if not configured / file missing."""
+    raw = settings.background_music_path.strip()
+    if not raw:
+        return None
+    p = Path(raw)
+    if not p.is_absolute():
+        p = settings.source_dir / raw
+    if not p.exists():
+        logger.warning(f"Background music not found: {p} — skipping")
+        return None
+    return p
+
+
+def _apply_background_music(clip, volume: float):
+    """Mix looped background music under *clip*'s existing audio.
+
+    Non-fatal: any error is logged and the clip is returned unchanged.
+    Music fades in over 2 s and out over 3 s so it doesn't clash with
+    the narration at the very start/end.
+    """
+    path = _resolve_music_path()
+    if path is None:
+        return clip
+    try:
+        music = AudioFileClip(str(path))
+        music = audio_loop(music, duration=clip.duration)
+        music = music.volumex(volume)
+        music = audio_fadein(audio_fadeout(music, 3.0), 2.0)
+        existing = clip.audio
+        mixed = CompositeAudioClip([existing, music]) if existing else music
+        logger.info(f"Background music mixed at {volume:.0%} volume ({path.name})")
+        return clip.set_audio(mixed)
+    except Exception as exc:
+        logger.warning(f"Background music failed (non-fatal): {exc}")
+        return clip
 
 
 def _validate_dependencies() -> None:
@@ -198,6 +239,7 @@ def assemble_video(
                     + (" (+ title card)" if scene.idx > 0 else ""))
 
     content = concatenate_videoclips(segments, method="compose")
+    content = _apply_background_music(content, settings.background_music_volume)
 
     # ── wrap with intro / outro ───────────────────────────────────────────────
     has_intro = intro_path and intro_path.exists()

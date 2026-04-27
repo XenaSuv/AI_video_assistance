@@ -12,17 +12,20 @@ import numpy as np
 from loguru import logger
 from moviepy.editor import (
     AudioFileClip,
+    CompositeAudioClip,
     CompositeVideoClip,
     ImageClip,
     VideoFileClip,
     concatenate_videoclips,
 )
+from moviepy.audio.fx.all import audio_fadein, audio_fadeout, audio_loop
 from moviepy.video.fx.all import crop, resize
 from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.script_generator import VideoScript
+from src.video_generator import _resolve_music_path
 
 
 SHORT_MAX_SECONDS = 58   # YouTube Shorts hard-limit is 60
@@ -164,6 +167,21 @@ def build_short(
 
     if narration is not None:
         base = base.set_audio(narration.subclip(0, target_duration))
+
+    # Mix background music under narration (non-fatal if file missing)
+    music_path = _resolve_music_path()
+    if music_path:
+        try:
+            music = AudioFileClip(str(music_path))
+            music = audio_loop(music, duration=target_duration)
+            music = music.volumex(settings.shorts_music_volume)
+            music = audio_fadein(audio_fadeout(music, 1.5), 1.0)
+            existing = base.audio
+            mixed = CompositeAudioClip([existing, music]) if existing else music
+            base = base.set_audio(mixed)
+            logger.info(f"Short: background music mixed at {settings.shorts_music_volume:.0%}")
+        except Exception as exc:
+            logger.warning(f"Short: background music failed (non-fatal): {exc}")
 
     captioned = _burn_captions(base, script.hook)
 

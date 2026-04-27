@@ -59,6 +59,12 @@ class Settings:
     # Slack notifications (optional — leave blank to disable)
     slack_webhook_url: str = _env("SLACK_WEBHOOK_URL", "")
 
+    # Background music (optional — leave blank to disable)
+    # Path can be absolute or relative to source_dir (e.g. "background_music.mp3")
+    background_music_path:   str   = _env("BACKGROUND_MUSIC_PATH",   "")
+    background_music_volume: float = float(_env("BACKGROUND_MUSIC_VOLUME", "0.10"))
+    shorts_music_volume:     float = float(_env("SHORTS_MUSIC_VOLUME",     "0.13"))
+
     # TikTok
     tiktok_enabled:       bool = _env("TIKTOK_ENABLED", "false").lower() in ("1", "true", "yes")
     tiktok_client_key:    str  = _env("TIKTOK_CLIENT_KEY",    "")
