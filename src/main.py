@@ -36,6 +36,7 @@ from src.video_generator import assemble_video, build_video
 from src.voice_generator import synthesize_script
 from src.youtube_uploader import publish_episode
 from src.tiktok_uploader import post_short as tiktok_post_short
+from src.slack_notifier import notify_success, notify_failure
 
 
 def _setup_logging(run_dir: Path) -> None:
@@ -331,6 +332,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
             )
             summary["ru"] = ru
 
+        notify_success(summary, "daily")
         logger.info(f"=== DONE ===  {json.dumps(summary, indent=2)}")
 
     except Exception as e:
@@ -338,6 +340,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         logger.error(traceback.format_exc())
         summary["status"] = "failed"
         summary["error"]  = str(e)
+        notify_failure(e, "daily", summary, traceback.format_exc())
         raise
 
     return summary

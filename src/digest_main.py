@@ -40,6 +40,7 @@ from src.thumbnail_generator import generate_thumbnail
 from src.video_generator import build_video
 from src.voice_generator import synthesize_script
 from src.youtube_uploader import publish_episode
+from src.slack_notifier import notify_success, notify_failure
 
 
 def _setup_logging(run_dir: Path) -> None:
@@ -169,6 +170,7 @@ def run_digest_pipeline(
             )
             summary["ru"] = ru
 
+        notify_success(summary, "digest")
         logger.info(f"=== DIGEST DONE ===  {json.dumps(summary, indent=2)}")
 
     except Exception as e:
@@ -176,6 +178,7 @@ def run_digest_pipeline(
         logger.error(traceback.format_exc())
         summary["status"] = "failed"
         summary["error"]  = str(e)
+        notify_failure(e, "digest", summary, traceback.format_exc())
         raise
 
     return summary

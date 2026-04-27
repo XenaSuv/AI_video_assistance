@@ -37,6 +37,7 @@ from src.thumbnail_generator import generate_thumbnail
 from src.video_generator import build_video
 from src.voice_generator import synthesize_script
 from src.youtube_uploader import publish_episode
+from src.slack_notifier import notify_success, notify_failure
 
 
 def _setup_logging(run_dir: Path) -> None:
@@ -155,6 +156,7 @@ def run_breaking_pipeline(item: NewsItem, skip_upload: bool = False) -> dict:
             )
             summary["ru"] = ru
 
+        notify_success(summary, "breaking")
         logger.info(f"=== BREAKING DONE ===  {json.dumps(summary, indent=2)}")
 
     except Exception as e:
@@ -162,6 +164,7 @@ def run_breaking_pipeline(item: NewsItem, skip_upload: bool = False) -> dict:
         logger.error(traceback.format_exc())
         summary["status"] = "failed"
         summary["error"]  = str(e)
+        notify_failure(e, "breaking", summary, traceback.format_exc())
         raise
 
     return summary
