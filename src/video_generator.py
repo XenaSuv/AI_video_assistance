@@ -137,16 +137,23 @@ def assemble_video(
     clip_paths_by_scene: dict[int, list[Path]],
     audio_paths_by_scene: dict[int, Path],
     output_path: Path,
+    *,
+    intro_path: Path | None = None,
+    outro_path: Path | None = None,
 ) -> Path:
-    """Combine generated clips + narration into the final 16:9 video."""
-    segments = []
+    """Combine generated clips + narration into the final 16:9 video.
 
+    When *intro_path* / *outro_path* are supplied and the files exist they are
+    prepended / appended as-is (audio included). The global fade-in/out is only
+    applied to the main content when NO intro/outro is present so that the
+    branded clips handle their own transitions.
+    """
+    # ── main content ──────────────────────────────────────────────────────────
+    segments = []
     for scene in script.scenes:
-        # Title card before every scene except the opening hook (idx 0)
         if scene.idx > 0:
             segments.append(_title_card(scene.heading))
 
-        # Audio is the master clock — trim video to exactly match it.
         narration  = AudioFileClip(str(audio_paths_by_scene[scene.idx]))
         target_dur = narration.duration
 
@@ -162,11 +169,30 @@ def assemble_video(
         composite = composite.set_audio(narration)
 
         segments.append(composite)
-        logger.info(f"Scene {scene.idx} assembled: {target_dur:.1f}s (+ title card)"
-                    if scene.idx > 0 else f"Scene {scene.idx} assembled: {target_dur:.1f}s")
+        logger.info(f"Scene {scene.idx} assembled: {target_dur:.1f}s"
+                    + (" (+ title card)" if scene.idx > 0 else ""))
 
-    final = concatenate_videoclips(segments, method="compose")
-    final = fadein(fadeout(final, 1.0), 1.0)
+    content = concatenate_videoclips(segments, method="compose")
+
+    # ── wrap with intro / outro ───────────────────────────────────────────────
+    has_intro = intro_path and intro_path.exists()
+    has_outro = outro_path and outro_path.exists()
+
+    if has_intro or has_outro:
+        # Branded clips handle their own fades; skip global fade on content.
+        parts = []
+        if has_intro:
+            intro_clip = VideoFileClip(str(intro_path))
+            parts.append(intro_clip)
+            logger.info(f"Intro: {intro_path.name} ({intro_clip.duration:.1f}s)")
+        parts.append(content)
+        if has_outro:
+            outro_clip = VideoFileClip(str(outro_path))
+            parts.append(outro_clip)
+            logger.info(f"Outro: {outro_path.name} ({outro_clip.duration:.1f}s)")
+        final = concatenate_videoclips(parts, method="compose")
+    else:
+        final = fadein(fadeout(content, 1.0), 1.0)
 
     logger.info(f"Writing final video to {output_path} ({final.duration:.0f}s)")
     final.write_videofile(
@@ -183,12 +209,20 @@ def assemble_video(
     return output_path
 
 
-def build_video(script: VideoScript, out_dir: Path, *, tool: str | None = None) -> Path:
+def build_video(
+    script: VideoScript,
+    out_dir: Path,
+    *,
+    tool: str | None = None,
+    intro_path: Path | None = None,
+    outro_path: Path | None = None,
+) -> Path:
     """End-to-end video creation.
 
-    Pass *tool* (claude/chatgpt/gemini) for weekly tutorials so scenes with a
-    screenshot_key are captured live from the curated URL library; daily news
-    leaves it None and always uses DALL-E.
+    *tool*        – pass claude/chatgpt/gemini for weekly tutorials (enables
+                    real-screenshot capture); None always uses DALL-E.
+    *intro_path*  – prepended as-is (with audio) when the file exists.
+    *outro_path*  – appended as-is (with audio) when the file exists.
     """
     clip_dir = out_dir / "clips"
     clip_dir.mkdir(parents=True, exist_ok=True)
@@ -201,4 +235,8 @@ def build_video(script: VideoScript, out_dir: Path, *, tool: str | None = None) 
     }
 
     output_path = out_dir / "final_video.mp4"
-    return assemble_video(script, clip_paths_by_scene, audio_paths_by_scene, output_path)
+    return assemble_video(
+        script, clip_paths_by_scene, audio_paths_by_scene, output_path,
+        intro_path=intro_path,
+        outro_path=outro_path,
+    )

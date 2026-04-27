@@ -66,6 +66,7 @@ class Settings:
     log_dir: Path = ROOT / _env("LOG_DIR", "logs")
     data_dir: Path = ROOT / _env("DATA_DIR", "data")
     dedup_ttl_days: int = int(_env("DEDUP_TTL_DAYS", "30"))
+    source_dir: Path = ROOT / _env("SOURCE_DIR", "source")
 
 
 settings = Settings()
