@@ -27,6 +27,11 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-dejavu libjpeg-dev zlib1g-dev libfreetype6-dev liblcms2-dev libwebp-dev
+
       - run: pip install -r requirements.txt
 
       - name: Restore breaking-news seen state
