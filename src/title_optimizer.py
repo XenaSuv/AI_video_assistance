@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import re
 from openai import OpenAI
+from loguru import logger
 
 from config import settings
 
@@ -36,7 +38,19 @@ def generate_titles(news_item, n: int = 5) -> list[str]:
         temperature=0.9,
     )
 
-    return json.loads(res.choices[0].message.content or "[]")
+    text = (res.choices[0].message.content or "").strip()
+    text = re.sub(r"^```json\s*", "", text, flags=re.IGNORECASE).strip()
+    text = re.sub(r"```$", "", text).strip()
+    try:
+        titles = json.loads(text or "[]")
+        if isinstance(titles, list):
+            return [str(t).strip() for t in titles if str(t).strip()]
+        logger.warning("title_optimizer: generated titles response is not a list: %r", titles)
+    except Exception as exc:
+        logger.warning("title_optimizer failed to parse titles: %s | response=%r", exc, text)
+
+    fallback = [news_item.get("title", "").strip() or "AI NEWS"]
+    return fallback
 
 
 def pick_best_title(titles: list[str]) -> str:
@@ -58,4 +72,7 @@ def pick_best_title(titles: list[str]) -> str:
         model=settings.openai_model,
         messages=[{"role": "user", "content": prompt}],
     )
-    return res.choices[0].message.content.strip()
+    result = (res.choices[0].message.content or "").strip()
+    if result:
+        return result
+    return titles[0] if titles else "AI NEWS"
