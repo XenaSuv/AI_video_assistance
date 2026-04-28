@@ -110,10 +110,10 @@ def run_breaking_pipeline(item: NewsItem, skip_upload: bool = False) -> dict:
         except Exception as exc:
             logger.warning(f"Subtitle generation failed (non-fatal): {exc}")
 
-        # 4. Video
+        # 4. Video (Stable Diffusion replaces DALL-E when STABILITY_API_KEY is set)
         long_video = run_dir / "final_video.mp4"
         if not long_video.exists():
-            build_video(script, run_dir)
+            build_video(script, run_dir, is_breaking=True)
         else:
             logger.info(f"Reusing cached {long_video.name}")
 
