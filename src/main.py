@@ -22,6 +22,7 @@ from src.deduplicator import SeenStories
 from src.digest_script_generator import save_for_digest
 from src.hook_selector import record_usage
 from src.scraper import scrape_all, NewsItem
+from src.viral_selector import pick_viral_news
 from src.script_generator import Scene, VideoScript, generate_script
 from src.shorts_generator import build_short
 from src.subtitle_generator import generate_subtitles
@@ -219,6 +220,15 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         )
         news = seen.filter_new(news)
         summary["num_news_items"] = len(news)
+
+        # 1c. Pick only the most viral stories for shorts/script generation.
+        viral_news = pick_viral_news(news, top_n=2)
+        if not viral_news:
+            logger.warning("Viral selector found no items; falling back to original scrape")
+        else:
+            news = viral_news
+            summary["num_viral_news"] = len(news)
+            logger.info(f"Selected {len(news)} viral stories")
 
         if dry_run:
             logger.info("Dry run — stopping after scrape")
