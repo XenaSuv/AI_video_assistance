@@ -114,13 +114,15 @@ def generate_breaking_script(item: NewsItem) -> VideoScript:
     scenes = [
         Scene(
             idx=i,
-            heading=s["heading"],
-            narration=s["narration"],
-            visual_prompt=s["visual_prompt"],
+            heading=s.get("heading") or "Breaking News",
+            narration=s.get("narration") or "",
+            visual_prompt=s.get("visual_prompt") or s.get("heading", "Breaking news event"),
             source_quote=(s.get("source_quote") or "").strip() or None,
             quote_attribution=(s.get("quote_attribution") or "").strip() or None,
+            infographic_data=s.get("infographic_data"),
+            video_query=s.get("video_query"),
         )
-        for i, s in enumerate(raw["scenes"])
+        for i, s in enumerate(raw.get("scenes", []))
     ]
 
     script = VideoScript(
