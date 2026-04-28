@@ -6,6 +6,7 @@ from loguru import logger
 from config import settings
 from src.hooks_generator import generate_hooks
 from src.script_generator import generate_short_script
+from src.title_optimizer import generate_titles, pick_best_title
 from src.shorts_generator import create_short_video
 from src.youtube_uploader import upload_short
 
@@ -36,7 +37,11 @@ def run_shorts_mvp(news_item) -> list[tuple[str, Path]]:
         )
         videos.append((hook, video_path))
 
+    titles = generate_titles({"title": title_text, "summary": summary_text})
+    best_title = pick_best_title(titles) if titles else title_text
+    logger.info(f"Best title selected: {best_title}")
+
     for hook, video_path in videos:
-        upload_short(video_path, title=hook, description=title_text)
+        upload_short(video_path, title=best_title, description=title_text)
 
     return videos
