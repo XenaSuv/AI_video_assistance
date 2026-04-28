@@ -411,7 +411,7 @@ def ken_burns(
             f"scale={kb_w}:{kb_h}:force_original_aspect_ratio=increase,"
             f"crop={kb_w}:{kb_h},"
             f"crop=w={out_w}:h={out_h}"
-            f":x='min({pan}*t/{dur:.4f},{pan})':y={y0}"
+            f":x=min({pan}*t/{dur:.4f},{pan}):y={y0}"
             f",scale={out_w}:{out_h}"
         )
     elif variant == 1:
@@ -420,7 +420,7 @@ def ken_burns(
             f"scale={kb_w}:{kb_h}:force_original_aspect_ratio=increase,"
             f"crop={kb_w}:{kb_h},"
             f"crop=w={out_w}:h={out_h}"
-            f":x='{pan}-min({pan}*t/{dur:.4f},{pan})':y={y0}"
+            f":x={pan}-min({pan}*t/{dur:.4f},{pan}):y={y0}"
             f",scale={out_w}:{out_h}"
         )
     elif variant == 2:
@@ -428,10 +428,10 @@ def ken_burns(
         vf = (
             f"scale={kb_w}:{kb_h}:force_original_aspect_ratio=increase,"
             f"crop={kb_w}:{kb_h},"
-            f"crop=w='{kb_w}-({kb_w}-{out_w})*t/{dur:.4f}'"
-            f":h='{kb_h}-({kb_h}-{out_h})*t/{dur:.4f}'"
-            f":x='({kb_w}-({kb_w}-({kb_w}-{out_w})*t/{dur:.4f}))/2'"
-            f":y='({kb_h}-({kb_h}-({kb_h}-{out_h})*t/{dur:.4f}))/2'"
+            f"crop=w={kb_w}-({kb_w}-{out_w})*t/{dur:.4f}"
+            f":h={kb_h}-({kb_h}-{out_h})*t/{dur:.4f}"
+            f":x=({kb_w}-({kb_w}-({kb_w}-{out_w})*t/{dur:.4f}))/2"
+            f":y=({kb_h}-({kb_h}-({kb_h}-{out_h})*t/{dur:.4f}))/2"
             f",scale={out_w}:{out_h}"
         )
     else:
@@ -439,10 +439,10 @@ def ken_burns(
         vf = (
             f"scale={kb_w}:{kb_h}:force_original_aspect_ratio=increase,"
             f"crop={kb_w}:{kb_h},"
-            f"crop=w='{out_w}+({kb_w}-{out_w})*t/{dur:.4f}'"
-            f":h='{out_h}+({kb_h}-{out_h})*t/{dur:.4f}'"
-            f":x='({kb_w}-({out_w}+({kb_w}-{out_w})*t/{dur:.4f}))/2'"
-            f":y='({kb_h}-({out_h}+({kb_h}-{out_h})*t/{dur:.4f}))/2'"
+            f"crop=w={out_w}+({kb_w}-{out_w})*t/{dur:.4f}"
+            f":h={out_h}+({kb_h}-{out_h})*t/{dur:.4f}"
+            f":x=({kb_w}-({out_w}+({kb_w}-{out_w})*t/{dur:.4f}))/2"
+            f":y=({kb_h}-({out_h}+({kb_h}-{out_h})*t/{dur:.4f}))/2"
             f",scale={out_w}:{out_h}"
         )
 
