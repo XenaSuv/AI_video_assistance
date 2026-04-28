@@ -57,6 +57,13 @@ class Settings:
     # Stable Diffusion via Stability AI — used for breaking-news clips (3× cheaper than DALL-E HD)
     stability_api_key: str = _env("STABILITY_API_KEY", "")
 
+    # Channel branding
+    channel_name:      str   = _env("CHANNEL_NAME",      "AI Today")
+    channel_handle:    str   = _env("CHANNEL_HANDLE",    "@AIToday")
+    channel_cta:       str   = _env("CHANNEL_CTA",       "Subscribe · Daily AI News")
+    end_card_enabled:  bool  = _env("END_CARD_ENABLED",  "true").lower() in ("1", "true", "yes")
+    end_card_duration: float = float(_env("END_CARD_DURATION", "10"))
+
     # AI Presenter — D-ID Talks API (optional — leave DID_API_KEY blank to disable)
     # DID_API_KEY: base64 credential from d-id.com dashboard ("Basic <key>" → set just <key>)
     # PRESENTER_AVATAR_PATH: local PNG/JPG that becomes the channel's on-screen host
