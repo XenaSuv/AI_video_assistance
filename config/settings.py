@@ -23,7 +23,7 @@ def _env(key: str, default: str | None = None, required: bool = False) -> str:
 class Settings:
     # LLM
     openai_api_key: str = _env("OPENAI_API_KEY", required=True)
-    openai_model: str = _env("OPENAI_MODEL", "gpt-4o")
+    openai_model: str = _env("OPENAI_MODEL", "gpt-4o-mini")
 
     # TTS
     elevenlabs_api_key:   str = _env("ELEVENLABS_API_KEY", required=True)

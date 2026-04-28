@@ -393,45 +393,48 @@ def ken_burns(
     pan = int((in_w - out_w) * 0.40)    # 40% of horizontal headroom
     y0  = int((in_h - out_h) * 0.25)    # 25% down from top
 
-    # Guarantee the image is at least in_w × in_h so all crop formulas are valid.
-    # force_original_aspect_ratio=increase scales up whichever dimension is too
-    # small; the subsequent crop removes any excess to land at exactly in_w × in_h.
-    scale_up = (
-        f"scale='max(iw,{in_w})':'max(ih,{in_h})'"
-        f":force_original_aspect_ratio=increase:flags=bicubic,"
-        f"crop={in_w}:{in_h},"
-    )
+    # Build the final filter with all values precomputed (no iw/ih at ffmpeg init).
+    # First: scale the image to be large enough for any zoom effect without stretching.
+    # Then: apply the Ken Burns effect with absolute dimensions.
 
     if variant == 0:
         # Pan left → right
-        vf = scale_up + (
+        vf = (
+            f"scale={in_w}:{in_h}:force_original_aspect_ratio=increase,"
+            f"crop={in_w}:{in_h},"
             f"crop=w={out_w}:h={out_h}"
             f":x='min({pan}*t/{dur:.4f},{pan})':y={y0}"
             f",scale={out_w}:{out_h}"
         )
     elif variant == 1:
         # Pan right → left
-        vf = scale_up + (
+        vf = (
+            f"scale={in_w}:{in_h}:force_original_aspect_ratio=increase,"
+            f"crop={in_w}:{in_h},"
             f"crop=w={out_w}:h={out_h}"
             f":x='{pan}-min({pan}*t/{dur:.4f},{pan})':y={y0}"
             f",scale={out_w}:{out_h}"
         )
     elif variant == 2:
         # Zoom in: crop shrinks from full image toward centre
-        vf = scale_up + (
-            f"crop=w='iw-(iw-{out_w})*t/{dur:.4f}'"
-            f":h='ih-(ih-{out_h})*t/{dur:.4f}'"
-            f":x='(iw-(iw-(iw-{out_w})*t/{dur:.4f}))/2'"
-            f":y='(ih-(ih-(ih-{out_h})*t/{dur:.4f}))/2'"
+        vf = (
+            f"scale={in_w}:{in_h}:force_original_aspect_ratio=increase,"
+            f"crop={in_w}:{in_h},"
+            f"crop=w='{in_w}-({in_w}-{out_w})*t/{dur:.4f}'"
+            f":h='{in_h}-({in_h}-{out_h})*t/{dur:.4f}'"
+            f":x='({in_w}-({in_w}-({in_w}-{out_w})*t/{dur:.4f}))/2'"
+            f":y='({in_h}-({in_h}-({in_h}-{out_h})*t/{dur:.4f}))/2'"
             f",scale={out_w}:{out_h}"
         )
     else:
         # Zoom out: crop grows from centre
-        vf = scale_up + (
-            f"crop=w='{out_w}+(iw-{out_w})*t/{dur:.4f}'"
-            f":h='{out_h}+(ih-{out_h})*t/{dur:.4f}'"
-            f":x='(iw-({out_w}+(iw-{out_w})*t/{dur:.4f}))/2'"
-            f":y='(ih-({out_h}+(ih-{out_h})*t/{dur:.4f}))/2'"
+        vf = (
+            f"scale={in_w}:{in_h}:force_original_aspect_ratio=increase,"
+            f"crop={in_w}:{in_h},"
+            f"crop=w='{out_w}+({in_w}-{out_w})*t/{dur:.4f}'"
+            f":h='{out_h}+({in_h}-{out_h})*t/{dur:.4f}'"
+            f":x='({in_w}-({out_w}+({in_w}-{out_w})*t/{dur:.4f}))/2'"
+            f":y='({in_h}-({out_h}+({in_h}-{out_h})*t/{dur:.4f}))/2'"
             f",scale={out_w}:{out_h}"
         )
 
