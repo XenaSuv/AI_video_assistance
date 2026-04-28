@@ -154,6 +154,24 @@ def mark_published(data_dir: Path, item: NewsItem, video_id: str = "") -> None:
     _save_seen(data_dir, seen)
 
 
+def mark_publish_failed(data_dir: Path, item: NewsItem, error: str = "") -> None:
+    """Record a failed publish attempt in breaking_seen.json for audit and retry.
+
+    Does NOT increment the circuit-breaker video count — a failed upload should
+    not consume one of the day's allowed breaking slots.
+    """
+    seen = _load_seen(data_dir)
+    seen.setdefault("failed_videos", []).append({
+        "url":       item.url,
+        "title":     item.title,
+        "source":    item.source,
+        "failed_at": datetime.now(timezone.utc).isoformat(),
+        "error":     error,
+    })
+    _save_seen(data_dir, seen)
+    logger.warning(f"Breaking: publish failure recorded for '{item.title}'")
+
+
 # ─────────────────── CLI ───────────────────
 
 if __name__ == "__main__":
