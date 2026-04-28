@@ -65,101 +65,108 @@ class VideoScript:
 # --------------------- Prompt ---------------------
 
 SYSTEM_PROMPT = """You are the writer and producer for a daily AI news YouTube channel.
-You write punchy, accurate, engaging scripts that sound like a knowledgeable friend
-explaining things — NOT like a press release. You cite specific papers/companies.
-Avoid hype; be honest about limitations. No 'welcome back to the channel' filler.
+Your scripts sound like a knowledgeable friend explaining the latest AI developments —
+NOT a press release or corporate blog post. You cite specific papers, companies,
+researchers, and real numbers. Honest about limitations; no hype.
+No "welcome back to the channel" filler — assume viewers know the channel.
 
-Output MUST be a single valid JSON object, no commentary, no markdown fences."""
+=== NARRATION STYLE ===
+- Write conversationally: contractions ("it's", "you'll", "they've", "here's") are good
+- Every scene: topic hook → key facts → implication for viewers → bridge to next topic
+- Use concrete specifics: model names, benchmark scores, funding amounts, release dates
+- Vary sentence length: short punchy sentences for impact, longer ones for explanation
+- Speak as "we" when contextualising the field; never "I"
+- Close the final scene with a genuine, non-cringey call to like/subscribe
 
+=== INFOGRAPHIC DATA ===
+Set "infographic_data" to replace the static DALL-E image with an animated chart whenever
+a scene has concrete numbers, model comparisons, benchmark scores, or chronological events.
+Leave null for narrative, opinion, or abstract concept scenes.
 
-_INFOGRAPHIC_GUIDE = """
-For each scene you may optionally set "infographic_data" to replace the
-static DALL-E image with an animated chart. Use it for scenes that quote
-specific numbers, compare models, or show a timeline of events. Leave it
-null for narrative/opinion scenes.  Supported types:
+Supported types and exact JSON shapes:
 
-  bar_chart   {"type":"bar_chart","title":"...","unit":"%",
-               "items":[{"label":"GPT-4o","value":87.2}, ...]}
-               Up to 8 items. Values are plain numbers (no units in value).
+  bar_chart — ranked comparison (up to 8 items):
+    {"type":"bar_chart","title":"HumanEval Scores","unit":"%",
+     "items":[{"label":"GPT-4o","value":90.2},{"label":"Claude 3","value":88.5}]}
 
-  timeline    {"type":"timeline","title":"...",
-               "events":[{"date":"Jan 2024","label":"Sora"}, ...]}
-               Up to 6 events in chronological order.
+  timeline — chronological sequence (up to 6 events):
+    {"type":"timeline","title":"GPT Release History",
+     "events":[{"date":"Jun 2020","label":"GPT-3"},{"date":"Mar 2023","label":"GPT-4"}]}
 
-  stat_card   {"type":"stat_card","value":"70B","label":"Parameters",
-               "context":"10× more than GPT-3"}
-               value may include prefix/suffix: "$4.2B", "87%", "#1".
+  stat_card — single headline number with context:
+    {"type":"stat_card","value":"$6.6B","label":"OpenAI Funding Round",
+     "context":"Valuation reaches $157B"}
 
-  comparison  {"type":"comparison","title":"HumanEval Score","unit":"%",
-               "left":{"label":"GPT-3.5","value":48.1},
-               "right":{"label":"GPT-4o","value":90.2}}
-"""
+  comparison — head-to-head two items:
+    {"type":"comparison","title":"HumanEval","unit":"%",
+     "left":{"label":"GPT-3.5","value":48.1},"right":{"label":"GPT-4o","value":90.2}}
 
-USER_PROMPT_TMPL = """Using the AI news items below, write a {target_words}-word script
-(roughly 15 minutes at 150 wpm) broken into {num_scenes} scenes.
+Values are always plain numbers (no currency/percent in the number itself).
 
-For each scene provide:
-- heading: short chyron-style title (max 8 words)
-- narration: the actual spoken text (natural, conversational, contractions OK)
-- visual_prompt: a DALL-E 3 image prompt (always required as fallback)
-- video_query: a 2-5 word stock-video search term for scenes with real-world
-  action (people working, server rooms, office, phone, typing, presenting).
-  Set for 2-3 scenes out of {num_scenes} — the ones with most physical activity.
-  Use null for data scenes (use infographic instead) and abstract concepts.
-  Keep generic — avoid brand names, logos, or overly specific interfaces.
-  Examples: "developer coding laptop", "data center servers", "team meeting office",
-  "person presenting screen", "smartphone app scrolling", "AI robot arm factory"
-- infographic_data: animated chart data when the scene has concrete numbers
-  or comparisons — otherwise null. See the infographic guide below.
-- short_narration: YOU MUST fill this for EXACTLY 2-3 middle scenes
-  (not scene 0 intro, not the last sign-off scene). Each must be a
-  self-contained ~120-word Shorts script a viewer can watch without seeing
-  the full video. Hook immediately ("Breaking:", "Just in:", "Here's what
-  happened with..."). End with: "Subscribe for daily AI news."
-  Set null only for the opening and closing scenes.
-{infographic_guide}
-Close with a sign-off that invites likes/subscribes without being cringey.
+=== B-ROLL VIDEO QUERY ===
+Set "video_query" on 2-3 scenes with real-world physical action where stock footage adds
+visual interest. Keep terms generic — no brand names, logos, or UI-specific terms.
+Good examples: "developer coding laptop", "data center servers blinking lights",
+"team meeting office whiteboard", "person presenting screen audience",
+"smartphone scrolling app", "AI robot arm factory floor", "researcher laboratory"
+Use null for: data/comparison scenes (use infographic), abstract AI concepts,
+policy/opinion scenes, any scene where a DALL-E illustration communicates better.
 
-Also produce:
-- title: catchy YouTube title, under 70 chars, include one emoji max
-- description: 200-400 words, summary + chapter timestamps placeholder
-  '(TIMESTAMPS_AUTOFILL)', plus 'Sources:' section with URLs
-- tags: 15-25 lowercase YouTube tags, comma-separated concepts
-- hook_variants: exactly 3 distinct 1-2 sentence hooks (each 5-10s when spoken).
-  Each must tease the 2-3 biggest stories differently:
-  variant 0 — lead with the most surprising fact or number
-  variant 1 — open with a provocative question
-  variant 2 — bold statement of the biggest implication
+=== SHORT NARRATION ===
+Fill "short_narration" for EXACTLY 2-3 middle scenes (not scene 0 intro, not the last
+sign-off). Each must be fully self-contained (~120 words):
+- First sentence: news hook — "Breaking:", "Just in:", "Here's what just happened:"
+- Body: one story with all context included; viewer has NOT seen the full video
+- Final sentence exactly: "Subscribe for daily AI news."
+- Never use "In today's video", "As I mentioned", or cross-references to other scenes
+Set short_narration to null for the opening intro and closing sign-off only.
 
-News items (ranked by relevance):
-{items_block}
+=== YOUTUBE METADATA ===
+title: under 70 characters, one emoji maximum, tease the #1 story
+description: 200-400 words — concise summary, then "(TIMESTAMPS_AUTOFILL)", then
+  "Sources:" section listing all article URLs from the news items
+tags: 15-25 lowercase tags, mix broad ("ai news", "artificial intelligence") and
+  specific ("gpt-4o", "anthropic", "llama") terms for YouTube algorithm discovery
+hook_variants: exactly 3 distinct hooks, each 5-10 seconds when spoken aloud:
+  variant 0 — lead with the most surprising single fact or number from today's news
+  variant 1 — open with a provocative "what if" or rhetorical question
+  variant 2 — bold declarative statement of the biggest implication
 
-Return this JSON schema exactly:
-{{
+=== OUTPUT FORMAT ===
+Output MUST be a single valid JSON object. No markdown fences. No commentary.
+{
   "title": "...",
   "description": "...",
-  "tags": ["..."],
-  "hook_variants": ["...", "...", "..."],
+  "tags": ["tag1", "tag2", "..."],
+  "hook_variants": ["fact-lead hook", "question hook", "bold statement hook"],
   "scenes": [
-    {{
-      "heading": "...",
-      "narration": "...",
-      "visual_prompt": "...",
+    {
+      "heading": "chyron title max 8 words",
+      "narration": "spoken text, conversational, contractions OK",
+      "visual_prompt": "DALL-E 3 prompt — always required even when infographic_data is set",
       "video_query": null,
       "infographic_data": null,
       "short_narration": null
-    }},
-    {{
+    },
+    {
       "heading": "...",
       "narration": "...",
       "visual_prompt": "...",
       "video_query": null,
       "infographic_data": null,
-      "short_narration": "Breaking: [~120 words ending with 'Subscribe for daily AI news.']"
-    }},
-    ...
+      "short_narration": "Breaking: [self-contained story ~120 words]. Subscribe for daily AI news."
+    }
   ]
-}}"""
+}"""
+
+
+USER_PROMPT_TMPL = """Write a {target_words}-word daily AI news script (~15 min at 150 wpm) \
+broken into {num_scenes} scenes.
+
+Close with a sign-off that invites likes/subscribes without being cringey.
+
+News items (ranked by relevance):
+{items_block}"""
 
 
 _DAILY_SHORTS_FILL_PROMPT = """\
@@ -176,6 +183,20 @@ Return JSON: {{"scenes": [{{"idx": <N>, "short_narration": "..."}}]}}
 Scenes to fill:
 {scenes_block}
 """
+
+
+def _log_usage(usage, label: str = "") -> None:
+    """Log OpenAI token usage including prompt-cache savings."""
+    if not usage:
+        return
+    details = usage.prompt_tokens_details
+    cached = getattr(details, "cached_tokens", 0) if details else 0
+    pct = int(cached / usage.prompt_tokens * 100) if usage.prompt_tokens else 0
+    tag = f"[{label}] " if label else ""
+    logger.debug(
+        f"{tag}OpenAI tokens — prompt: {usage.prompt_tokens} "
+        f"({cached} cached, {pct}% hit) | completion: {usage.completion_tokens}"
+    )
 
 
 def _build_items_block(items: list[NewsItem]) -> str:
@@ -223,6 +244,7 @@ def _fill_missing_short_narrations(
             }],
             temperature=0.7,
         )
+        _log_usage(resp.usage, "shorts-fill")
         data = json.loads(resp.choices[0].message.content or "{}")
         idx_map = {s.idx: s for s in to_fill}
         for item in data.get("scenes", []):
@@ -253,7 +275,6 @@ def generate_script(
         target_words=settings.script_target_words,
         num_scenes=num_scenes,
         items_block=_build_items_block(items),
-        infographic_guide=_INFOGRAPHIC_GUIDE,
     )
 
     logger.info(f"Requesting script from {settings.openai_model} "
@@ -268,6 +289,7 @@ def generate_script(
         response_format={"type": "json_object"},
         temperature=0.7,
     )
+    _log_usage(resp.usage, "script")
 
     raw = resp.choices[0].message.content or "{}"
     data = json.loads(raw)
