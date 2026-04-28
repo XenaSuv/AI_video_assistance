@@ -117,9 +117,10 @@ def merge_av(
 ) -> Path:
     """Merge separate video + audio tracks into *output*.
 
-    If *loop_video* is True, the video stream is looped to match the audio
-    duration.  Audio is always the master clock.
-    Uses ``-c:v copy`` so no re-encode of the video.
+    If *loop_video* is True the video is looped to match the audio duration.
+    Looping requires re-encoding (libx264) because -stream_loop with -c:v copy
+    produces duplicate timestamps and causes ffmpeg to exit with error 228.
+    When not looping, stream copy is used to avoid unnecessary re-encoding.
     """
     if output.exists():
         return output
@@ -131,7 +132,8 @@ def merge_av(
             "-stream_loop", "-1", "-i", str(video),
             "-i", str(audio),
             "-map", "0:v:0", "-map", "1:a:0",
-            "-c:v", "copy", "-c:a", "aac",
+            "-c:v", "libx264", "-crf", "18", "-preset", "medium",
+            "-c:a", "aac",
             "-shortest",
             str(output),
         ])

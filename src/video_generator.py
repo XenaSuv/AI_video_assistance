@@ -212,12 +212,14 @@ def build_video(
     intro_path: Path | None = None,
     outro_path: Path | None = None,
     is_breaking: bool = False,
+    use_presenter: bool = False,
 ) -> Path:
     """End-to-end video creation.
 
-    *tool*        – pass claude/chatgpt/gemini for weekly tutorials (enables
-                    real-screenshot capture); None → DALL-E / B-roll / infographic.
-    *is_breaking* – activates Stable Diffusion as the image generator.
+    *tool*          – pass claude/chatgpt/gemini for weekly tutorials (enables
+                      real-screenshot capture); None → DALL-E / B-roll / infographic.
+    *is_breaking*   – activates Stable Diffusion as the image generator.
+    *use_presenter* – generate a D-ID talking-head hook clip (weekly only).
     *intro_path / outro_path* – prepended / appended when the file exists.
     """
     clip_dir = out_dir / "clips"
@@ -231,9 +233,9 @@ def build_video(
         s.idx: out_dir / "audio" / f"scene_{s.idx:02d}.mp3" for s in script.scenes
     }
 
-    # Presenter hook clip (D-ID) — generated only when enabled
+    # Presenter hook clip (D-ID) — weekly tutorials only
     presenter_clip: Path | None = None
-    if settings.presenter_enabled:
+    if use_presenter and settings.presenter_enabled:
         try:
             hook_audio = synthesize_hook(script, out_dir)
             avatar_path = Path(settings.presenter_avatar_path)
