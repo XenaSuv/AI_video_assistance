@@ -15,6 +15,7 @@ from config import settings
 from src.script_generator import Scene, VideoScript
 from src.image_generator import generate_scene_clip
 from src.quote_card import render_quote_card_png
+from src.end_card import render_end_card_png as render_end_card
 from src.presenter import generate_presenter_clip
 from src.voice_generator import synthesize_hook
 import src.ffmpeg_utils as ffmpeg_utils
@@ -142,6 +143,19 @@ def assemble_video(
             f"Scene {scene.idx} assembled: {target_dur:.1f}s"
             + (" (+ title card)" if scene.idx > 0 else "")
         )
+
+    # End card — appended after all scenes (background music covers it)
+    if settings.end_card_enabled:
+        try:
+            ec_png = assembled_dir / "end_card.png"
+            ec_mp4 = assembled_dir / "end_card.mp4"
+            render_end_card(settings.channel_name, settings.channel_handle, ec_png,
+                            cta=settings.channel_cta)
+            ffmpeg_utils.end_card_clip(ec_png, ec_mp4, duration_sec=settings.end_card_duration)
+            ordered_segments.append(ec_mp4)
+            logger.info(f"End card appended ({settings.end_card_duration:.0f}s)")
+        except Exception as exc:
+            logger.warning(f"End card failed (non-fatal): {exc}")
 
     # Concatenate all scene segments into content.mp4
     content_path = assembled_dir / "content.mp4"

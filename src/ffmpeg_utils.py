@@ -294,6 +294,39 @@ def quote_card_clip(
     return output
 
 
+def end_card_clip(
+    png_path: Path,
+    output: Path,
+    *,
+    duration_sec: float = 10.0,
+) -> Path:
+    """Convert the end-card PNG into a video clip with fade in/out.
+
+    Silent (no audio) — background music covers it during mix_music().
+    """
+    if output.exists():
+        return output
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    fade_d = 0.5
+    vf = (
+        f"fade=t=in:st=0:d={fade_d},"
+        f"fade=t=out:st={duration_sec - fade_d:.2f}:d={fade_d}"
+    )
+    _run([
+        "ffmpeg", "-y",
+        "-loop", "1",
+        "-i", str(png_path),
+        "-vf", vf,
+        "-t", str(duration_sec),
+        "-c:v", "libx264", "-crf", "18", "-preset", "medium",
+        "-pix_fmt", "yuv420p",
+        "-an",
+        str(output),
+    ])
+    return output
+
+
 def burn_chyron(video: Path, heading: str, output: Path) -> Path:
     """Burn a lower-third chyron (heading text) onto *video* for the first few seconds.
 
@@ -347,6 +380,10 @@ def ken_burns(
     variant 1: pan right → left
     variant 2: zoom in
     variant 3: zoom out
+
+    The filter chain starts with a scale step that upsizes the image to at
+    least in_w × in_h before any cropping.  This prevents exit code 234 when
+    DALL-E returns a smaller-than-expected image (e.g. 1024×1024 square).
     """
     if output.exists():
         return output
@@ -356,26 +393,32 @@ def ken_burns(
     pan = int((in_w - out_w) * 0.40)    # 40% of horizontal headroom
     y0  = int((in_h - out_h) * 0.25)    # 25% down from top
 
-    # If input is smaller than output, skip Ken Burns effects and just scale
-    if in_w <= out_w or in_h <= out_h:
-        vf = f"scale={out_w}:{out_h}"
-    elif variant == 0:
+    # Guarantee the image is at least in_w × in_h so all crop formulas are valid.
+    # force_original_aspect_ratio=increase scales up whichever dimension is too
+    # small; the subsequent crop removes any excess to land at exactly in_w × in_h.
+    scale_up = (
+        f"scale='max(iw,{in_w})':'max(ih,{in_h})'"
+        f":force_original_aspect_ratio=increase:flags=bicubic,"
+        f"crop={in_w}:{in_h},"
+    )
+
+    if variant == 0:
         # Pan left → right
-        vf = (
+        vf = scale_up + (
             f"crop=w={out_w}:h={out_h}"
             f":x='min({pan}*t/{dur:.4f},{pan})':y={y0}"
             f",scale={out_w}:{out_h}"
         )
     elif variant == 1:
         # Pan right → left
-        vf = (
+        vf = scale_up + (
             f"crop=w={out_w}:h={out_h}"
             f":x='{pan}-min({pan}*t/{dur:.4f},{pan})':y={y0}"
             f",scale={out_w}:{out_h}"
         )
     elif variant == 2:
         # Zoom in: crop shrinks from full image toward centre
-        vf = (
+        vf = scale_up + (
             f"crop=w='iw-(iw-{out_w})*t/{dur:.4f}'"
             f":h='ih-(ih-{out_h})*t/{dur:.4f}'"
             f":x='(iw-(iw-(iw-{out_w})*t/{dur:.4f}))/2'"
@@ -384,7 +427,7 @@ def ken_burns(
         )
     else:
         # Zoom out: crop grows from centre
-        vf = (
+        vf = scale_up + (
             f"crop=w='{out_w}+(iw-{out_w})*t/{dur:.4f}'"
             f":h='{out_h}+(ih-{out_h})*t/{dur:.4f}'"
             f":x='(iw-({out_w}+(iw-{out_w})*t/{dur:.4f}))/2'"
