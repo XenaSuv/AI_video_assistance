@@ -47,9 +47,15 @@ class Settings:
     ru_youtube_client_secrets:   Path = ROOT / _env("RU_YOUTUBE_CLIENT_SECRETS", "config/client_secrets_ru.json")
     ru_youtube_token_file:       Path = ROOT / _env("RU_YOUTUBE_TOKEN_FILE",     "config/token_ru.pickle")
 
-    # Stock B-roll (Pexels primary, Pixabay fallback)
+    # Stock B-roll video (Pexels primary, Pixabay fallback)
     pexels_api_key:  str = _env("PEXELS_API_KEY",  "")
     pixabay_api_key: str = _env("PIXABAY_API_KEY", "")
+
+    # Stock photos as DALL-E fallback for generic scenes
+    unsplash_access_key: str = _env("UNSPLASH_ACCESS_KEY", "")
+
+    # Stable Diffusion via Stability AI — used for breaking-news clips (3× cheaper than DALL-E HD)
+    stability_api_key: str = _env("STABILITY_API_KEY", "")
 
     # Slack notifications (optional — leave blank to disable)
     slack_webhook_url: str = _env("SLACK_WEBHOOK_URL", "")

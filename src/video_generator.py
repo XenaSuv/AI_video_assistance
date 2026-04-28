@@ -41,13 +41,15 @@ def generate_clips_for_scene(
     *,
     tool: str | None = None,
     run_dir: Path | None = None,
+    is_breaking: bool = False,
 ) -> list[Path]:
     """Return a list containing the single clip for this scene.
 
-    *tool*    — enables real-screenshot capture for weekly tutorials.
-    *run_dir* — passed to broll_fetcher so Pexels credits are recorded.
+    *tool*        — enables real-screenshot capture for weekly tutorials.
+    *run_dir*     — passed to broll_fetcher so Pexels credits are recorded.
+    *is_breaking* — activates Stable Diffusion instead of DALL-E.
     """
-    return [generate_scene_clip(scene, out_dir, tool=tool, run_dir=run_dir)]
+    return [generate_scene_clip(scene, out_dir, tool=tool, run_dir=run_dir, is_breaking=is_breaking)]
 
 
 # --------------------- Assembly ---------------------
@@ -174,18 +176,20 @@ def build_video(
     tool: str | None = None,
     intro_path: Path | None = None,
     outro_path: Path | None = None,
+    is_breaking: bool = False,
 ) -> Path:
     """End-to-end video creation.
 
-    *tool*      – pass claude/chatgpt/gemini for weekly tutorials (enables
-                  real-screenshot capture); None → DALL-E / B-roll / infographic.
+    *tool*        – pass claude/chatgpt/gemini for weekly tutorials (enables
+                    real-screenshot capture); None → DALL-E / B-roll / infographic.
+    *is_breaking* – activates Stable Diffusion as the image generator.
     *intro_path / outro_path* – prepended / appended when the file exists.
     """
     clip_dir = out_dir / "clips"
     clip_dir.mkdir(parents=True, exist_ok=True)
 
     clip_paths_by_scene = {
-        s.idx: generate_clips_for_scene(s, clip_dir, tool=tool, run_dir=out_dir)
+        s.idx: generate_clips_for_scene(s, clip_dir, tool=tool, run_dir=out_dir, is_breaking=is_breaking)
         for s in script.scenes
     }
     audio_paths_by_scene = {
