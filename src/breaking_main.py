@@ -26,7 +26,7 @@ import src.ffmpeg_utils as ffmpeg_utils
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
-from src.breaking_detector import mark_published
+from src.breaking_detector import mark_publish_failed, mark_published
 from src.breaking_script_generator import generate_breaking_script
 from src.main import _load_audio_durations, _run_language_variant
 from src.subtitle_generator import generate_subtitles
@@ -132,14 +132,20 @@ def run_breaking_pipeline(item: NewsItem, skip_upload: bool = False) -> dict:
             logger.info("--skip-upload; files on disk")
             summary["status"] = "built_not_uploaded"
         else:
-            ids = publish_episode(
-                script, long_video, short_video,
-                thumbnail=thumbnail,
-                subtitle_path=subtitle_path,
-            )
-            summary.update(ids)
-            summary["status"] = "published"
-            mark_published(settings.data_dir, item, video_id=ids.get("long_id", ""))
+            try:
+                ids = publish_episode(
+                    script, long_video, short_video,
+                    thumbnail=thumbnail,
+                    subtitle_path=subtitle_path,
+                )
+                summary.update(ids)
+                summary["status"] = "published"
+                mark_published(settings.data_dir, item, video_id=ids.get("long_id", ""))
+            except Exception as upload_exc:
+                summary["status"] = "publish_failed"
+                summary["publish_error"] = str(upload_exc)
+                mark_publish_failed(settings.data_dir, item, error=str(upload_exc))
+                raise
 
         # 8. Russian variant (optional)
         if settings.ru_enabled:
@@ -162,8 +168,10 @@ def run_breaking_pipeline(item: NewsItem, skip_upload: bool = False) -> dict:
     except Exception as e:
         logger.error(f"Breaking pipeline failed: {e}")
         logger.error(traceback.format_exc())
-        summary["status"] = "failed"
-        summary["error"]  = str(e)
+        # Preserve a more specific status set by an inner step (e.g. "publish_failed")
+        if summary.get("status") not in ("publish_failed",):
+            summary["status"] = "failed"
+        summary["error"] = str(e)
         notify_failure(e, "breaking", summary, traceback.format_exc())
         raise
 
