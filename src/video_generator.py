@@ -5,37 +5,17 @@ B-roll generation is handled by image_generator.generate_scene_clip().
 """
 from __future__ import annotations
 
-import textwrap
 import sys
 from pathlib import Path
 
-import numpy as np
 from loguru import logger
-from moviepy.editor import (
-    AudioFileClip,
-    CompositeAudioClip,
-    CompositeVideoClip,
-    ImageClip,
-    VideoFileClip,
-    concatenate_videoclips,
-    ColorClip,
-)
-from moviepy.audio.fx.all import audio_fadein, audio_fadeout, audio_loop
-from moviepy.video.fx.all import fadein, fadeout, loop, resize
-
-# Import PIL components with explicit error handling
-try:
-    from PIL import Image, ImageDraw, ImageFont
-except ImportError as e:
-    logger.error(f"Failed to import PIL modules: {e}. Install with: pip install Pillow>=10.4.0")
-    raise ImportError("PIL/Pillow is required for video generation") from e
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.script_generator import Scene, VideoScript
 from src.image_generator import generate_scene_clip
+import src.ffmpeg_utils as ffmpeg_utils
 
-_FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 VIDEO_W, VIDEO_H = 1280, 720   # canonical output resolution
 
 
@@ -51,42 +31,6 @@ def _resolve_music_path() -> Path | None:
         logger.warning(f"Background music not found: {p} — skipping")
         return None
     return p
-
-
-def _apply_background_music(clip, volume: float):
-    """Mix looped background music under *clip*'s existing audio.
-
-    Non-fatal: any error is logged and the clip is returned unchanged.
-    Music fades in over 2 s and out over 3 s so it doesn't clash with
-    the narration at the very start/end.
-    """
-    path = _resolve_music_path()
-    if path is None:
-        return clip
-    try:
-        music = AudioFileClip(str(path))
-        music = audio_loop(music, duration=clip.duration)
-        music = music.volumex(volume)
-        music = audio_fadein(audio_fadeout(music, 3.0), 2.0)
-        existing = clip.audio
-        mixed = CompositeAudioClip([existing, music]) if existing else music
-        logger.info(f"Background music mixed at {volume:.0%} volume ({path.name})")
-        return clip.set_audio(mixed)
-    except Exception as exc:
-        logger.warning(f"Background music failed (non-fatal): {exc}")
-        return clip
-
-
-def _validate_dependencies() -> None:
-    """Verify all required dependencies are available at runtime."""
-    try:
-        # Test PIL access
-        _ = Image.new("RGB", (10, 10), (255, 255, 255))
-        _ = ImageFont.load_default()
-        logger.debug("PIL dependencies validated")
-    except Exception as e:
-        logger.error(f"PIL validation failed: {e}")
-        raise RuntimeError("PIL/Pillow initialization failed") from e
 
 
 # --------------------- Per-scene clip generation ---------------------
@@ -108,96 +52,6 @@ def generate_clips_for_scene(
 
 # --------------------- Assembly ---------------------
 
-def _chyron(heading: str, duration: float) -> ImageClip:
-    """Lower-third text graphic rendered with PIL — no ImageMagick required."""
-    try:
-        font = ImageFont.truetype(_FONT_PATH, 48)
-    except OSError:
-        font = ImageFont.load_default()
-
-    # Draw heading onto a transparent 1280×720 canvas
-    canvas = Image.new("RGBA", (1280, 720), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(canvas)
-    bbox = font.getbbox(heading)
-    text_w = bbox[2] - bbox[0]
-    x = (1280 - text_w) // 2
-    y = 640
-    draw.text((x + 2, y + 2), heading, font=font, fill=(0, 0, 0, 200))   # shadow
-    draw.text((x,     y    ), heading, font=font, fill=(255, 255, 255, 255))
-
-    rgb   = np.array(canvas.convert("RGB"))
-    alpha = np.array(canvas.split()[3]) / 255.0
-
-    clip = (
-        ImageClip(rgb, duration=duration)
-        .set_mask(ImageClip(alpha, ismask=True, duration=duration))
-    )
-    return fadein(fadeout(clip, 0.5), 0.5)
-
-
-_CARD_BG     = (13,  17,  23)   # dark navy
-_CARD_ACCENT = (56, 189, 248)   # sky blue
-_CARD_DUR    = 2.5              # seconds each title card is shown
-
-
-def _title_card(heading: str) -> ImageClip:
-    """Full-screen scene-divider card: dark background, accent bars, centered heading.
-
-    Shown for _CARD_DUR seconds before each scene (except the opening hook) so
-    viewers always know which topic is starting.
-    """
-    W, H = 1280, 720
-    canvas = Image.new("RGB", (W, H), _CARD_BG)
-    draw   = ImageDraw.Draw(canvas)
-
-    try:
-        font = ImageFont.truetype(_FONT_PATH, 56)
-    except OSError:
-        font = ImageFont.load_default()
-
-    # Wrap long headings to at most 2 lines
-    lines: list[str] = []
-    for width in (34, 48):
-        lines = textwrap.wrap(heading, width=width)
-        if len(lines) <= 2:
-            break
-
-    line_h  = 56 + 14          # font size + leading
-    total_h = len(lines) * line_h
-    mid     = H // 2
-
-    # Accent bar above text
-    draw.rectangle(
-        [(80, mid - total_h // 2 - 20), (W - 80, mid - total_h // 2 - 17)],
-        fill=_CARD_ACCENT,
-    )
-    # Accent bar below text
-    draw.rectangle(
-        [(80, mid + total_h // 2 + 14), (W - 80, mid + total_h // 2 + 17)],
-        fill=_CARD_ACCENT,
-    )
-
-    y_start = mid - total_h // 2
-    for i, line in enumerate(lines):
-        bbox  = font.getbbox(line)
-        x     = (W - (bbox[2] - bbox[0])) // 2
-        y     = y_start + i * line_h
-        draw.text((x + 2, y + 2), line, font=font, fill=(0, 0, 0))        # shadow
-        draw.text((x,     y    ), line, font=font, fill=(255, 255, 255))   # text
-
-    arr  = np.array(canvas)
-    clip = ImageClip(arr, duration=_CARD_DUR)
-    return fadein(fadeout(clip, 0.4), 0.4)
-
-
-def _fit_clip_to_duration(video_path: Path, target_seconds: int) -> VideoFileClip:
-    """Loop or trim a clip to exactly target_seconds."""
-    clip = VideoFileClip(str(video_path)).without_audio()
-    if clip.duration < target_seconds:
-        clip = loop(clip, duration=target_seconds)
-    return clip.subclip(0, target_seconds)
-
-
 def assemble_video(
     script: VideoScript,
     clip_paths_by_scene: dict[int, list[Path]],
@@ -210,81 +64,107 @@ def assemble_video(
     """Combine generated clips + narration into the final 16:9 video.
 
     When *intro_path* / *outro_path* are supplied and the files exist they are
-    prepended / appended as-is (audio included). The global fade-in/out is only
-    applied to the main content when NO intro/outro is present so that the
-    branded clips handle their own transitions.
+    prepended / appended as-is (audio included). All intermediate files are
+    cached in out_dir/assembled/ so re-runs skip already-built segments.
     """
-    # ── main content ──────────────────────────────────────────────────────────
-    segments = []
+    assembled_dir = output_path.parent / "assembled"
+    assembled_dir.mkdir(parents=True, exist_ok=True)
+
+    ordered_segments: list[Path] = []
+
     for scene in script.scenes:
+        audio_path = audio_paths_by_scene[scene.idx]
+        target_dur = ffmpeg_utils.duration(audio_path)
+
+        # Merge video + audio (loop video if shorter than narration)
+        clip_paths = clip_paths_by_scene[scene.idx]
+        if len(clip_paths) == 1:
+            raw_clip = clip_paths[0]
+        else:
+            # Concat multiple clips for this scene first
+            cat_path = assembled_dir / f"scene_{scene.idx:02d}_cat.mp4"
+            raw_clip = ffmpeg_utils.concat(clip_paths, cat_path)
+
+        assembled_clip = assembled_dir / f"scene_{scene.idx:02d}.mp4"
+        assembled_clip = ffmpeg_utils.merge_av(
+            raw_clip, audio_path, assembled_clip, loop_video=True
+        )
+
+        # Burn chyron (lower-third heading text) — non-fatal
+        chyron_clip = assembled_dir / f"scene_{scene.idx:02d}_chyron.mp4"
+        chyron_clip = ffmpeg_utils.burn_chyron(assembled_clip, scene.heading, chyron_clip)
+
+        # Title card before all scenes except the first
         if scene.idx > 0:
-            segments.append(_title_card(scene.heading))
+            card_path = assembled_dir / f"title_{scene.idx:02d}.mp4"
+            card_path = ffmpeg_utils.title_card(scene.heading, card_path)
+            ordered_segments.append(card_path)
 
-        narration  = AudioFileClip(str(audio_paths_by_scene[scene.idx]))
-        target_dur = narration.duration
+        ordered_segments.append(chyron_clip)
+        logger.info(
+            f"Scene {scene.idx} assembled: {target_dur:.1f}s"
+            + (" (+ title card)" if scene.idx > 0 else "")
+        )
 
-        scene_clips = [VideoFileClip(str(p)).without_audio()
-                       for p in clip_paths_by_scene[scene.idx]]
-        video_seg = concatenate_videoclips(scene_clips, method="compose")
-        if video_seg.duration < target_dur:
-            video_seg = loop(video_seg, duration=target_dur)
-        video_seg = video_seg.subclip(0, target_dur)
+    # Concatenate all scene segments into content.mp4
+    content_path = assembled_dir / "content.mp4"
+    content_path = ffmpeg_utils.concat(ordered_segments, content_path)
 
-        chyron    = _chyron(scene.heading, min(4.0, target_dur))
-        composite = CompositeVideoClip([video_seg, chyron])
-        composite = composite.set_audio(narration)
+    # Mix background music (non-fatal)
+    music_path = _resolve_music_path()
+    if music_path:
+        content_music = assembled_dir / "content_music.mp4"
+        content_path = ffmpeg_utils.mix_music(
+            content_path,
+            music_path,
+            content_music,
+            volume=settings.background_music_volume,
+        )
 
-        segments.append(composite)
-        logger.info(f"Scene {scene.idx} assembled: {target_dur:.1f}s"
-                    + (" (+ title card)" if scene.idx > 0 else ""))
-
-    content = concatenate_videoclips(segments, method="compose")
-    content = _apply_background_music(content, settings.background_music_volume)
-
-    # ── wrap with intro / outro ───────────────────────────────────────────────
+    # Wrap with intro / outro
     has_intro = intro_path and intro_path.exists()
     has_outro = outro_path and outro_path.exists()
 
     if has_intro or has_outro:
-        # Branded clips handle their own fades; skip global fade on content.
-        # Resize to the canonical resolution so concatenation never letterboxes.
-        parts = []
+        parts: list[Path] = []
         if has_intro:
-            intro_clip = VideoFileClip(str(intro_path))
-            if (intro_clip.w, intro_clip.h) != (VIDEO_W, VIDEO_H):
+            # Resize intro if needed
+            intro_w, intro_h = ffmpeg_utils.video_size(intro_path)
+            if (intro_w, intro_h) != (VIDEO_W, VIDEO_H):
                 logger.info(
-                    f"Intro: resizing {intro_clip.w}×{intro_clip.h} → {VIDEO_W}×{VIDEO_H}"
+                    f"Intro: resizing {intro_w}×{intro_h} → {VIDEO_W}×{VIDEO_H}"
                 )
-                intro_clip = resize(intro_clip, (VIDEO_W, VIDEO_H))
-            parts.append(intro_clip)
-            logger.info(f"Intro: {intro_path.name} ({intro_clip.duration:.1f}s)")
-        parts.append(content)
-        if has_outro:
-            outro_clip = VideoFileClip(str(outro_path))
-            if (outro_clip.w, outro_clip.h) != (VIDEO_W, VIDEO_H):
-                logger.info(
-                    f"Outro: resizing {outro_clip.w}×{outro_clip.h} → {VIDEO_W}×{VIDEO_H}"
+                intro_resized = assembled_dir / "intro_resized.mp4"
+                intro_path = ffmpeg_utils.resize_video(
+                    intro_path, intro_resized, width=VIDEO_W, height=VIDEO_H
                 )
-                outro_clip = resize(outro_clip, (VIDEO_W, VIDEO_H))
-            parts.append(outro_clip)
-            logger.info(f"Outro: {outro_path.name} ({outro_clip.duration:.1f}s)")
-        final = concatenate_videoclips(parts, method="chain")
-    else:
-        final = fadein(fadeout(content, 1.0), 1.0)
+            parts.append(intro_path)
+            logger.info(f"Intro: {intro_path.name}")
 
-    logger.info(f"Writing final video to {output_path} ({final.duration:.0f}s)")
-    final.write_videofile(
-        str(output_path),
-        fps=24,
-        codec="libx264",
-        audio_codec="aac",
-        bitrate="6M",
-        threads=4,
-        preset="medium",
-        logger=None,
-    )
-    final.close()
-    return output_path
+        parts.append(content_path)
+
+        if has_outro:
+            outro_w, outro_h = ffmpeg_utils.video_size(outro_path)
+            if (outro_w, outro_h) != (VIDEO_W, VIDEO_H):
+                logger.info(
+                    f"Outro: resizing {outro_w}×{outro_h} → {VIDEO_W}×{VIDEO_H}"
+                )
+                outro_resized = assembled_dir / "outro_resized.mp4"
+                outro_path = ffmpeg_utils.resize_video(
+                    outro_path, outro_resized, width=VIDEO_W, height=VIDEO_H
+                )
+            parts.append(outro_path)
+            logger.info(f"Outro: {outro_path.name}")
+
+        final_path = ffmpeg_utils.concat(parts, output_path)
+    else:
+        # No intro/outro — just copy content to output_path
+        import shutil
+        shutil.copy2(str(content_path), str(output_path))
+        final_path = output_path
+
+    logger.info(f"Final video written: {final_path}")
+    return final_path
 
 
 def build_video(
@@ -301,9 +181,6 @@ def build_video(
                   real-screenshot capture); None → DALL-E / B-roll / infographic.
     *intro_path / outro_path* – prepended / appended when the file exists.
     """
-    # Validate critical dependencies before processing
-    _validate_dependencies()
-    
     clip_dir = out_dir / "clips"
     clip_dir.mkdir(parents=True, exist_ok=True)
 

@@ -365,17 +365,8 @@ def _render_frames(data: dict, total_seconds: float) -> list[np.ndarray]:
 
 
 def _frames_to_mp4(frames: list[np.ndarray], out_path: Path) -> Path:
-    from moviepy.editor import ImageSequenceClip
-    clip = ImageSequenceClip(frames, fps=FPS)
-    clip.write_videofile(
-        str(out_path),
-        codec="libx264",
-        audio=False,
-        preset="medium",
-        logger=None,
-    )
-    clip.close()
-    return out_path
+    from src.ffmpeg_utils import frames_to_video
+    return frames_to_video(frames, out_path, fps=FPS, width=OUT_W, height=OUT_H)
 
 
 # ─────────────────── public API ───────────────────────────────────────────────

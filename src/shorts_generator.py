@@ -10,30 +10,15 @@ from pathlib import Path
 
 import numpy as np
 from loguru import logger
-from moviepy.editor import (
-    AudioFileClip,
-    CompositeAudioClip,
-    CompositeVideoClip,
-    ImageClip,
-    VideoFileClip,
-    concatenate_videoclips,
-)
-from moviepy.audio.fx.all import audio_fadein, audio_fadeout, audio_loop
-from moviepy.video.fx.all import crop, resize
-from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.script_generator import VideoScript
-from src.video_generator import _resolve_music_path
+import src.ffmpeg_utils as ffmpeg_utils
 
 
 SHORT_MAX_SECONDS = 58   # YouTube Shorts hard-limit is 60
 SHORT_W, SHORT_H   = 1080, 1920
-_FONT_PATH         = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-_CAPTION_FONT_SIZE = 84
-_CAPTION_Y_CENTER  = int(SHORT_H * 0.60)   # 60% down the frame
-_MAX_TEXT_WIDTH    = SHORT_W - 120          # 60 px padding each side
 
 
 def _saliency_crop_x(frame: np.ndarray, crop_w: int) -> int:
@@ -57,98 +42,18 @@ def _saliency_crop_x(frame: np.ndarray, crop_w: int) -> int:
     return int(best * 0.7 + center * 0.3)
 
 
-def _make_vertical(clip: VideoFileClip) -> VideoFileClip:
-    """Scale+smart-crop a 16:9 clip to 9:16 1080×1920.
-
-    Samples a frame from the middle of the clip, finds the most visually
-    interesting horizontal window via edge saliency, and crops there
-    instead of always taking the dead centre.
-    """
-    target_ratio = SHORT_W / SHORT_H   # 0.5625
-    src_ratio    = clip.w / clip.h
-    if src_ratio > target_ratio:
-        new_w = int(clip.h * target_ratio)
-        try:
-            mid_frame = clip.get_frame(clip.duration / 2)
-            x1 = _saliency_crop_x(mid_frame, new_w)
-        except Exception:
-            x1 = (clip.w - new_w) // 2
-        clip = crop(clip, x1=x1, x2=x1 + new_w)
-    return resize(clip, newsize=(SHORT_W, SHORT_H))
-
-
-# --------------------- PIL caption helpers ---------------------
-
-def _load_font() -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    try:
-        return ImageFont.truetype(_FONT_PATH, _CAPTION_FONT_SIZE)
-    except OSError:
-        return ImageFont.load_default()
-
-
-def _wrap_text(text: str, font, max_width: int) -> list[str]:
-    """Split *text* into lines that each fit within *max_width* pixels."""
-    words   = text.split()
-    lines   = []
-    current: list[str] = []
-    for word in words:
-        probe = " ".join(current + [word])
-        bbox  = font.getbbox(probe)
-        if bbox[2] - bbox[0] <= max_width:
-            current.append(word)
-        else:
-            if current:
-                lines.append(" ".join(current))
-            current = [word]
-    if current:
-        lines.append(" ".join(current))
-    return lines or [text]
-
-
-def _caption_clip(text: str, duration: float) -> ImageClip:
-    """
-    Render a single caption chunk onto a transparent 1080×1920 canvas.
-    Yellow text, 4px black stroke, centered horizontally at 60% height.
-    Returns a compositable ImageClip with alpha mask.
-    """
-    font        = _load_font()
-    canvas      = Image.new("RGBA", (SHORT_W, SHORT_H), (0, 0, 0, 0))
-    draw        = ImageDraw.Draw(canvas)
-    line_height = _CAPTION_FONT_SIZE + 18
-    lines       = _wrap_text(text, font, _MAX_TEXT_WIDTH)
-    total_h     = len(lines) * line_height
-    y_start     = _CAPTION_Y_CENTER - total_h // 2
-
-    for i, line in enumerate(lines):
-        bbox   = font.getbbox(line)
-        text_w = bbox[2] - bbox[0]
-        x      = (SHORT_W - text_w) // 2
-        y      = y_start + i * line_height
-        draw.text(
-            (x, y), line, font=font,
-            fill=(255, 255, 0, 255),
-            stroke_width=4,
-            stroke_fill=(0, 0, 0, 255),
-        )
-
-    rgb   = np.array(canvas.convert("RGB"))
-    alpha = np.array(canvas.split()[3]) / 255.0
-    return (
-        ImageClip(rgb, duration=duration)
-        .set_mask(ImageClip(alpha, ismask=True, duration=duration))
-    )
-
-
-def _burn_captions(clip: VideoFileClip, text: str) -> CompositeVideoClip:
-    """Overlay animated captions (5-word chunks) onto *clip*."""
-    words      = text.split()
-    chunks     = [" ".join(words[i : i + 5]) for i in range(0, len(words), 5)]
-    per        = clip.duration / max(len(chunks), 1)
-    overlays   = [
-        _caption_clip(chunk, per).set_start(i * per)
-        for i, chunk in enumerate(chunks)
-    ]
-    return CompositeVideoClip([clip, *overlays])
+def _resolve_music_path() -> Path | None:
+    """Return the background music Path, or None if not configured / file missing."""
+    raw = settings.background_music_path.strip()
+    if not raw:
+        return None
+    p = Path(raw)
+    if not p.is_absolute():
+        p = settings.source_dir / raw
+    if not p.exists():
+        logger.warning(f"Background music not found: {p} — skipping")
+        return None
+    return p
 
 
 # --------------------- Public API ---------------------
@@ -166,13 +71,17 @@ def build_short(
     *audio_subdir* lets language variants point at e.g. ``audio_ru/``.
     *out_name* lets variants write ``shorts_ru.mp4`` alongside ``shorts.mp4``.
     """
+    assembled_dir = out_dir / "assembled"
+    assembled_dir.mkdir(parents=True, exist_ok=True)
+
+    out = out_dir / out_name
+
     # Audio is the master clock — video is trimmed to match, not the other way.
     audio_path = out_dir / audio_subdir / "scene_00.mp3"
     if audio_path.exists():
-        narration       = AudioFileClip(str(audio_path))
-        target_duration = min(narration.duration, SHORT_MAX_SECONDS)
+        target_duration = min(ffmpeg_utils.duration(audio_path), SHORT_MAX_SECONDS)
     else:
-        narration       = None
+        audio_path      = None  # type: ignore[assignment]
         target_duration = SHORT_MAX_SECONDS
 
     logger.info(f"Short target duration: {target_duration:.1f}s")
@@ -184,47 +93,63 @@ def build_short(
         logger.warning("No source clips found, falling back to main video head")
         source_clips = [main_video]
 
-    base = concatenate_videoclips(
-        [VideoFileClip(str(p)).without_audio() for p in source_clips],
-        method="compose",
+    # 1. Concat source clips
+    if len(source_clips) == 1:
+        base_path = source_clips[0]
+    else:
+        cat_path = assembled_dir / "short_source_cat.mp4"
+        base_path = ffmpeg_utils.concat(source_clips, cat_path)
+
+    # 2. Loop/trim to target duration
+    looped_path = assembled_dir / "short_looped.mp4"
+    looped_path = ffmpeg_utils.loop_and_trim(base_path, looped_path, target_sec=target_duration)
+
+    # 3. Saliency crop_x
+    try:
+        mid_t   = target_duration / 2
+        mid_frame = ffmpeg_utils.get_frame(looped_path, mid_t)
+        src_w, src_h = ffmpeg_utils.video_size(looped_path)
+        target_ratio = SHORT_W / SHORT_H
+        crop_w = int(src_h * target_ratio)
+        crop_x = _saliency_crop_x(mid_frame, crop_w)
+    except Exception as exc:
+        logger.warning(f"Saliency crop failed (non-fatal): {exc} — using centre crop")
+        crop_x = None
+
+    # 4. make_vertical
+    vertical_path = assembled_dir / "short_vertical.mp4"
+    vertical_path = ffmpeg_utils.make_vertical(
+        looped_path, vertical_path, crop_x=crop_x, out_w=SHORT_W, out_h=SHORT_H
     )
-    # Loop if the clips are shorter than the narration, then trim to exact length
-    if base.duration < target_duration:
-        from moviepy.video.fx.all import loop as fx_loop
-        base = fx_loop(base, duration=target_duration)
-    base = base.subclip(0, target_duration)
-    base = _make_vertical(base)
 
-    if narration is not None:
-        base = base.set_audio(narration.subclip(0, target_duration))
+    # 5. merge_av with audio
+    if audio_path is not None:
+        with_audio = assembled_dir / "short_with_audio.mp4"
+        with_audio = ffmpeg_utils.merge_av(vertical_path, audio_path, with_audio)
+    else:
+        with_audio = vertical_path
 
-    # Mix background music under narration (non-fatal if file missing)
+    # 6. burn_captions
+    with_captions = assembled_dir / "short_with_captions.mp4"
+    with_captions = ffmpeg_utils.burn_captions(
+        with_audio, script.hook, with_captions,
+        font_size=80, y_pct=0.60, color="yellow",
+    )
+
+    # 7. mix_music (non-fatal if file missing)
     music_path = _resolve_music_path()
     if music_path:
-        try:
-            music = AudioFileClip(str(music_path))
-            music = audio_loop(music, duration=target_duration)
-            music = music.volumex(settings.shorts_music_volume)
-            music = audio_fadein(audio_fadeout(music, 1.5), 1.0)
-            existing = base.audio
-            mixed = CompositeAudioClip([existing, music]) if existing else music
-            base = base.set_audio(mixed)
-            logger.info(f"Short: background music mixed at {settings.shorts_music_volume:.0%}")
-        except Exception as exc:
-            logger.warning(f"Short: background music failed (non-fatal): {exc}")
+        final_path = assembled_dir / "short_with_music.mp4"
+        result = ffmpeg_utils.mix_music(
+            with_captions, music_path, final_path,
+            volume=settings.shorts_music_volume,
+            fade_in=1.0, fade_out=1.5,
+        )
+        import shutil
+        shutil.copy2(str(result), str(out))
+    else:
+        import shutil
+        shutil.copy2(str(with_captions), str(out))
 
-    captioned = _burn_captions(base, script.hook)
-
-    out = out_dir / out_name
-    logger.info(f"Writing Short to {out} ({captioned.duration:.0f}s)")
-    captioned.write_videofile(
-        str(out),
-        fps=30,
-        codec="libx264",
-        audio_codec="aac",
-        bitrate="8M",
-        preset="medium",
-        logger=None,
-    )
-    captioned.close()
+    logger.info(f"Short written: {out} ({target_duration:.0f}s)")
     return out
