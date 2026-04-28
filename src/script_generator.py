@@ -371,6 +371,40 @@ def generate_script(
     return script
 
 
+def generate_short_script(news_item, hook: str) -> str:
+    """Generate a compact script for a 30-second YouTube Short."""
+
+    content = getattr(news_item, "summary", None)
+    if content is None and isinstance(news_item, dict):
+        content = news_item.get("summary", "")
+    content = str(content or "")
+
+    client = OpenAI(api_key=settings.openai_api_key)
+    prompt = f"""
+    Create a 30-second YouTube Shorts script.
+
+    Hook: {hook}
+
+    News:
+    {content}
+
+    Structure:
+    - Hook
+    - What happened
+    - Why it matters
+    - One practical use
+
+    Max 80 words.
+    """
+
+    response = client.chat.completions.create(
+        model=settings.openai_model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.7,
+    )
+    return response.choices[0].message.content or ""
+
+
 if __name__ == "__main__":
     from src.scraper import scrape_all
 

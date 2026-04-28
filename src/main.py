@@ -21,6 +21,7 @@ from config import settings
 from src.deduplicator import SeenStories
 from src.digest_script_generator import save_for_digest
 from src.hook_selector import record_usage
+from src.shorts_mvp import run_shorts_mvp
 from src.scraper import scrape_all, NewsItem
 from src.viral_selector import pick_viral_news
 from src.script_generator import Scene, VideoScript, generate_script
@@ -233,6 +234,13 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         if dry_run:
             logger.info("Dry run — stopping after scrape")
             return summary
+
+        # MVP: run a lightweight Shorts-only flow for the first 1-2 items.
+        for item in news[:2]:
+            try:
+                run_shorts_mvp(item)
+            except Exception as exc:
+                logger.warning(f"Shorts MVP failed for item: {exc}")
 
         # 2. Script
         script_cache = run_dir / "script.json"

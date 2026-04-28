@@ -138,6 +138,28 @@ def upload_video(
     return video_id
 
 
+def upload_short(
+    video_path: Path,
+    title: str,
+    description: str | None = None,
+    tags: list[str] | None = None,
+    client_secrets: Path | None = None,
+    token_file: Path | None = None,
+) -> str:
+    """Upload a Short to YouTube using the standard upload helper."""
+    description = description or "#Shorts #AI #TechNews"
+    tags = tags or ["shorts", "AI", "technews"]
+    return upload_video(
+        video_path,
+        title=title,
+        description=description,
+        tags=tags,
+        is_short=True,
+        client_secrets=client_secrets,
+        token_file=token_file,
+    )
+
+
 def set_thumbnail(
     video_id: str,
     thumbnail_path: Path,

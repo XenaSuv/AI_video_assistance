@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 from loguru import logger
+import shutil
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
@@ -153,3 +154,39 @@ def build_short(
 
     logger.info(f"Short written: {out} ({target_duration:.0f}s)")
     return out
+
+
+def add_big_captions(video: Path, text: str, output: Path) -> Path:
+    """Burn large centered captions onto a short-friendly clip."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    return ffmpeg_utils.burn_captions(
+        video,
+        text,
+        output,
+        font_size=72,
+        y_pct=0.45,
+        color="white",
+    )
+
+
+def create_short_video(
+    script_text: str,
+    out_dir: Path,
+    *,
+    out_name: str = "shorts_mvp.mp4",
+    duration_sec: float = 20.0,
+) -> Path:
+    """Create a simple static Shorts video with big burned-in captions."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    assembled_dir = out_dir / "assembled"
+    assembled_dir.mkdir(parents=True, exist_ok=True)
+
+    base_clip = assembled_dir / "shorts_mvp_base.mp4"
+    captioned = assembled_dir / "shorts_mvp_captioned.mp4"
+    out_path = out_dir / out_name
+
+    ffmpeg_utils.black_clip(base_clip, width=1080, height=1920, duration_sec=duration_sec)
+    add_big_captions(base_clip, script_text, captioned)
+    shutil.copy2(str(captioned), str(out_path))
+    logger.info(f"Created shorts MVP video: {out_path}")
+    return out_path
