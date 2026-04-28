@@ -577,18 +577,24 @@ def resize_video(
     *,
     width: int,
     height: int,
+    keep_audio: bool = False,
 ) -> Path:
-    """Scale *video* to *width*×*height*."""
+    """Scale *video* to *width*×*height*.
+
+    Pass *keep_audio=True* to preserve the audio stream (e.g. presenter clips
+    that have speech embedded).  Default strips audio for size efficiency.
+    """
     if output.exists():
         return output
     output.parent.mkdir(parents=True, exist_ok=True)
 
+    audio_flags = ["-c:a", "aac"] if keep_audio else ["-an"]
     _run([
         "ffmpeg", "-y",
         "-i", str(video),
         "-vf", f"scale={width}:{height}",
         "-c:v", "libx264", "-crf", "18", "-preset", "fast",
-        "-an",
+        *audio_flags,
         str(output),
     ])
     return output

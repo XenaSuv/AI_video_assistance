@@ -97,6 +97,45 @@ def synthesize_script(
     return paths
 
 
+def synthesize_hook(
+    script: VideoScript,
+    out_dir: Path,
+    *,
+    voice_id: str | None = None,
+    model_id: str | None = None,
+    audio_subdir: str = "audio",
+) -> Path:
+    """Generate hook.mp3 from script.hook — used as audio input for the presenter clip.
+
+    Cached: skips synthesis if hook.mp3 already exists in *out_dir/audio_subdir*.
+    """
+    hook_text = (script.hook or "").strip()
+    if not hook_text:
+        raise ValueError("Script has no hook text to synthesize")
+
+    v_id = voice_id or settings.elevenlabs_voice_id
+    m_id = model_id or settings.elevenlabs_model
+    client = ElevenLabs(api_key=settings.elevenlabs_api_key)
+
+    audio_dir = out_dir / audio_subdir
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    hook_path = audio_dir / "hook.mp3"
+
+    if hook_path.exists():
+        return hook_path
+
+    logger.info(f"TTS hook ({len(hook_text.split())} words): {hook_text[:60]!r}...")
+    audio_bytes = _tts_convert(client, hook_text, v_id, m_id)
+    with open(hook_path, "wb") as f:
+        for chunk in audio_bytes:
+            if chunk:
+                f.write(chunk)
+
+    dur = ff_duration(hook_path)
+    logger.info(f"  → {hook_path.name} ({dur:.1f}s)")
+    return hook_path
+
+
 if __name__ == "__main__":
     import json
     script_path = settings.output_dir / "script.json"

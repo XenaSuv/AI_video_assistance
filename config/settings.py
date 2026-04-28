@@ -57,6 +57,13 @@ class Settings:
     # Stable Diffusion via Stability AI — used for breaking-news clips (3× cheaper than DALL-E HD)
     stability_api_key: str = _env("STABILITY_API_KEY", "")
 
+    # AI Presenter — D-ID Talks API (optional — leave DID_API_KEY blank to disable)
+    # DID_API_KEY: base64 credential from d-id.com dashboard ("Basic <key>" → set just <key>)
+    # PRESENTER_AVATAR_PATH: local PNG/JPG that becomes the channel's on-screen host
+    did_api_key:           str  = _env("DID_API_KEY",           "")
+    presenter_avatar_path: str  = _env("PRESENTER_AVATAR_PATH", "assets/avatar.png")
+    presenter_enabled:     bool = _env("PRESENTER_ENABLED", "false").lower() in ("1", "true", "yes")
+
     # Slack notifications (optional — leave blank to disable)
     slack_webhook_url: str = _env("SLACK_WEBHOOK_URL", "")
 

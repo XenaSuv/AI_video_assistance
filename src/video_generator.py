@@ -15,6 +15,8 @@ from config import settings
 from src.script_generator import Scene, VideoScript
 from src.image_generator import generate_scene_clip
 from src.quote_card import render_quote_card_png
+from src.presenter import generate_presenter_clip
+from src.voice_generator import synthesize_hook
 import src.ffmpeg_utils as ffmpeg_utils
 
 VIDEO_W, VIDEO_H = 1280, 720   # canonical output resolution
@@ -63,6 +65,7 @@ def assemble_video(
     *,
     intro_path: Path | None = None,
     outro_path: Path | None = None,
+    presenter_clip: Path | None = None,
 ) -> Path:
     """Combine generated clips + narration into the final 16:9 video.
 
@@ -74,6 +77,20 @@ def assemble_video(
     assembled_dir.mkdir(parents=True, exist_ok=True)
 
     ordered_segments: list[Path] = []
+
+    # Presenter hook clip — prepended before all scenes
+    if presenter_clip and presenter_clip.exists():
+        pw, ph = ffmpeg_utils.video_size(presenter_clip)
+        if (pw, ph) != (VIDEO_W, VIDEO_H):
+            logger.info(f"Presenter: resizing {pw}×{ph} → {VIDEO_W}×{VIDEO_H}")
+            presenter_resized = assembled_dir / "presenter_resized.mp4"
+            presenter_clip = ffmpeg_utils.resize_video(
+                presenter_clip, presenter_resized,
+                width=VIDEO_W, height=VIDEO_H,
+                keep_audio=True,
+            )
+        ordered_segments.append(presenter_clip)
+        logger.info(f"Presenter clip prepended: {presenter_clip.name}")
 
     for scene in script.scenes:
         audio_path = audio_paths_by_scene[scene.idx]
@@ -214,9 +231,27 @@ def build_video(
         s.idx: out_dir / "audio" / f"scene_{s.idx:02d}.mp3" for s in script.scenes
     }
 
+    # Presenter hook clip (D-ID) — generated only when enabled
+    presenter_clip: Path | None = None
+    if settings.presenter_enabled:
+        try:
+            hook_audio = synthesize_hook(script, out_dir)
+            avatar_path = Path(settings.presenter_avatar_path)
+            if not avatar_path.is_absolute():
+                avatar_path = settings.source_dir.parent / avatar_path
+            presenter_clip = generate_presenter_clip(
+                hook_audio,
+                out_dir / "assembled" / "presenter_hook.mp4",
+                api_key=settings.did_api_key,
+                avatar_path=avatar_path,
+            )
+        except Exception as exc:
+            logger.warning(f"Presenter generation failed (non-fatal): {exc}")
+
     output_path = out_dir / "final_video.mp4"
     return assemble_video(
         script, clip_paths_by_scene, audio_paths_by_scene, output_path,
         intro_path=intro_path,
         outro_path=outro_path,
+        presenter_clip=presenter_clip,
     )
