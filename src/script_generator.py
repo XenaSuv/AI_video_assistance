@@ -30,6 +30,8 @@ class Scene:
     short_narration: str | None = None   # ~120 words written for a standalone Shorts cut
     infographic_data: dict | None = None # animated chart/stat; skips DALL-E when set
     video_query: str | None = None       # stock B-roll search term; beats DALL-E, loses to infographic
+    source_quote: str | None = None      # verbatim quote (≤30 words) from a named source
+    quote_attribution: str | None = None # "Name, Role · Org · domain.com"
 
 
 @dataclass
@@ -121,6 +123,17 @@ sign-off). Each must be fully self-contained (~120 words):
 - Never use "In today's video", "As I mentioned", or cross-references to other scenes
 Set short_narration to null for the opening intro and closing sign-off only.
 
+=== SOURCE QUOTES ===
+For 2-4 scenes, pull a verbatim or near-verbatim quote directly from the source material.
+- source_quote: ≤30 words. Must be something a named person or official org actually said
+  or wrote. Never fabricate or paraphrase into quote form — only use text present in the
+  news item summaries or titles. Leave null if no attributable quote exists.
+- quote_attribution: "Full Name, Title · Organization · domain.com"
+  Examples: "Sam Altman, CEO · OpenAI · openai.com"
+            "Google DeepMind Research Team · deepmind.google"
+            "Anthropic · May 2025 · anthropic.com"
+  Leave null when source_quote is null.
+
 === YOUTUBE METADATA ===
 title: under 70 characters, one emoji maximum, tease the #1 story
 description: 200-400 words — concise summary, then "(TIMESTAMPS_AUTOFILL)", then
@@ -146,7 +159,9 @@ Output MUST be a single valid JSON object. No markdown fences. No commentary.
       "visual_prompt": "DALL-E 3 prompt — always required even when infographic_data is set",
       "video_query": null,
       "infographic_data": null,
-      "short_narration": null
+      "short_narration": null,
+      "source_quote": null,
+      "quote_attribution": null
     },
     {
       "heading": "...",
@@ -154,7 +169,9 @@ Output MUST be a single valid JSON object. No markdown fences. No commentary.
       "visual_prompt": "...",
       "video_query": null,
       "infographic_data": null,
-      "short_narration": "Breaking: [self-contained story ~120 words]. Subscribe for daily AI news."
+      "short_narration": "Breaking: [self-contained story ~120 words]. Subscribe for daily AI news.",
+      "source_quote": "We achieved state-of-the-art results across all major benchmarks simultaneously",
+      "quote_attribution": "Sam Altman, CEO · OpenAI · openai.com"
     }
   ]
 }"""
@@ -299,8 +316,10 @@ def generate_script(
         infographic = s.get("infographic_data") or None
         if infographic and not isinstance(infographic, dict):
             infographic = None
-        video_q   = (s.get("video_query") or "").strip() or None
+        video_q  = (s.get("video_query") or "").strip() or None
         short_nar = (s.get("short_narration") or "").strip() or None
+        src_quote = (s.get("source_quote") or "").strip() or None
+        src_attr  = (s.get("quote_attribution") or "").strip() or None
         scenes.append(Scene(
             idx=i,
             heading=s["heading"],
@@ -309,9 +328,12 @@ def generate_script(
             infographic_data=infographic,
             video_query=video_q,
             short_narration=short_nar,
+            source_quote=src_quote,
+            quote_attribution=src_attr,
         ))
     infographic_count = sum(1 for sc in scenes if sc.infographic_data)
     broll_count       = sum(1 for sc in scenes if sc.video_query)
+    quote_count       = sum(1 for sc in scenes if sc.source_quote)
 
     _fill_missing_short_narrations(scenes, client, min_count=2)
 
@@ -343,7 +365,8 @@ def generate_script(
     logger.info(
         f"Generated script: {word_count} words across {len(scenes)} scenes | "
         f"hook variant {hook_variants.index(chosen_hook) + 1}/{len(hook_variants)} | "
-        f"{broll_count} B-roll | {infographic_count} infographic | {shorts_count} shorts"
+        f"{broll_count} B-roll | {infographic_count} infographic | "
+        f"{shorts_count} shorts | {quote_count} quote cards"
     )
     return script
 

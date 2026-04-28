@@ -148,10 +148,12 @@ def merge_av(
     return output
 
 
-def concat(paths: list[Path], output: Path) -> Path:
+def concat(paths: list[Path], output: Path, *, video_only: bool = False) -> Path:
     """Concatenate *paths* into *output* using the concat demuxer.
 
     Re-encodes with libx264/aac so all streams are compatible.
+    Pass *video_only=True* when all inputs have no audio stream (e.g. quote
+    card clip + raw Ken Burns clip before merge_av).
     """
     if output.exists():
         return output
@@ -162,14 +164,18 @@ def concat(paths: list[Path], output: Path) -> Path:
         list_file.write_text(
             "\n".join(f"file '{p.resolve()}'" for p in paths) + "\n"
         )
-        _run([
+        cmd = [
             "ffmpeg", "-y",
             "-f", "concat", "-safe", "0",
             "-i", str(list_file),
             "-c:v", "libx264", "-crf", "18", "-preset", "medium",
-            "-c:a", "aac",
-            str(output),
-        ])
+        ]
+        if video_only:
+            cmd += ["-an"]
+        else:
+            cmd += ["-c:a", "aac"]
+        cmd.append(str(output))
+        _run(cmd)
     finally:
         list_file.unlink(missing_ok=True)
     return output
@@ -245,6 +251,41 @@ def title_card(
         "-i", f"color=c=0x0D1117:size={W}x{H}:rate=24:duration={duration_sec}",
         "-vf", vf,
         "-c:v", "libx264", "-crf", "18", "-preset", "medium",
+        "-an",
+        str(output),
+    ])
+    return output
+
+
+def quote_card_clip(
+    png_path: Path,
+    output: Path,
+    *,
+    duration_sec: float = 4.0,
+) -> Path:
+    """Convert a static quote-card PNG into a short video with fade in/out.
+
+    The clip is silent (no audio stream).  It is designed to be prepended to
+    the scene's Ken Burns clip so the first *duration_sec* seconds of narration
+    play over the quote card before cutting to the visual b-roll.
+    """
+    if output.exists():
+        return output
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    fade_d = 0.35
+    vf = (
+        f"fade=t=in:st=0:d={fade_d},"
+        f"fade=t=out:st={duration_sec - fade_d:.2f}:d={fade_d}"
+    )
+    _run([
+        "ffmpeg", "-y",
+        "-loop", "1",
+        "-i", str(png_path),
+        "-vf", vf,
+        "-t", str(duration_sec),
+        "-c:v", "libx264", "-crf", "18", "-preset", "medium",
+        "-pix_fmt", "yuv420p",
         "-an",
         str(output),
     ])

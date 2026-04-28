@@ -41,6 +41,13 @@ Rules:
 - Prioritise impact: lead with the most consequential story in scene 1
 - visual_prompt: vivid DALL-E 3 description, 2-3 sentences (no logos, no real people)
 
+=== SOURCE QUOTES ===
+For 2-3 story scenes, include a real quote from that week's story.
+- source_quote: ≤25 words, verbatim from the source. Never fabricate.
+  Leave null if no directly attributable quote is available.
+- quote_attribution: "Name, Role · Organization · domain.com"
+  Leave null when source_quote is null.
+
 === OUTPUT FORMAT ===
 Return ONLY valid JSON, no markdown fences, no commentary.
 {
@@ -56,7 +63,9 @@ Return ONLY valid JSON, no markdown fences, no commentary.
     {
       "heading": "short chapter title max 8 words",
       "narration": "~100-130 words of spoken text",
-      "visual_prompt": "DALL-E 3 image prompt, 2-3 sentences"
+      "visual_prompt": "DALL-E 3 image prompt, 2-3 sentences",
+      "source_quote": null,
+      "quote_attribution": null
     },
     ...
   ]
@@ -193,6 +202,8 @@ def generate_digest_script(
             heading=s["heading"],
             narration=s["narration"],
             visual_prompt=s["visual_prompt"],
+            source_quote=(s.get("source_quote") or "").strip() or None,
+            quote_attribution=(s.get("quote_attribution") or "").strip() or None,
         )
         for i, s in enumerate(raw["scenes"])
     ]
