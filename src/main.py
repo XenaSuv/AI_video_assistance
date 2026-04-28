@@ -235,13 +235,6 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
             logger.info("Dry run — stopping after scrape")
             return summary
 
-        # MVP: run a lightweight Shorts-only flow for the first 1-2 items.
-        for item in news[:2]:
-            try:
-                run_shorts_mvp(item)
-            except Exception as exc:
-                logger.warning(f"Shorts MVP failed for item: {exc}")
-
         # 2. Script
         script_cache = run_dir / "script.json"
         script = _load_cached_script(script_cache)
@@ -294,7 +287,14 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         if credits:
             script.description += "\n\nVideo clips provided by Pexels:\n" + "\n".join(credits)
 
-        # 5. Shorts (hook-based digest short)
+        # 5. MVP: run a lightweight Shorts-only flow for the first 1-2 items (with video clips).
+        for item in news[:2]:
+            try:
+                run_shorts_mvp(item)
+            except Exception as exc:
+                logger.warning(f"Shorts MVP failed for item: {exc}")
+
+        # 5a. Shorts (hook-based digest short)
         short_video = run_dir / "shorts.mp4"
         if not short_video.exists():
             build_short(script, long_video, run_dir)
