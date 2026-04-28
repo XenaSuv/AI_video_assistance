@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from openai import OpenAI
 from loguru import logger
 
@@ -29,11 +30,14 @@ def generate_hooks(news_text: str, n: int = 3) -> list[str]:
     )
 
     import json
+    text = (response.choices[0].message.content or "").strip()
+    text = re.sub(r"^```json\s*", "", text, flags=re.IGNORECASE).strip()
+    text = re.sub(r"```$", "", text).strip()
     try:
-        hooks = json.loads(response.choices[0].message.content or "[]")
+        hooks = json.loads(text or "[]")
         if not isinstance(hooks, list):
             raise ValueError("Hooks response was not a JSON array")
         return [str(h).strip() for h in hooks if str(h).strip()]
     except Exception as exc:
-        logger.warning("hooks_generator failed, falling back to simple hooks: %s", exc)
+        logger.warning(f"hooks_generator failed: {exc} | response={text!r}")
         return [f"Why this AI news matters #{i+1}" for i in range(n)]
