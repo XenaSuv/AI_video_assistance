@@ -508,6 +508,7 @@ def generate_tutorial_script(
     shorts_count      = sum(1 for sc in scenes if sc.short_narration)
     infographic_count = sum(1 for sc in scenes if sc.infographic_data)
     broll_count       = sum(1 for sc in scenes if sc.video_query)
+    quote_count       = sum(1 for sc in scenes if sc.source_quote)
     script = VideoScript(
         title=raw["title"],
         description=raw["description"],
@@ -519,7 +520,7 @@ def generate_tutorial_script(
     logger.info(
         f"{tool.name} tutorial: '{script.title}' | {len(scenes)} scenes | "
         f"{shorts_count} shorts | {broll_count} B-roll | "
-        f"{infographic_count} infographics | "
+        f"{infographic_count} infographics | {quote_count} quotes | "
         f"hook variant {hook_variants.index(chosen_hook) + 1}/{len(hook_variants)}"
     )
     return script

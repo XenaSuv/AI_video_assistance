@@ -88,7 +88,7 @@ def assemble_video(
             raw_clip = ffmpeg_utils.concat(clip_paths, cat_path)
 
         # Quote card — prepended as first 4 s of visual (narration plays over it)
-        has_quote = bool(scene.source_quote)
+        has_quote = bool(scene.source_quote) and target_dur >= 8
         if has_quote:
             try:
                 qc_png  = assembled_dir / f"quote_{scene.idx:02d}.png"
@@ -96,7 +96,7 @@ def assemble_video(
                 render_quote_card_png(scene, qc_png)
                 ffmpeg_utils.quote_card_clip(qc_png, qc_clip, duration_sec=4.0)
                 combined = assembled_dir / f"scene_{scene.idx:02d}_qc.mp4"
-                raw_clip = ffmpeg_utils.concat([qc_clip, raw_clip], combined)
+                raw_clip = ffmpeg_utils.concat([qc_clip, raw_clip], combined, video_only=True)
                 logger.info(f"Scene {scene.idx}: quote card prepended")
             except Exception as exc:
                 logger.warning(f"Scene {scene.idx}: quote card failed (non-fatal): {exc}")

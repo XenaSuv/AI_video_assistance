@@ -148,10 +148,12 @@ def merge_av(
     return output
 
 
-def concat(paths: list[Path], output: Path) -> Path:
+def concat(paths: list[Path], output: Path, *, video_only: bool = False) -> Path:
     """Concatenate *paths* into *output* using the concat demuxer.
 
     Re-encodes with libx264/aac so all streams are compatible.
+    Pass *video_only=True* when all inputs have no audio stream (e.g. quote
+    card clip + raw Ken Burns clip before merge_av).
     """
     if output.exists():
         return output
@@ -162,14 +164,18 @@ def concat(paths: list[Path], output: Path) -> Path:
         list_file.write_text(
             "\n".join(f"file '{p.resolve()}'" for p in paths) + "\n"
         )
-        _run([
+        cmd = [
             "ffmpeg", "-y",
             "-f", "concat", "-safe", "0",
             "-i", str(list_file),
             "-c:v", "libx264", "-crf", "18", "-preset", "medium",
-            "-c:a", "aac",
-            str(output),
-        ])
+        ]
+        if video_only:
+            cmd += ["-an"]
+        else:
+            cmd += ["-c:a", "aac"]
+        cmd.append(str(output))
+        _run(cmd)
     finally:
         list_file.unlink(missing_ok=True)
     return output
