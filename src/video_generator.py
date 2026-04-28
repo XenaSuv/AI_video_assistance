@@ -97,6 +97,16 @@ def assemble_video(
         audio_path = audio_paths_by_scene[scene.idx]
         target_dur = ffmpeg_utils.duration(audio_path)
 
+        def _valid_video_clip(path: Path) -> bool:
+            if not path.exists():
+                return False
+            try:
+                w, h = ffmpeg_utils.video_size(path)
+                dur = ffmpeg_utils.duration(path)
+                return w == VIDEO_W and h == VIDEO_H and dur > 0
+            except Exception:
+                return False
+
         # Merge video + audio (loop video if shorter than narration)
         clip_paths = clip_paths_by_scene[scene.idx]
         if len(clip_paths) == 1:
@@ -104,6 +114,13 @@ def assemble_video(
         else:
             cat_path = assembled_dir / f"scene_{scene.idx:02d}_cat.mp4"
             raw_clip = ffmpeg_utils.concat(clip_paths, cat_path)
+
+        if not _valid_video_clip(raw_clip):
+            logger.warning(
+                f"Scene {scene.idx}: raw clip invalid or corrupt, using placeholder instead"
+            )
+            raw_clip = assembled_dir / f"scene_{scene.idx:02d}_placeholder_raw.mp4"
+            raw_clip = ffmpeg_utils.black_clip(raw_clip, width=VIDEO_W, height=VIDEO_H, duration_sec=target_dur)
 
         # Quote card — prepended as first 4 s of visual (narration plays over it)
         has_quote = bool(scene.source_quote) and target_dur >= 8
@@ -121,9 +138,27 @@ def assemble_video(
                 has_quote = False
 
         assembled_clip = assembled_dir / f"scene_{scene.idx:02d}.mp4"
-        assembled_clip = ffmpeg_utils.merge_av(
-            raw_clip, audio_path, assembled_clip, loop_video=True
-        )
+        try:
+            assembled_clip = ffmpeg_utils.merge_av(
+                raw_clip, audio_path, assembled_clip, loop_video=True
+            )
+        except Exception as exc:
+            logger.warning(
+                f"Scene {scene.idx}: merge_av failed ({exc}), using placeholder video instead"
+            )
+            placeholder = assembled_dir / f"scene_{scene.idx:02d}_placeholder.mp4"
+            placeholder = ffmpeg_utils.black_clip(
+                placeholder,
+                width=VIDEO_W,
+                height=VIDEO_H,
+                duration_sec=target_dur,
+            )
+            assembled_clip = ffmpeg_utils.merge_av(
+                placeholder,
+                audio_path,
+                assembled_clip,
+                loop_video=False,
+            )
 
         # Chyron: skip for quote-card scenes (attribution line already identifies the scene)
         chyron_clip = assembled_dir / f"scene_{scene.idx:02d}_chyron.mp4"

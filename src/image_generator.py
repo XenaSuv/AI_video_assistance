@@ -262,6 +262,17 @@ def _black_placeholder(path: Path, duration: int) -> Path:
     return ffmpeg_utils.black_clip(path, width=OUT_W, height=OUT_H, duration_sec=float(duration))
 
 
+def _valid_video_clip(path: Path) -> bool:
+    if not path.exists():
+        return False
+    try:
+        w, h = ffmpeg_utils.video_size(path)
+        dur = ffmpeg_utils.duration(path)
+        return w > 0 and h > 0 and dur > 0
+    except Exception:
+        return False
+
+
 # ── Screenshot helper ─────────────────────────────────────────────────────────
 
 def _try_real_screenshot(scene: Scene, tool: str | None, img_path: Path) -> bool:
@@ -313,8 +324,13 @@ def generate_scene_clip(
     clip_path = clip_dir / f"scene_{scene.idx:02d}_clip_0.mp4"
 
     if clip_path.exists():
-        logger.info(f"Reusing cached clip: {clip_path.name}")
-        return clip_path
+        if _valid_video_clip(clip_path):
+            logger.info(f"Reusing cached clip: {clip_path.name}")
+            return clip_path
+        logger.warning(
+            f"Scene {scene.idx}: cached clip is invalid, removing and regenerating"
+        )
+        clip_path.unlink(missing_ok=True)
 
     data_dir = settings.data_dir
 
@@ -380,6 +396,11 @@ def generate_scene_clip(
             logger.info(f"Reusing cached image: {img_path.name}")
 
         result = _ken_burns_clip(img_path, float(scene.duration_sec), clip_path)
+        if not _valid_video_clip(result):
+            logger.warning(
+                f"Scene {scene.idx}: generated clip invalid, falling back to placeholder"
+            )
+            return _black_placeholder(clip_path, scene.duration_sec)
         logger.info(f"Scene {scene.idx} clip written: {clip_path.name}")
         return result
 
