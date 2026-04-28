@@ -208,8 +208,11 @@ def build_tutorial_shorts(
         else:
             logger.info(f"Reusing cached Short audio: {audio_path.name}")
 
-        out = _build_scene_short(scene, clip_dir, audio_path, out_path)
-        outputs.append(out)
+        try:
+            out = _build_scene_short(scene, clip_dir, audio_path, out_path)
+            outputs.append(out)
+        except Exception as exc:
+            logger.warning(f"Scene {scene.idx} Short failed (non-fatal): {exc}")
 
     logger.info(f"Tutorial Shorts ready: {[p.name for p in outputs]}")
     return outputs

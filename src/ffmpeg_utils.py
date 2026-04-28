@@ -10,6 +10,7 @@ Internal helpers:
 from __future__ import annotations
 
 import json
+import math
 import subprocess
 import textwrap
 from pathlib import Path
@@ -381,27 +382,34 @@ def ken_burns(
     variant 2: zoom in
     variant 3: zoom out
 
-    The filter chain starts with a scale step that upsizes the image to at
-    least in_w × in_h before any cropping.  This prevents exit code 234 when
-    DALL-E returns a smaller-than-expected image (e.g. 1024×1024 square).
+    All ffmpeg filter values are Python literals — no iw/ih expressions — so
+    the filter graph is valid even when -loop 1 defers stream initialization.
+    When the source image is smaller than out_w × out_h (e.g. 1024×1024
+    DALL-E images vs 1280×720 output), kb_w/kb_h are scaled up first so that
+    pan and crop offsets are never negative.
     """
     if output.exists():
         return output
     output.parent.mkdir(parents=True, exist_ok=True)
 
     dur = float(duration_sec)
-    pan = int((in_w - out_w) * 0.40)    # 40% of horizontal headroom
-    y0  = int((in_h - out_h) * 0.25)    # 25% down from top
 
-    # Build the final filter with all values precomputed (no iw/ih at ffmpeg init).
-    # First: scale the image to be large enough for any zoom effect without stretching.
-    # Then: apply the Ken Burns effect with absolute dimensions.
+    # Scale canvas up to at least out_w × out_h preserving aspect ratio.
+    ratio = max(out_w / in_w, out_h / in_h)
+    if ratio > 1.0:
+        kb_w = max(math.ceil(in_w * ratio), out_w)
+        kb_h = max(math.ceil(in_h * ratio), out_h)
+    else:
+        kb_w, kb_h = in_w, in_h
+
+    pan = int((kb_w - out_w) * 0.40)   # always >= 0
+    y0  = int((kb_h - out_h) * 0.25)   # always >= 0
 
     if variant == 0:
         # Pan left → right
         vf = (
-            f"scale={in_w}:{in_h}:force_original_aspect_ratio=increase,"
-            f"crop={in_w}:{in_h},"
+            f"scale={kb_w}:{kb_h}:force_original_aspect_ratio=increase,"
+            f"crop={kb_w}:{kb_h},"
             f"crop=w={out_w}:h={out_h}"
             f":x='min({pan}*t/{dur:.4f},{pan})':y={y0}"
             f",scale={out_w}:{out_h}"
@@ -409,32 +417,32 @@ def ken_burns(
     elif variant == 1:
         # Pan right → left
         vf = (
-            f"scale={in_w}:{in_h}:force_original_aspect_ratio=increase,"
-            f"crop={in_w}:{in_h},"
+            f"scale={kb_w}:{kb_h}:force_original_aspect_ratio=increase,"
+            f"crop={kb_w}:{kb_h},"
             f"crop=w={out_w}:h={out_h}"
             f":x='{pan}-min({pan}*t/{dur:.4f},{pan})':y={y0}"
             f",scale={out_w}:{out_h}"
         )
     elif variant == 2:
-        # Zoom in: crop shrinks from full image toward centre
+        # Zoom in: crop shrinks from full canvas toward centre
         vf = (
-            f"scale={in_w}:{in_h}:force_original_aspect_ratio=increase,"
-            f"crop={in_w}:{in_h},"
-            f"crop=w='{in_w}-({in_w}-{out_w})*t/{dur:.4f}'"
-            f":h='{in_h}-({in_h}-{out_h})*t/{dur:.4f}'"
-            f":x='({in_w}-({in_w}-({in_w}-{out_w})*t/{dur:.4f}))/2'"
-            f":y='({in_h}-({in_h}-({in_h}-{out_h})*t/{dur:.4f}))/2'"
+            f"scale={kb_w}:{kb_h}:force_original_aspect_ratio=increase,"
+            f"crop={kb_w}:{kb_h},"
+            f"crop=w='{kb_w}-({kb_w}-{out_w})*t/{dur:.4f}'"
+            f":h='{kb_h}-({kb_h}-{out_h})*t/{dur:.4f}'"
+            f":x='({kb_w}-({kb_w}-({kb_w}-{out_w})*t/{dur:.4f}))/2'"
+            f":y='({kb_h}-({kb_h}-({kb_h}-{out_h})*t/{dur:.4f}))/2'"
             f",scale={out_w}:{out_h}"
         )
     else:
         # Zoom out: crop grows from centre
         vf = (
-            f"scale={in_w}:{in_h}:force_original_aspect_ratio=increase,"
-            f"crop={in_w}:{in_h},"
-            f"crop=w='{out_w}+({in_w}-{out_w})*t/{dur:.4f}'"
-            f":h='{out_h}+({in_h}-{out_h})*t/{dur:.4f}'"
-            f":x='({in_w}-({out_w}+({in_w}-{out_w})*t/{dur:.4f}))/2'"
-            f":y='({in_h}-({out_h}+({in_h}-{out_h})*t/{dur:.4f}))/2'"
+            f"scale={kb_w}:{kb_h}:force_original_aspect_ratio=increase,"
+            f"crop={kb_w}:{kb_h},"
+            f"crop=w='{out_w}+({kb_w}-{out_w})*t/{dur:.4f}'"
+            f":h='{out_h}+({kb_h}-{out_h})*t/{dur:.4f}'"
+            f":x='({kb_w}-({out_w}+({kb_w}-{out_w})*t/{dur:.4f}))/2'"
+            f":y='({kb_h}-({out_h}+({kb_h}-{out_h})*t/{dur:.4f}))/2'"
             f",scale={out_w}:{out_h}"
         )
 
