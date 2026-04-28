@@ -22,6 +22,7 @@ from src.deduplicator import SeenStories
 from src.digest_script_generator import save_for_digest
 from src.hook_selector import record_usage
 from src.shorts_mvp import run_shorts_mvp
+from src.performance_tracker import save_result
 from src.scraper import scrape_all, NewsItem
 from src.viral_selector import pick_viral_news
 from src.script_generator import Scene, VideoScript, generate_script
@@ -325,6 +326,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
             if video_id := ids.get("video_id"):
                 record_usage(script.hook, video_id, settings.data_dir, "daily")
                 record_thumbnail_usage(thumbnail, video_id, settings.data_dir, "daily")
+                save_result(video_id, script.hook, script.title, script.description)
 
         # 8b. Upload per-scene Shorts
         if not skip_upload and scene_shorts:
