@@ -26,6 +26,19 @@ from src.script_generator import Scene, VideoScript
 
 _REUSE_COOLDOWN_WEEKS = 26   # ~6 months before a topic repeats
 
+
+def _log_usage(usage, label: str = "") -> None:
+    if not usage:
+        return
+    details = usage.prompt_tokens_details
+    cached = getattr(details, "cached_tokens", 0) if details else 0
+    pct = int(cached / usage.prompt_tokens * 100) if usage.prompt_tokens else 0
+    tag = f"[{label}] " if label else ""
+    logger.debug(
+        f"{tag}OpenAI tokens — prompt: {usage.prompt_tokens} "
+        f"({cached} cached, {pct}% hit) | completion: {usage.completion_tokens}"
+    )
+
 _SHORTS_FILL_PROMPT = """\
 For each scene below, write a standalone YouTube Shorts script (~120 words).
 
@@ -51,6 +64,66 @@ class _Tool:
     name: str
     topics: list[str]
     system_prompt: str
+
+
+_WEEKLY_SYSTEM_SUFFIX = """\
+
+=== VISUAL SOURCES (priority order — pick at most one non-null per scene) ===
+1. screenshot_key   — real tool UI screenshot from the provided list
+2. infographic_data — animated chart for pricing, benchmarks, step counts:
+     bar_chart:  {"type":"bar_chart","title":"...","unit":"...","items":[{"label":"...","value":0}]}
+     stat_card:  {"type":"stat_card","value":"70B","label":"Parameters","context":"10× GPT-3"}
+     comparison: {"type":"comparison","title":"...","unit":"%","left":{"label":"A","value":0},"right":{"label":"B","value":0}}
+     timeline:   {"type":"timeline","title":"...","events":[{"date":"Jan 2024","label":"..."}]}
+3. video_query      — 2-5 word Pexels search for 1-2 scenes with physical action
+     (typing, presenting, whiteboard). Generic only, no brand names.
+     Examples: "developer coding laptop", "person presenting whiteboard", "team discussing screen"
+4. visual_prompt    — DALL-E fallback (always required regardless of other fields)
+Set all unused source fields to null.
+
+=== SHORT NARRATION — MANDATORY ===
+Exactly 3-4 scenes MUST have short_narration filled (non-null).
+Choose scenes 1-5 (not the opening intro or closing outro) — each covering ONE
+self-contained tip a viewer can use immediately without watching the full video.
+Each short_narration must:
+  - Open with a hook: "Here's a trick...", "Did you know...", "Stop doing X..."
+  - Cover the ONE key point of that scene in ~120 words
+  - End exactly with: "Watch the full tutorial for more tips like this."
+Setting short_narration to null for ALL scenes is an error — Shorts drive channel growth.
+
+=== OUTPUT FORMAT ===
+Return ONLY valid JSON, no markdown fences, no commentary.
+{
+  "title": "YouTube title <= 70 chars, include the tool name",
+  "description": "YouTube description 3-5 sentences + (TIMESTAMPS_AUTOFILL)",
+  "tags": ["10-15 tags"],
+  "hook_variants": [
+    "variant 0: most surprising fact or number (5-10s spoken)",
+    "variant 1: provocative question (5-10s spoken)",
+    "variant 2: bold statement of biggest benefit (5-10s spoken)"
+  ],
+  "scenes": [
+    {
+      "heading": "scene title",
+      "narration": "full spoken text 280-340 words",
+      "visual_prompt": "DALL-E 3 prompt (always required)",
+      "screenshot_key": null,
+      "short_narration": null,
+      "video_query": null,
+      "infographic_data": null
+    },
+    {
+      "heading": "...",
+      "narration": "...",
+      "visual_prompt": "...",
+      "screenshot_key": null,
+      "short_narration": "Here's a trick most people miss... [~120 words ending with CTA]",
+      "video_query": null,
+      "infographic_data": null
+    }
+  ]
+}
+(7 scenes total; short_narration filled for 3-4 of the middle scenes)"""
 
 
 _TOOLS: dict[str, _Tool] = {
@@ -114,13 +187,8 @@ Rules:
 - Each scene has a clear purpose: intro → concept → demo steps → tips → summary
 - visual_prompt: vivid DALL-E 3 description of what should appear on screen
   (UI mockups, code on screen, person at laptop, abstract tech visuals, etc.)
-  Do NOT include text overlays or watermarks in the visual description.
-- short_narration: YOU MUST fill this for EXACTLY 3-4 middle scenes (not scene 0 intro,
-  not the last scene). Each must be self-contained (~120 words), hook first
-  ("Here's a trick...", "Did you know...", "Stop doing X..."), end with
-  "Watch the full tutorial for more tips like this." Setting it null for every
-  scene is an error — the channel depends on these Shorts for growth.
-- Return ONLY valid JSON, no markdown fences.""",
+  Do NOT include text overlays or watermarks in the visual description."""
+        + _WEEKLY_SYSTEM_SUFFIX,
     ),
 
     "chatgpt": _Tool(
@@ -180,13 +248,8 @@ Rules:
 - Each scene has a clear purpose: intro → concept → demo steps → tips → summary
 - visual_prompt: vivid DALL-E 3 description of what should appear on screen
   (ChatGPT interface, code editor, person using laptop, abstract tech visuals, etc.)
-  Do NOT include text overlays, logos, or watermarks in the visual description.
-- short_narration: YOU MUST fill this for EXACTLY 3-4 middle scenes (not scene 0 intro,
-  not the last scene). Each must be self-contained (~120 words), hook first
-  ("Here's a trick...", "Did you know...", "Stop doing X..."), end with
-  "Watch the full tutorial for more tips like this." Setting it null for every
-  scene is an error — the channel depends on these Shorts for growth.
-- Return ONLY valid JSON, no markdown fences.""",
+  Do NOT include text overlays, logos, or watermarks in the visual description."""
+        + _WEEKLY_SYSTEM_SUFFIX,
     ),
 
     "gemini": _Tool(
@@ -246,13 +309,8 @@ Rules:
 - Each scene has a clear purpose: intro → concept → demo steps → tips → summary
 - visual_prompt: vivid DALL-E 3 description of what should appear on screen
   (Google interface, code editor, person at desk, abstract colorful visuals, etc.)
-  Do NOT include text overlays, logos, or watermarks in the visual description.
-- short_narration: YOU MUST fill this for EXACTLY 3-4 middle scenes (not scene 0 intro,
-  not the last scene). Each must be self-contained (~120 words), hook first
-  ("Here's a trick...", "Did you know...", "Stop doing X..."), end with
-  "Watch the full tutorial for more tips like this." Setting it null for every
-  scene is an error — the channel depends on these Shorts for growth.
-- Return ONLY valid JSON, no markdown fences.""",
+  Do NOT include text overlays, logos, or watermarks in the visual description."""
+        + _WEEKLY_SYSTEM_SUFFIX,
     ),
 }
 
@@ -305,63 +363,8 @@ Create a complete YouTube tutorial script for this topic:
 
 "{topic}"
 
-VISUAL SOURCES (priority order per scene — pick at most one non-null):
-1. screenshot_key   — real {tool_name} UI screenshot (list below)
-2. infographic_data — animated chart for pricing, benchmarks, step counts:
-     bar_chart: {{"type":"bar_chart","title":"...","unit":"...","items":[{{"label":"...","value":0}}]}}
-     stat_card: {{"type":"stat_card","value":"70B","label":"Parameters","context":"10× GPT-3"}}
-     comparison: {{"type":"comparison","title":"...","unit":"%","left":{{"label":"A","value":0}},"right":{{"label":"B","value":0}}}}
-     timeline: {{"type":"timeline","title":"...","events":[{{"date":"Jan 2024","label":"..."}}]}}
-3. video_query      — 2-5 word Pexels stock-video search for 1-2 tutorial scenes
-     with physical action (typing, presenting, whiteboard). Generic only — no brands.
-     Examples: "developer coding laptop", "person presenting whiteboard", "team discussing screen"
-4. visual_prompt    — DALL-E fallback (always required regardless of other fields)
-Set all unused source fields to null.
-
 Available screenshot keys for {tool_name}:
 {keys_block}
-
-SHORTS REQUIREMENT — MANDATORY:
-Exactly 3-4 scenes MUST have short_narration filled (non-null).
-Choose scenes 1-5 (not the opening intro or closing outro) that each cover
-ONE self-contained tip a viewer can use immediately without watching the full video.
-Each short_narration must:
-  - Open with a hook: "Here's a trick...", "Did you know...", "Stop doing X..."
-  - Cover the ONE key point of that scene in ~120 words
-  - End with: "Watch the full tutorial for more tips like this."
-Do NOT set short_narration to null for all scenes — that is an error.
-
-Return JSON with this exact structure:
-{{
-  "title": "...",           // YouTube title, <= 70 chars, include the tool name
-  "description": "...",    // YouTube description, 3-5 sentences + (TIMESTAMPS_AUTOFILL)
-  "tags": ["...", ...],    // 10-15 tags
-  "hook_variants": ["...", "...", "..."],  // 3 distinct 1-2 sentence hooks:
-                                           //   0 = most surprising fact or number
-                                           //   1 = provocative question
-                                           //   2 = bold statement of biggest benefit
-  "scenes": [
-    {{
-      "heading": "...",
-      "narration": "...",          // full spoken text, 280-340 words
-      "visual_prompt": "...",      // DALL-E 3 image prompt (always required)
-      "screenshot_key": null,      // or a key from the list above
-      "short_narration": null,     // NULL for intro/outro scenes only
-      "video_query": null,
-      "infographic_data": null
-    }},
-    {{
-      "heading": "...",
-      "narration": "...",
-      "visual_prompt": "...",
-      "screenshot_key": null,
-      "short_narration": "Here's a trick most people miss... [~120 words ending with CTA]",
-      "video_query": null,
-      "infographic_data": null
-    }},
-    ... (7 scenes total, short_narration filled for 3-4 of the middle scenes)
-  ]
-}}
 """
 
 
@@ -406,6 +409,7 @@ def _fill_missing_short_narrations(
             }],
             temperature=0.7,
         )
+        _log_usage(resp.usage, "weekly-shorts-fill")
         data = json.loads(resp.choices[0].message.content or "{}")
         idx_to_scene = {s.idx: s for s in to_fill}
         for item in data.get("scenes", []):
@@ -443,6 +447,7 @@ def generate_tutorial_script(
         ],
         temperature=0.8,
     )
+    _log_usage(resp.usage, f"weekly-{tool_key}")
 
     raw    = json.loads(resp.choices[0].message.content)
     scenes = []

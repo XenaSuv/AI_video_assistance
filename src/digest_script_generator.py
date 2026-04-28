@@ -38,40 +38,55 @@ Rules:
 - 8 scenes total (~950 words): one hook, six story scenes, one sign-off
 - Each scene ~100-130 words of narration
 - DO NOT say "welcome back" or pad with filler
-- visual_prompt: vivid DALL-E 3 description (no logos, no real people)
-- Return ONLY valid JSON, no markdown fences"""
+- Prioritise impact: lead with the most consequential story in scene 1
+- visual_prompt: vivid DALL-E 3 description, 2-3 sentences (no logos, no real people)
+
+=== OUTPUT FORMAT ===
+Return ONLY valid JSON, no markdown fences, no commentary.
+{
+  "title": "This Week in AI: [2-3 word theme] | Week of [date]",
+  "description": "2-4 sentence summary + (TIMESTAMPS_AUTOFILL)",
+  "tags": ["10-15 tags"],
+  "hook_variants": [
+    "variant 0: most surprising stat or fact this week (5-10s spoken)",
+    "variant 1: provocative question about the week's biggest story (5-10s spoken)",
+    "variant 2: boldest implication of the week's events (5-10s spoken)"
+  ],
+  "scenes": [
+    {
+      "heading": "short chapter title max 8 words",
+      "narration": "~100-130 words of spoken text",
+      "visual_prompt": "DALL-E 3 image prompt, 2-3 sentences"
+    },
+    ...
+  ]
+}
+(8 scenes total: hook opener, 6 story scenes, sign-off closer)"""
 
 
 _USER_TEMPLATE = """\
-Here are the AI news highlights from this week (Mon-Sat).
-Write a Sunday "This Week in AI" digest script that covers the 6 most
-important stories in a fast-paced ~8-minute video.
+Here are the AI news highlights from this week (Mon-Sat), week of {week_of}.
+Write a Sunday "This Week in AI" digest script covering the 6 most important
+stories in a fast-paced ~8-minute video.
 
 WEEK'S HIGHLIGHTS:
-{week_block}
-
-Return JSON with this exact structure:
-{{
-  "title":       "...",   // e.g. "This Week in AI: [2-3 word theme] | Week of {week_of}"
-  "description": "...",   // 2-4 sentence summary + (TIMESTAMPS_AUTOFILL)
-  "tags":        ["..."], // 10-15 tags
-  "hook_variants": ["...", "...", "..."],  // 3 distinct 5-10s hooks:
-                                           //   0 = most surprising stat/fact
-                                           //   1 = provocative question
-                                           //   2 = boldest implication
-  "scenes": [
-    {{
-      "heading":      "...",  // short chapter title (max 8 words)
-      "narration":    "...",  // ~100-130 words of spoken text
-      "visual_prompt":"..."   // DALL-E 3 image prompt, 2-3 sentences
-    }},
-    ... (8 scenes total)
-  ]
-}}
-"""
+{week_block}"""
 
 
 # ─────────────────── Collect daily scripts ───────────────────
+
+def _log_usage(usage, label: str = "") -> None:
+    if not usage:
+        return
+    details = usage.prompt_tokens_details
+    cached = getattr(details, "cached_tokens", 0) if details else 0
+    pct = int(cached / usage.prompt_tokens * 100) if usage.prompt_tokens else 0
+    tag = f"[{label}] " if label else ""
+    logger.debug(
+        f"{tag}OpenAI tokens — prompt: {usage.prompt_tokens} "
+        f"({cached} cached, {pct}% hit) | completion: {usage.completion_tokens}"
+    )
+
 
 def _week_dates(sunday: date) -> list[date]:
     """Return Mon–Sat dates preceding the given Sunday."""
@@ -169,6 +184,7 @@ def generate_digest_script(
         ],
         temperature=0.75,
     )
+    _log_usage(resp.usage, "digest")
 
     raw = json.loads(resp.choices[0].message.content)
     scenes = [

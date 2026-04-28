@@ -32,7 +32,30 @@ Rules:
 - Tone: urgent but accurate — use "just announced", "breaking", "this just dropped"
 - Be specific: quote numbers, dates, model names, pricing — whatever is in the source
 - visual_prompt: vivid DALL-E 3 prompt (no real logos, no named public figures)
-- Return ONLY valid JSON, no markdown fences"""
+
+Structure the 5 scenes as:
+  0. Hook — what just happened, why it matters RIGHT NOW
+  1. What is it — the announcement in plain language
+  2. Key details — specs, pricing, availability
+  3. Why it matters — impact on users, devs, and the industry
+  4. Sign-off — where to learn more + teaser for full coverage
+
+=== OUTPUT FORMAT ===
+Return ONLY valid JSON, no markdown fences, no commentary.
+{
+  "title": "BREAKING: ... (max 70 chars, include company name)",
+  "description": "2-3 sentences + (TIMESTAMPS_AUTOFILL)",
+  "tags": ["8-12 tags"],
+  "hook": "1 punchy sentence for the first 5 seconds",
+  "scenes": [
+    {
+      "heading": "short chyron-style title",
+      "narration": "~100-120 words of spoken text",
+      "visual_prompt": "DALL-E 3 image prompt"
+    },
+    ...
+  ]
+}"""
 
 _USER_TEMPLATE = """\
 A major AI announcement just dropped. Write an urgent 5-minute breaking news script.
@@ -40,24 +63,20 @@ A major AI announcement just dropped. Write an urgent 5-minute breaking news scr
 SOURCE:   {source}
 HEADLINE: {title}
 URL:      {url}
-DETAILS:  {summary}
+DETAILS:  {summary}"""
 
-Return JSON with this exact structure:
-{{
-  "title":       "BREAKING: ...",   // max 70 chars, include company name
-  "description": "...",             // 2-3 sentences + (TIMESTAMPS_AUTOFILL)
-  "tags":        ["..."],           // 8-12 tags
-  "hook":        "...",             // 1 punchy sentence for the first 5 seconds
-  "scenes": [
-    {{
-      "heading":       "...",       // short chyron-style title
-      "narration":     "...",       // ~100-120 words of spoken text
-      "visual_prompt": "..."        // DALL-E 3 image prompt
-    }},
-    ... (5 scenes total)
-  ]
-}}
-"""
+
+def _log_usage(usage, label: str = "") -> None:
+    if not usage:
+        return
+    details = usage.prompt_tokens_details
+    cached = getattr(details, "cached_tokens", 0) if details else 0
+    pct = int(cached / usage.prompt_tokens * 100) if usage.prompt_tokens else 0
+    tag = f"[{label}] " if label else ""
+    logger.debug(
+        f"{tag}OpenAI tokens — prompt: {usage.prompt_tokens} "
+        f"({cached} cached, {pct}% hit) | completion: {usage.completion_tokens}"
+    )
 
 
 def generate_breaking_script(item: NewsItem) -> VideoScript:
@@ -79,6 +98,7 @@ def generate_breaking_script(item: NewsItem) -> VideoScript:
         ],
         temperature=0.65,
     )
+    _log_usage(resp.usage, "breaking")
 
     raw = json.loads(resp.choices[0].message.content)
     scenes = [
