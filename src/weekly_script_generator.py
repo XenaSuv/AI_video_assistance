@@ -91,6 +91,16 @@ Each short_narration must:
   - End exactly with: "Watch the full tutorial for more tips like this."
 Setting short_narration to null for ALL scenes is an error — Shorts drive channel growth.
 
+=== SOURCE QUOTES ===
+For 2-3 scenes, pull a real quote from the official documentation, release notes,
+blog post, or tutorial being covered.
+- source_quote: ≤30 words, verbatim from official source. Never fabricate.
+  Leave null if no direct quote is available for that scene.
+- quote_attribution: "Name, Role · Organization · domain.com"
+  Examples: "Anthropic Engineering · anthropic.com"
+            "OpenAI Documentation Team · platform.openai.com"
+  Leave null when source_quote is null.
+
 === OUTPUT FORMAT ===
 Return ONLY valid JSON, no markdown fences, no commentary.
 {
@@ -110,7 +120,9 @@ Return ONLY valid JSON, no markdown fences, no commentary.
       "screenshot_key": null,
       "short_narration": null,
       "video_query": null,
-      "infographic_data": null
+      "infographic_data": null,
+      "source_quote": null,
+      "quote_attribution": null
     },
     {
       "heading": "...",
@@ -119,7 +131,9 @@ Return ONLY valid JSON, no markdown fences, no commentary.
       "screenshot_key": null,
       "short_narration": "Here's a trick most people miss... [~120 words ending with CTA]",
       "video_query": null,
-      "infographic_data": null
+      "infographic_data": null,
+      "source_quote": "Prompt caching reduces costs by up to 90% for long repeated contexts",
+      "quote_attribution": "Anthropic Engineering · anthropic.com"
     }
   ]
 }
@@ -456,11 +470,13 @@ def generate_tutorial_script(
         if key and not has_key(tool_key, key):
             logger.warning(f"Scene {i}: GPT picked unknown screenshot_key '{key}' — falling back to DALL-E")
             key = None
-        short_nar   = s.get("short_narration") or None
+        short_nar  = s.get("short_narration") or None
         infographic = s.get("infographic_data") or None
         if infographic and not isinstance(infographic, dict):
             infographic = None
-        video_q = (s.get("video_query") or "").strip() or None
+        video_q   = (s.get("video_query") or "").strip() or None
+        src_quote = (s.get("source_quote") or "").strip() or None
+        src_attr  = (s.get("quote_attribution") or "").strip() or None
         scenes.append(Scene(
             idx=i,
             heading=s["heading"],
@@ -470,6 +486,8 @@ def generate_tutorial_script(
             short_narration=short_nar,
             infographic_data=infographic,
             video_query=video_q,
+            source_quote=src_quote,
+            quote_attribution=src_attr,
         ))
 
     # Ensure 3-4 Shorts are present; auto-fill any missing ones

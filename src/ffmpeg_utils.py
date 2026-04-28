@@ -251,6 +251,41 @@ def title_card(
     return output
 
 
+def quote_card_clip(
+    png_path: Path,
+    output: Path,
+    *,
+    duration_sec: float = 4.0,
+) -> Path:
+    """Convert a static quote-card PNG into a short video with fade in/out.
+
+    The clip is silent (no audio stream).  It is designed to be prepended to
+    the scene's Ken Burns clip so the first *duration_sec* seconds of narration
+    play over the quote card before cutting to the visual b-roll.
+    """
+    if output.exists():
+        return output
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    fade_d = 0.35
+    vf = (
+        f"fade=t=in:st=0:d={fade_d},"
+        f"fade=t=out:st={duration_sec - fade_d:.2f}:d={fade_d}"
+    )
+    _run([
+        "ffmpeg", "-y",
+        "-loop", "1",
+        "-i", str(png_path),
+        "-vf", vf,
+        "-t", str(duration_sec),
+        "-c:v", "libx264", "-crf", "18", "-preset", "medium",
+        "-pix_fmt", "yuv420p",
+        "-an",
+        str(output),
+    ])
+    return output
+
+
 def burn_chyron(video: Path, heading: str, output: Path) -> Path:
     """Burn a lower-third chyron (heading text) onto *video* for the first few seconds.
 

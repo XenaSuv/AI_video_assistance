@@ -40,6 +40,14 @@ Structure the 5 scenes as:
   3. Why it matters — impact on users, devs, and the industry
   4. Sign-off — where to learn more + teaser for full coverage
 
+=== SOURCE QUOTES ===
+For 1-2 scenes, pull a real quote directly from the announcement (press release, blog
+post, CEO tweet, or official statement).
+- source_quote: ≤25 words, verbatim. Never fabricate — only use text in the source.
+  Leave null if no direct quote exists.
+- quote_attribution: "Name, Role · Organization · domain.com"
+  Leave null when source_quote is null.
+
 === OUTPUT FORMAT ===
 Return ONLY valid JSON, no markdown fences, no commentary.
 {
@@ -51,7 +59,9 @@ Return ONLY valid JSON, no markdown fences, no commentary.
     {
       "heading": "short chyron-style title",
       "narration": "~100-120 words of spoken text",
-      "visual_prompt": "DALL-E 3 image prompt"
+      "visual_prompt": "DALL-E 3 image prompt",
+      "source_quote": null,
+      "quote_attribution": null
     },
     ...
   ]
@@ -107,6 +117,8 @@ def generate_breaking_script(item: NewsItem) -> VideoScript:
             heading=s["heading"],
             narration=s["narration"],
             visual_prompt=s["visual_prompt"],
+            source_quote=(s.get("source_quote") or "").strip() or None,
+            quote_attribution=(s.get("quote_attribution") or "").strip() or None,
         )
         for i, s in enumerate(raw["scenes"])
     ]

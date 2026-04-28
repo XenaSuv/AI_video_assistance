@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.script_generator import Scene, VideoScript
 from src.image_generator import generate_scene_clip
+from src.quote_card import render_quote_card_png
 import src.ffmpeg_utils as ffmpeg_utils
 
 VIDEO_W, VIDEO_H = 1280, 720   # canonical output resolution
@@ -83,18 +84,35 @@ def assemble_video(
         if len(clip_paths) == 1:
             raw_clip = clip_paths[0]
         else:
-            # Concat multiple clips for this scene first
             cat_path = assembled_dir / f"scene_{scene.idx:02d}_cat.mp4"
             raw_clip = ffmpeg_utils.concat(clip_paths, cat_path)
+
+        # Quote card — prepended as first 4 s of visual (narration plays over it)
+        has_quote = bool(scene.source_quote)
+        if has_quote:
+            try:
+                qc_png  = assembled_dir / f"quote_{scene.idx:02d}.png"
+                qc_clip = assembled_dir / f"quote_{scene.idx:02d}.mp4"
+                render_quote_card_png(scene, qc_png)
+                ffmpeg_utils.quote_card_clip(qc_png, qc_clip, duration_sec=4.0)
+                combined = assembled_dir / f"scene_{scene.idx:02d}_qc.mp4"
+                raw_clip = ffmpeg_utils.concat([qc_clip, raw_clip], combined)
+                logger.info(f"Scene {scene.idx}: quote card prepended")
+            except Exception as exc:
+                logger.warning(f"Scene {scene.idx}: quote card failed (non-fatal): {exc}")
+                has_quote = False
 
         assembled_clip = assembled_dir / f"scene_{scene.idx:02d}.mp4"
         assembled_clip = ffmpeg_utils.merge_av(
             raw_clip, audio_path, assembled_clip, loop_video=True
         )
 
-        # Burn chyron (lower-third heading text) — non-fatal
+        # Chyron: skip for quote-card scenes (attribution line already identifies the scene)
         chyron_clip = assembled_dir / f"scene_{scene.idx:02d}_chyron.mp4"
-        chyron_clip = ffmpeg_utils.burn_chyron(assembled_clip, scene.heading, chyron_clip)
+        if not has_quote:
+            chyron_clip = ffmpeg_utils.burn_chyron(assembled_clip, scene.heading, chyron_clip)
+        else:
+            chyron_clip = assembled_clip   # no chyron — quote card handles attribution
 
         # Title card before all scenes except the first
         if scene.idx > 0:
