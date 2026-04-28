@@ -10,12 +10,12 @@ from pathlib import Path
 
 from elevenlabs.client import ElevenLabs
 from loguru import logger
-from moviepy.editor import AudioFileClip
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.script_generator import VideoScript
+from src.ffmpeg_utils import duration as ff_duration
 
 
 def _is_retryable_elevenlabs(exc: BaseException) -> bool:
@@ -86,9 +86,8 @@ def synthesize_script(
                 if chunk:
                     f.write(chunk)
 
-        # Measure duration for downstream video timing
-        with AudioFileClip(str(path)) as clip:
-            scene.duration_sec = int(clip.duration) + 1  # round up
+        from src.ffmpeg_utils import duration as _ff_dur
+        scene.duration_sec = int(_ff_dur(path)) + 1
 
         paths.append(path)
         logger.info(f"  → {path.name} ({scene.duration_sec}s)")

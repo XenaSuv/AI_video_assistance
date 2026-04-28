@@ -1,5 +1,5 @@
 """Generate scene b-roll by producing a DALL-E 3 image and animating it
-with a Ken Burns (slow pan) effect via MoviePy.
+with a Ken Burns (slow pan) effect via ffmpeg.
 
 Cost comparison:
   RunwayML Gen-4.5  ~$0.50 per 10s clip  × 96 clips/episode  ≈ $48
@@ -10,10 +10,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import numpy as np
 import requests
 from loguru import logger
-from moviepy.editor import ColorClip, VideoClip
 from openai import BadRequestError, OpenAI, RateLimitError, APIStatusError
 from PIL import Image as PILImage
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
@@ -21,6 +19,7 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.script_generator import Scene
+import src.ffmpeg_utils as ffmpeg_utils
 
 OUT_W, OUT_H = 1280, 720
 
@@ -78,8 +77,8 @@ def generate_dalle_image(prompt: str, out_path: Path) -> Path:
 
 # --------------------- Ken Burns effect ---------------------
 
-def _ken_burns_clip(img_path: Path, duration: float) -> VideoClip:
-    """Animate a static image with one of four Ken Burns movements.
+def _ken_burns_clip(img_path: Path, duration: float, clip_path: Path) -> Path:
+    """Animate a static image with one of four Ken Burns movements via ffmpeg.
 
     Variant is chosen deterministically from the filename so re-runs produce
     the same clip and consecutive scenes always differ.
@@ -90,65 +89,25 @@ def _ken_burns_clip(img_path: Path, duration: float) -> VideoClip:
       2 — zoom in  (window shrinks from full headroom to centre)
       3 — zoom out (window grows from centre to full headroom)
     """
-    img_arr = np.array(PILImage.open(str(img_path)).convert("RGB"))
-    ih, iw = img_arr.shape[:2]          # 1024 × 1792 from DALL-E 3 HD
+    stem_last = img_path.stem.split("_")[-1]
+    variant = int(stem_last) % 4 if stem_last.isdigit() else (hash(img_path.stem) % 4)
 
-    max_x = max(0, iw - OUT_W)          # 512 px horizontal headroom
-    max_y = max(0, ih - OUT_H)          # 304 px vertical headroom
-
-    # Deterministic variant: hash the stem so the same image always moves the same way
-    variant = int(img_path.stem.split("_")[-1]) % 4 if img_path.stem.split("_")[-1].isdigit() else (hash(img_path.stem) % 4)
-
-    if variant == 0:
-        # Pan left → right
-        pan = int(max_x * 0.40)
-        y0  = int(max_y * 0.25)
-        def make_frame(t: float) -> np.ndarray:
-            x = int(pan * t / duration)
-            return img_arr[y0:y0 + OUT_H, x:x + OUT_W]
-
-    elif variant == 1:
-        # Pan right → left
-        pan = int(max_x * 0.40)
-        y0  = int(max_y * 0.25)
-        def make_frame(t: float) -> np.ndarray:
-            x = pan - int(pan * t / duration)
-            return img_arr[y0:y0 + OUT_H, x:x + OUT_W]
-
-    elif variant == 2:
-        # Zoom in: start wide (use all headroom), end centred (no headroom)
-        def make_frame(t: float) -> np.ndarray:
-            p   = t / duration              # 0 → 1
-            ease = p * p                    # ease-in: slow start, fast finish
-            x0  = int(max_x * 0.5 * (1 - ease))
-            y0  = int(max_y * 0.5 * (1 - ease))
-            x1  = iw - int(max_x * 0.5 * (1 - ease))
-            y1  = ih - int(max_y * 0.5 * (1 - ease))
-            patch = img_arr[y0:y1, x0:x1]
-            return np.array(PILImage.fromarray(patch).resize((OUT_W, OUT_H), PILImage.LANCZOS))
-
-    else:
-        # Zoom out: start centred (no headroom), end wide (all headroom)
-        def make_frame(t: float) -> np.ndarray:
-            p    = t / duration
-            ease = 1 - (1 - p) ** 2        # ease-out: fast start, slow finish
-            x0   = int(max_x * 0.5 * ease)
-            y0   = int(max_y * 0.5 * ease)
-            x1   = iw - int(max_x * 0.5 * ease)
-            y1   = ih - int(max_y * 0.5 * ease)
-            patch = img_arr[y0:y1, x0:x1]
-            return np.array(PILImage.fromarray(patch).resize((OUT_W, OUT_H), PILImage.LANCZOS))
-
-    return VideoClip(make_frame, duration=duration).set_fps(24)
+    return ffmpeg_utils.ken_burns(
+        img_path,
+        clip_path,
+        duration_sec=duration,
+        variant=variant,
+        in_w=1792,
+        in_h=1024,
+        out_w=OUT_W,
+        out_h=OUT_H,
+    )
 
 
 # --------------------- Fallback ---------------------
 
 def _black_placeholder(path: Path, duration: int) -> Path:
-    clip = ColorClip(size=(OUT_W, OUT_H), color=(15, 20, 30), duration=duration)
-    clip.write_videofile(str(path), fps=24, codec="libx264", audio=False, logger=None)
-    clip.close()
-    return path
+    return ffmpeg_utils.black_clip(path, width=OUT_W, height=OUT_H, duration_sec=float(duration))
 
 
 # --------------------- Public API ---------------------
@@ -227,18 +186,9 @@ def generate_scene_clip(
         else:
             logger.info(f"Reusing cached image: {img_path.name}")
 
-        video = _ken_burns_clip(img_path, float(scene.duration_sec))
-        video.write_videofile(
-            str(clip_path),
-            fps=24,
-            codec="libx264",
-            audio=False,
-            preset="medium",
-            logger=None,
-        )
-        video.close()
+        result = _ken_burns_clip(img_path, float(scene.duration_sec), clip_path)
         logger.info(f"Scene {scene.idx} clip written: {clip_path.name}")
-        return clip_path
+        return result
     except Exception as e:
         logger.error(f"Scene {scene.idx} clip failed, using placeholder: {e}")
         return _black_placeholder(clip_path, scene.duration_sec)

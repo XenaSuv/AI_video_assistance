@@ -14,9 +14,9 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from loguru import logger
-from moviepy.editor import VideoFileClip
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import src.ffmpeg_utils as ffmpeg_utils
 
 THUMB_W, THUMB_H = 1280, 720
 _FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
@@ -38,13 +38,12 @@ def _score_frame(arr: np.ndarray) -> float:
 
 def _sample_frames(video_path: Path, n: int = _CANDIDATES) -> list[tuple[float, np.ndarray]]:
     """Return (timestamp, rgb_array) pairs sampled evenly across the video."""
-    with VideoFileClip(str(video_path)) as clip:
-        duration = clip.duration
-        timestamps = [
-            duration * (0.05 + 0.90 * i / (n - 1))
-            for i in range(n)
-        ]
-        return [(t, clip.get_frame(t)) for t in timestamps]
+    dur = ffmpeg_utils.duration(video_path)
+    timestamps = [
+        dur * (0.05 + 0.90 * i / (n - 1))
+        for i in range(n)
+    ]
+    return [(t, ffmpeg_utils.get_frame(video_path, t)) for t in timestamps]
 
 
 # --------------------- Overlay ---------------------

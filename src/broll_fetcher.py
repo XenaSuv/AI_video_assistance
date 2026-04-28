@@ -33,12 +33,11 @@ from pathlib import Path
 
 import requests
 from loguru import logger
-from moviepy.editor import VideoFileClip
-from moviepy.video.fx.all import loop as fx_loop, resize
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.script_generator import Scene
+import src.ffmpeg_utils as ffmpeg_utils
 
 _PEXELS_VIDEO_URL = "https://api.pexels.com/videos/search"
 _PIXABAY_VIDEO_URL = "https://pixabay.com/api/videos/"
@@ -120,18 +119,19 @@ def _download(url: str, out_path: Path) -> Path:
 
 def _process_clip(raw_path: Path, duration_sec: float, out_path: Path) -> Path:
     """Resize → loop/trim → write."""
-    clip = VideoFileClip(str(raw_path)).without_audio()
-    if (clip.w, clip.h) != (VIDEO_W, VIDEO_H):
-        clip = resize(clip, (VIDEO_W, VIDEO_H))
-    if clip.duration < duration_sec:
-        clip = fx_loop(clip, duration=duration_sec)
-    clip = clip.subclip(0, duration_sec)
-    clip.write_videofile(
-        str(out_path), fps=24, codec="libx264",
-        audio=False, preset="medium", logger=None,
-    )
-    clip.close()
+    raw_w, raw_h = ffmpeg_utils.video_size(raw_path)
+    if (raw_w, raw_h) != (VIDEO_W, VIDEO_H):
+        resized_path = raw_path.with_stem(raw_path.stem + "_resized")
+        ffmpeg_utils.resize_video(raw_path, resized_path, width=VIDEO_W, height=VIDEO_H)
+    else:
+        resized_path = raw_path
+
+    ffmpeg_utils.loop_and_trim(resized_path, out_path, target_sec=duration_sec)
+
+    # Clean up intermediates
     raw_path.unlink(missing_ok=True)
+    if resized_path != raw_path:
+        resized_path.unlink(missing_ok=True)
     return out_path
 
 

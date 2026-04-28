@@ -22,7 +22,7 @@ import traceback
 from pathlib import Path
 
 from loguru import logger
-from moviepy.editor import AudioFileClip
+import src.ffmpeg_utils as ffmpeg_utils
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings

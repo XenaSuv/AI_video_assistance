@@ -14,9 +14,9 @@ import traceback
 from pathlib import Path
 
 from loguru import logger
-from moviepy.editor import AudioFileClip, VideoFileClip
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import src.ffmpeg_utils as ffmpeg_utils
 from config import settings
 from src.deduplicator import SeenStories
 from src.digest_script_generator import save_for_digest
@@ -52,8 +52,7 @@ def _get_intro_duration(intro_path: Path | None) -> float:
     """Return duration in seconds of the intro clip, or 0.0 if not present."""
     if not intro_path or not intro_path.exists():
         return 0.0
-    with VideoFileClip(str(intro_path), audio=False) as clip:
-        return clip.duration
+    return ffmpeg_utils.duration(intro_path)
 
 
 def _load_cached_script(path: Path) -> VideoScript | None:
@@ -75,8 +74,7 @@ def _load_audio_durations(script: VideoScript, audio_dir: Path) -> None:
     """Populate scene.duration_sec from existing mp3 files."""
     for s in script.scenes:
         p = audio_dir / f"scene_{s.idx:02d}.mp3"
-        with AudioFileClip(str(p)) as c:
-            s.duration_sec = int(c.duration) + 1
+        s.duration_sec = int(ffmpeg_utils.duration(p)) + 1
 
 
 # --------------------- Language variant ---------------------

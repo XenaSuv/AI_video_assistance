@@ -22,7 +22,7 @@ import traceback
 from pathlib import Path
 
 from loguru import logger
-from moviepy.editor import AudioFileClip
+import src.ffmpeg_utils as ffmpeg_utils
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
@@ -62,8 +62,7 @@ def _setup_logging(run_dir: Path) -> None:
 def _load_audio_durations(script: VideoScript, audio_dir: Path) -> None:
     for s in script.scenes:
         p = audio_dir / f"scene_{s.idx:02d}.mp3"
-        with AudioFileClip(str(p)) as c:
-            s.duration_sec = int(c.duration) + 1
+        s.duration_sec = int(ffmpeg_utils.duration(p)) + 1
 
 
 def run_weekly_pipeline(
