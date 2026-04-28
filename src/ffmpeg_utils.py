@@ -354,7 +354,10 @@ def ken_burns(
     pan = int((in_w - out_w) * 0.40)    # 40% of horizontal headroom
     y0  = int((in_h - out_h) * 0.25)    # 25% down from top
 
-    if variant == 0:
+    # If input is smaller than output, skip Ken Burns effects and just scale
+    if in_w <= out_w or in_h <= out_h:
+        vf = f"scale={out_w}:{out_h}"
+    elif variant == 0:
         # Pan left → right
         vf = (
             f"crop=w={out_w}:h={out_h}"
