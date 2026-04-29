@@ -5,6 +5,7 @@ Structured output: scenes/segments so the video generator can make matching b-ro
 from __future__ import annotations
 
 import json
+import random
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -380,27 +381,75 @@ def generate_short_script(news_item, hook: str) -> str:
     content = str(content or "")
 
     client = OpenAI(api_key=settings.openai_api_key)
+    angle = random.choice(["shock", "useful", "money", "lazy"])
     prompt = f"""
-    Create a 30-second YouTube Shorts script.
+    You are creating a viral YouTube Shorts script.
 
-    Hook: {hook}
+    IMPORTANT:
+    Do NOT sound like news.
+    Do NOT say "today", "recently", "announced".
+    Do NOT sound like AI-generated content.
+
+    Act like a real person who just tested this AI tool.
+
+    ---
 
     News:
     {content}
 
-    Structure:
-    - Hook
-    - What happened
-    - Why it matters
-    - One practical use
+    Hook:
+    {hook}
 
+    ---
+
+    Script rules:
+
+    1. Start with a strong hook (first 1–2 seconds)
+    2. Speak in FIRST PERSON ("I tried", "I tested")
+    3. Show a RESULT (what happened)
+    4. Explain WHY it matters in simple terms
+    5. Make it feel real and practical
+
+    ---
+
+    Tone:
+    - natural
+    - slightly эмоциональный
+    - conversational
+    - confident
+
+    ---
+
+    Style:
+    - short sentences
+    - no fluff
+    - no generic phrases
+    - no "this technology allows..."
+
+    ---
+
+    Length:
     Max 80 words.
+
+    ---
+
+    Example style:
+
+    "I tried this new AI and it built a website in 10 seconds.
+    Like… fully working.
+    You just type what you want — and it does everything.
+    Honestly, this could replace basic dev work."
+
+    ---
+
+    Return ONLY the script.
     """
+    prompt += f"\nFocus angle: {angle}"
 
     response = client.chat.completions.create(
         model=settings.openai_model,
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.7,
+        temperature=0.9,
     )
     return response.choices[0].message.content or ""
 
