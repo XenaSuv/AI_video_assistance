@@ -124,6 +124,8 @@ def run_breaking_pipeline(item: NewsItem, skip_upload: bool = False) -> dict:
             short_script = generate_breaking_short_script(item)
             short_script.save(short_script_cache)
         summary["short_title"] = short_script.title
+        summary["shorts_description"] = short_script.description
+        summary["shorts_tags"] = short_script.tags
 
         audio_short_dir = run_dir / "audio_short"
         if not audio_short_dir.exists() or len(list(audio_short_dir.glob("*.mp3"))) < len(short_script.scenes):
