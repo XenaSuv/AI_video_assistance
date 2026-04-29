@@ -272,44 +272,44 @@ def generate_breaking_script(item: NewsItem) -> VideoScript:
     return script
 
 
-    def generate_breaking_short_script(item: NewsItem) -> VideoScript:
-      """Produce a dedicated breaking-news Shorts script for the given news item."""
-      client = OpenAI(api_key=settings.openai_api_key)
-      logger.info(f"Generating breaking Shorts script: [{item.source}] {item.title}")
+def generate_breaking_short_script(item: NewsItem) -> VideoScript:
+    """Produce a dedicated breaking-news Shorts script for the given news item."""
+    client = OpenAI(api_key=settings.openai_api_key)
+    logger.info(f"Generating breaking Shorts script: [{item.source}] {item.title}")
 
-      resp = client.chat.completions.create(
+    resp = client.chat.completions.create(
         model=settings.openai_model,
         response_format={"type": "json_object"},
         messages=[
-          {"role": "system", "content": _SHORT_SYSTEM_PROMPT},
-          {"role": "user", "content": _USER_TEMPLATE.format(
-            source  = item.source,
-            title   = item.title,
-            url     = item.url,
-            summary = item.summary or "(no additional details available)",
-          )},
+            {"role": "system", "content": _SHORT_SYSTEM_PROMPT},
+            {"role": "user", "content": _USER_TEMPLATE.format(
+                source  = item.source,
+                title   = item.title,
+                url     = item.url,
+                summary = item.summary or "(no additional details available)",
+            )},
         ],
         temperature=0.75,
-      )
-      _log_usage(resp.usage, "breaking-short")
+    )
+    _log_usage(resp.usage, "breaking-short")
 
-      raw = json.loads(resp.choices[0].message.content)
-      scene = Scene(
+    raw = json.loads(resp.choices[0].message.content)
+    scene = Scene(
         idx=0,
         heading="Breaking Short",
         narration=raw.get("script", "").strip(),
         visual_prompt=raw.get("visual_prompt", "photorealistic editorial AI scene, no logos, no public figures"),
-      )
+    )
 
-      script = VideoScript(
+    script = VideoScript(
         title=raw.get("title", "BREAKING: ..."),
         description=raw.get("script", ""),
         tags=raw.get("tags", []),
         hook=raw.get("hook", ""),
         scenes=[scene],
         raw_json=raw,
-      )
+    )
 
-      word_count = len(scene.narration.split())
-      logger.info(f"Breaking short script ready: '{script.title}' | {word_count} words")
-      return script
+    word_count = len(scene.narration.split())
+    logger.info(f"Breaking short script ready: '{script.title}' | {word_count} words")
+    return script
