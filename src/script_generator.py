@@ -16,6 +16,7 @@ from openai import OpenAI
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.analytics import get_proven_hooks, get_proven_titles, top_keywords
 from src.scraper import NewsItem
 
 
@@ -230,6 +231,25 @@ def _build_items_block(items: list[NewsItem]) -> str:
     return "\n".join(lines)
 
 
+def _build_recommendation_block() -> str:
+    """Return a prompt block with historical hook/title guidance."""
+    proven_hooks = get_proven_hooks(limit=3)
+    proven_titles = get_proven_titles(limit=3)
+    hot_terms = [term for term, _ in top_keywords(min_views=150, top_n=6)]
+
+    sections = []
+    if proven_hooks:
+        sections.append("Proven hook styles from past top videos:\n" + "\n".join(f"- {h}" for h in proven_hooks))
+    if proven_titles:
+        sections.append("Proven title formulas from past top videos:\n" + "\n".join(f"- {t}" for t in proven_titles))
+    if hot_terms:
+        sections.append("Trending keyword ideas to use naturally in title/tags/description:\n" + ", ".join(hot_terms))
+
+    if not sections:
+        return ""
+    return "=== ANALYTICS INSIGHTS ===\n" + "\n\n".join(sections)
+
+
 def _fill_missing_short_narrations(
     scenes: list[Scene],
     client: OpenAI,
@@ -294,6 +314,14 @@ def generate_script(
         num_scenes=num_scenes,
         items_block=_build_items_block(items),
     )
+    if data_dir is not None:
+        try:
+            analytics_block = _build_recommendation_block()
+            if analytics_block:
+                user_prompt += "\n\n" + analytics_block
+                logger.info("Added analytics guidance to script prompt")
+        except Exception as exc:
+            logger.warning(f"Failed to add analytics guidance: {exc}")
 
     logger.info(f"Requesting script from {settings.openai_model} "
                 f"({settings.script_target_words} words, {num_scenes} scenes)")

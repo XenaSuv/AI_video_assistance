@@ -48,11 +48,15 @@ def save_result(video_id: str, hook: str, title: str, description: str = "") -> 
         "title": title,
         "description": description,
         "timestamp": datetime.utcnow().isoformat(),
+        "updated": datetime.utcnow().isoformat(),
         "views": 0,
         "likes": 0,
         "comments": 0,
         "shares": 0,
         "ctr": None,
+        "watch_time_sec": None,
+        "avg_view_duration_sec": None,
+        "avg_view_percentage": None,
     }
     data = _load_db()
     data.append(record)
@@ -67,6 +71,9 @@ def update_metrics(
     comments: int | None = None,
     shares: int | None = None,
     ctr: float | None = None,
+    watch_time_sec: float | None = None,
+    avg_view_duration_sec: float | None = None,
+    avg_view_percentage: float | None = None,
 ) -> None:
     """Update performance metrics for a published video."""
     data = _load_db()
@@ -82,6 +89,12 @@ def update_metrics(
                 record["shares"] = shares
             if ctr is not None:
                 record["ctr"] = ctr
+            if watch_time_sec is not None:
+                record["watch_time_sec"] = watch_time_sec
+            if avg_view_duration_sec is not None:
+                record["avg_view_duration_sec"] = avg_view_duration_sec
+            if avg_view_percentage is not None:
+                record["avg_view_percentage"] = avg_view_percentage
             record["updated"] = datetime.utcnow().isoformat()
             _save_db(data)
             logger.info(f"Performance metrics updated: video_id={video_id}")
@@ -96,7 +109,13 @@ def get_top_hooks(limit: int = 10) -> list[dict[str, Any]]:
     for record in data:
         if record["views"] > 0:
             engagement = (record["likes"] + record["comments"] * 2 + record["shares"] * 3) / record["views"]
-            scored.append({"hook": record["hook"], "engagement": engagement, "views": record["views"]})
+            scored.append({
+                "hook": record["hook"],
+                "engagement": engagement,
+                "views": record["views"],
+                "ctr": record.get("ctr"),
+                "avg_view_percentage": record.get("avg_view_percentage"),
+            })
     scored.sort(key=lambda x: x["engagement"], reverse=True)
     return scored[:limit]
 
@@ -110,6 +129,7 @@ def get_top_titles(limit: int = 10) -> list[dict[str, Any]]:
             "ctr": r.get("ctr") or 0,
             "views": r["views"],
             "likes": r["likes"],
+            "avg_view_percentage": r.get("avg_view_percentage"),
         }
         for r in data
         if r["views"] > 0
@@ -138,6 +158,7 @@ def get_stats_by_keyword(keyword: str, field: str = "hook") -> dict[str, Any]:
         "total_likes": total_likes,
         "avg_engagement": (total_likes / total_views * 100) if total_views > 0 else 0,
         "avg_ctr": avg_ctr,
+        "avg_view_percentage": sum(r.get("avg_view_percentage") or 0 for r in matching) / len(matching) if matching else 0,
     }
 
 
@@ -155,4 +176,20 @@ def get_summary() -> dict[str, Any]:
         "total_likes": total_likes,
         "avg_engagement_percent": total_engagement,
         "videos_with_metrics": len([r for r in data if r["views"] > 0]),
+        "avg_ctr": sum(r.get("ctr") or 0 for r in data) / len(data) if data else 0,
+        "avg_view_percentage": sum(r.get("avg_view_percentage") or 0 for r in data) / len(data) if data else 0,
     }
+
+
+def list_records() -> list[dict[str, Any]]:
+    """Return all performance records."""
+    return _load_db()
+
+
+def get_record(video_id: str) -> dict[str, Any] | None:
+    """Return a saved performance record by video_id."""
+    data = _load_db()
+    for record in data:
+        if record["video_id"] == video_id:
+            return record
+    return None
