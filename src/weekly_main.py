@@ -22,9 +22,9 @@ import traceback
 from pathlib import Path
 
 from loguru import logger
-import src.ffmpeg_utils as ffmpeg_utils
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import src.ffmpeg_utils as ffmpeg_utils
 from config import settings
 from src.hook_selector import record_usage
 from src.main import _load_cached_script, _run_language_variant
