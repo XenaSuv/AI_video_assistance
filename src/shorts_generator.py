@@ -175,6 +175,7 @@ def create_short_video(
     *,
     out_name: str = "shorts_mvp.mp4",
     duration_sec: float = 20.0,
+    audio_path: Path | None = None,
 ) -> Path:
     """Create a simple static Shorts video with big burned-in captions."""
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -187,6 +188,11 @@ def create_short_video(
 
     ffmpeg_utils.black_clip(base_clip, width=1080, height=1920, duration_sec=duration_sec)
     add_big_captions(base_clip, script_text, captioned)
-    shutil.copy2(str(captioned), str(out_path))
+    if audio_path is not None and audio_path.exists():
+        with_audio = assembled_dir / "shorts_mvp_with_audio.mp4"
+        ffmpeg_utils.merge_av(captioned, audio_path, with_audio)
+        shutil.copy2(str(with_audio), str(out_path))
+    else:
+        shutil.copy2(str(captioned), str(out_path))
     logger.info(f"Created shorts MVP video: {out_path}")
     return out_path

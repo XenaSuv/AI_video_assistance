@@ -27,12 +27,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import src.ffmpeg_utils as ffmpeg_utils
 from config import settings
 from src.breaking_detector import mark_publish_failed, mark_published
-from src.breaking_script_generator import generate_breaking_script
+from src.breaking_script_generator import generate_breaking_script, generate_breaking_short_script
 from src.main import _load_audio_durations, _run_language_variant
 from src.subtitle_generator import generate_subtitles
 from src.scraper import NewsItem
 from src.script_generator import Scene, VideoScript
-from src.shorts_generator import build_short
+from src.shorts_generator import build_short, create_short_video
 from src.thumbnail_generator import generate_thumbnail
 from src.video_generator import build_video
 from src.voice_generator import synthesize_script
@@ -118,9 +118,33 @@ def run_breaking_pipeline(item: NewsItem, skip_upload: bool = False) -> dict:
             logger.info(f"Reusing cached {long_video.name}")
 
         # 5. Shorts
+        short_script_cache = run_dir / "short_script.json"
+        short_script = _load_cached_script(short_script_cache)
+        if short_script is None:
+            short_script = generate_breaking_short_script(item)
+            short_script.save(short_script_cache)
+        summary["short_title"] = short_script.title
+
+        audio_short_dir = run_dir / "audio_short"
+        if not audio_short_dir.exists() or len(list(audio_short_dir.glob("*.mp3"))) < len(short_script.scenes):
+            synthesize_script(short_script, run_dir, audio_subdir="audio_short")
+        else:
+            logger.info("Reusing cached short audio; measuring durations")
+            _load_audio_durations(short_script, audio_short_dir)
+
         short_video = run_dir / "shorts.mp4"
         if not short_video.exists():
-            build_short(script, long_video, run_dir)
+            try:
+                create_short_video(
+                    short_script.scenes[0].narration,
+                    run_dir,
+                    out_name="shorts.mp4",
+                    duration_sec=min(60.0, float(short_script.scenes[0].duration_sec or 45.0)),
+                    audio_path=audio_short_dir / "scene_00.mp3",
+                )
+            except Exception as exc:
+                logger.warning(f"Breaking short generation failed: {exc} — falling back to long-form-derived short")
+                build_short(script, long_video, run_dir)
         else:
             logger.info(f"Reusing cached {short_video.name}")
 
