@@ -81,6 +81,30 @@ def _load_audio_durations(script: VideoScript, audio_dir: Path) -> None:
         s.duration_sec = int(ffmpeg_utils.duration(p)) + 1
 
 
+def _needs_video_rebuild(video_path: Path) -> bool:
+    """Return True when a cached final video is missing or has no audio stream."""
+    if not video_path.exists():
+        return True
+    try:
+        if ffmpeg_utils.has_audio_stream(video_path):
+            return False
+    except Exception as exc:
+        logger.warning(f"Cached video probe failed for {video_path.name}: {exc}")
+
+    logger.warning(f"Cached video has no audio stream; rebuilding: {video_path}")
+    video_path.unlink(missing_ok=True)
+    assembled_dir = video_path.parent / "assembled"
+    for cached in (
+        assembled_dir / "content.mp4",
+        assembled_dir / "content_music.mp4",
+        assembled_dir / "end_card.mp4",
+    ):
+        cached.unlink(missing_ok=True)
+    for cached in assembled_dir.glob("title_*.mp4"):
+        cached.unlink(missing_ok=True)
+    return True
+
+
 # --------------------- Language variant ---------------------
 
 def _run_language_variant(
@@ -139,7 +163,7 @@ def _run_language_variant(
 
     # 4. Video — reuse existing clips, just reassemble with new audio
     long_video = run_dir / f"final_video_{lang_code}.mp4"
-    if not long_video.exists():
+    if _needs_video_rebuild(long_video):
         clip_dir = run_dir / "clips"
         clip_paths_by_scene  = {
             s.idx: [clip_dir / f"scene_{s.idx:02d}_clip_0.mp4"]
@@ -275,7 +299,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
 
         # 5. Video
         long_video = run_dir / "final_video.mp4"
-        if not long_video.exists():
+        if _needs_video_rebuild(long_video):
             build_video(script, run_dir,
                         intro_path=_en_intro if _en_intro.exists() else None,
                         outro_path=_en_outro if _en_outro.exists() else None)

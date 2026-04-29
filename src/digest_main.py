@@ -27,7 +27,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.digest_script_generator import collect_week_scripts, generate_digest_script
 from src.hook_selector import record_usage
-from src.main import _load_audio_durations, _load_cached_script, _run_language_variant, _get_intro_duration
+from src.main import (
+    _get_intro_duration,
+    _load_audio_durations,
+    _load_cached_script,
+    _needs_video_rebuild,
+    _run_language_variant,
+)
 from src.subtitle_generator import generate_subtitles
 from src.script_generator import Scene, VideoScript
 from src.shorts_generator import build_short
@@ -116,7 +122,7 @@ def run_digest_pipeline(
 
         # 5. Video
         long_video = run_dir / "final_video.mp4"
-        if not long_video.exists():
+        if _needs_video_rebuild(long_video):
             build_video(script, run_dir,
                         intro_path=_en_intro if _en_intro.exists() else None,
                         outro_path=_en_outro if _en_outro.exists() else None)

@@ -28,7 +28,7 @@ import src.ffmpeg_utils as ffmpeg_utils
 from config import settings
 from src.breaking_detector import mark_publish_failed, mark_published
 from src.breaking_script_generator import generate_breaking_script, generate_breaking_short_script
-from src.main import _load_audio_durations, _run_language_variant
+from src.main import _load_audio_durations, _needs_video_rebuild, _run_language_variant
 from src.subtitle_generator import generate_subtitles
 from src.scraper import NewsItem
 from src.script_generator import Scene, VideoScript
@@ -112,7 +112,7 @@ def run_breaking_pipeline(item: NewsItem, skip_upload: bool = False) -> dict:
 
         # 4. Video (Stable Diffusion replaces DALL-E when STABILITY_API_KEY is set)
         long_video = run_dir / "final_video.mp4"
-        if not long_video.exists():
+        if _needs_video_rebuild(long_video):
             build_video(script, run_dir, is_breaking=True)
         else:
             logger.info(f"Reusing cached {long_video.name}")

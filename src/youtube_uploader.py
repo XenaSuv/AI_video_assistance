@@ -19,6 +19,7 @@ from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src import ffmpeg_utils
 from src.script_generator import VideoScript
 
 
@@ -88,6 +89,9 @@ def upload_video(
     token_file: Path | None = None,
 ) -> str:
     """Upload a video. Returns the YouTube video id."""
+    if not is_short and not ffmpeg_utils.has_audio_stream(video_path):
+        raise ValueError(f"Refusing to upload video without audio stream: {video_path}")
+
     youtube = _youtube_client(client_secrets, token_file)
 
     # Shorts are identified by hashtag + vertical aspect; YT figures it out.

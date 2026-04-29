@@ -85,6 +85,14 @@ def video_size(path: Path) -> tuple[int, int]:
     raise ValueError(f"No video stream found in {path}")
 
 
+def has_audio_stream(path: Path) -> bool:
+    """Return True when *path* contains at least one audio stream."""
+    if not path.exists():
+        return False
+    info = probe(path)
+    return any(stream.get("codec_type") == "audio" for stream in info.get("streams", []))
+
+
 def get_frame(video: Path, t: float) -> np.ndarray:
     """Extract a single RGB frame at time *t* seconds. Returns H×W×3 uint8 array."""
     w, h = video_size(video)
@@ -252,9 +260,12 @@ def title_card(
         "ffmpeg", "-y",
         "-f", "lavfi",
         "-i", f"color=c=0x0D1117:size={W}x{H}:rate=24:duration={duration_sec}",
+        "-f", "lavfi",
+        "-i", f"anullsrc=channel_layout=stereo:sample_rate=44100:duration={duration_sec}",
         "-vf", vf,
+        "-map", "0:v:0", "-map", "1:a:0",
         "-c:v", "libx264", "-crf", "18", "-preset", "medium",
-        "-an",
+        "-c:a", "aac", "-shortest",
         str(output),
     ])
     return output
@@ -301,10 +312,7 @@ def end_card_clip(
     *,
     duration_sec: float = 10.0,
 ) -> Path:
-    """Convert the end-card PNG into a video clip with fade in/out.
-
-    Silent (no audio) — background music covers it during mix_music().
-    """
+    """Convert the end-card PNG into a video clip with silent AAC audio."""
     if output.exists():
         return output
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -318,11 +326,14 @@ def end_card_clip(
         "ffmpeg", "-y",
         "-loop", "1",
         "-i", str(png_path),
+        "-f", "lavfi",
+        "-i", f"anullsrc=channel_layout=stereo:sample_rate=44100:duration={duration_sec}",
         "-vf", vf,
         "-t", str(duration_sec),
+        "-map", "0:v:0", "-map", "1:a:0",
         "-c:v", "libx264", "-crf", "18", "-preset", "medium",
+        "-c:a", "aac", "-shortest",
         "-pix_fmt", "yuv420p",
-        "-an",
         str(output),
     ])
     return output

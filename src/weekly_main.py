@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import src.ffmpeg_utils as ffmpeg_utils
 from config import settings
 from src.hook_selector import record_usage
-from src.main import _load_cached_script, _run_language_variant
+from src.main import _load_cached_script, _needs_video_rebuild, _run_language_variant
 from src.subtitle_generator import generate_subtitles
 from src.script_generator import VideoScript
 from src.shorts_generator import build_short
@@ -128,7 +128,7 @@ def run_weekly_pipeline(
 
         # 5. Video
         long_video = run_dir / "final_video.mp4"
-        if not long_video.exists():
+        if _needs_video_rebuild(long_video):
             build_video(script, run_dir, tool=tool_key, use_presenter=True)
             save_used_topic(settings.data_dir, tool_key, topic)
         else:
