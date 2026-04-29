@@ -137,6 +137,17 @@ def run_breaking_pipeline(item: NewsItem, skip_upload: bool = False) -> dict:
         short_video = run_dir / "shorts.mp4"
         if not short_video.exists():
             try:
+                build_short(
+                    short_script,
+                    long_video,
+                    run_dir,
+                    audio_subdir="audio_short",
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"Breaking short generation from source clips failed: {exc} "
+                    "— falling back to caption-only short"
+                )
                 create_short_video(
                     short_script.scenes[0].narration,
                     run_dir,
@@ -144,9 +155,6 @@ def run_breaking_pipeline(item: NewsItem, skip_upload: bool = False) -> dict:
                     duration_sec=min(60.0, float(short_script.scenes[0].duration_sec or 45.0)),
                     audio_path=audio_short_dir / "scene_00.mp3",
                 )
-            except Exception as exc:
-                logger.warning(f"Breaking short generation failed: {exc} — falling back to long-form-derived short")
-                build_short(script, long_video, run_dir)
         else:
             logger.info(f"Reusing cached {short_video.name}")
 
