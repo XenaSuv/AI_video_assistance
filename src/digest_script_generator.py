@@ -39,7 +39,7 @@ Rules:
 - Each scene ~100-130 words of narration
 - DO NOT say "welcome back" or pad with filler
 - Prioritise impact: lead with the most consequential story in scene 1
-- visual_prompt: vivid DALL-E 3 description, 2-3 sentences (no logos, no real people)
+- visual_prompt: photorealistic DALL-E 3 description, 2-3 sentences. Use actual company/product names from the story and a serious news editorial style (no logos, no real people).
 
 === SOURCE QUOTES ===
 For 2-3 story scenes, include a real quote from that week's story.

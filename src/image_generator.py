@@ -69,8 +69,42 @@ def _call_dalle(client: OpenAI, prompt: str) -> bytes:
     return dl.content
 
 
+_BRAND_BACKGROUND_TEMPLATES: dict[str, str] = {
+    "openai": (
+        "photorealistic editorial AI newsroom background for an OpenAI story, "
+        "modern research lab with subtle blue lighting and an abstract data display wall, "
+        "no logos, no people, serious tone"
+    ),
+    "anthropic": (
+        "photorealistic editorial AI workspace background for an Anthropic story, "
+        "calm cream-and-blue research office with a schematic data wall, "
+        "no logos, no people, serious tone"
+    ),
+    "google": (
+        "photorealistic editorial technology newsroom background for a Google story, "
+        "glass-walled innovation lab with subtle color accents and data visualizations, "
+        "no logos, no people, serious tone"
+    ),
+}
+
+
+def _normalize_visual_prompt(prompt: str) -> str:
+    """Normalize visual prompt style and apply brand-backed backgrounds when appropriate."""
+    prompt = prompt.strip()
+    lower = prompt.lower()
+    for company, template in _BRAND_BACKGROUND_TEMPLATES.items():
+        if company in lower:
+            return f"{template} — {prompt}"
+
+    prompt = re.sub(r"style:\s*vivid", "style: photorealistic", prompt, flags=re.IGNORECASE)
+    if "photorealistic" not in prompt.lower() and "photo-realistic" not in prompt.lower():
+        prompt = f"photorealistic {prompt}"
+    return prompt
+
+
 def generate_dalle_image(prompt: str, out_path: Path) -> Path:
     """Call DALL-E 3 HD and save the image. Cached if already exists."""
+    prompt = _normalize_visual_prompt(prompt)
     if out_path.exists():
         logger.info(f"Reusing cached image: {out_path.name}")
         return out_path

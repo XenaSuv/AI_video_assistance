@@ -116,6 +116,13 @@ Good examples: "developer coding laptop", "data center servers blinking lights",
 Use null for: data/comparison scenes (use infographic), abstract AI concepts,
 policy/opinion scenes, any scene where a DALL-E illustration communicates better.
 
+=== VISUAL PROMPTS ===
+Each "visual_prompt" should be a photorealistic DALL-E 3 description that uses the
+headline's actual company, product, or service names. Aim for a serious editorial
+news feel rather than colorful fantasy. For OpenAI, Anthropic, or Google stories,
+prefer a brand-inspired background prompt with subtle corporate color cues and
+no obvious logos.
+
 === SHORT NARRATION ===
 Fill "short_narration" for EXACTLY 2-3 middle scenes (not scene 0 intro, not the last
 sign-off). Each must be fully self-contained (~120 words):
@@ -156,9 +163,9 @@ Output MUST be a single valid JSON object. No markdown fences. No commentary.
   "hook_variants": ["fact-lead hook", "question hook", "bold statement hook"],
   "scenes": [
     {
-      "heading": "chyron title max 8 words",
-      "narration": "spoken text, conversational, contractions OK",
-      "visual_prompt": "DALL-E 3 prompt — always required even when infographic_data is set",
+            "heading": "chyron title max 8 words",
+            "narration": "spoken text, conversational, contractions OK",
+            "visual_prompt": "DALL-E 3 prompt — always required even when infographic_data is set. Use photorealistic news-style imagery with company/product specifics.",
       "video_query": null,
       "infographic_data": null,
       "short_narration": null,

@@ -31,7 +31,7 @@ Rules:
 - Exactly 5 scenes, each ~100-120 words of narration (~550-600 words total)
 - Tone: urgent but accurate — use "just announced", "breaking", "this just dropped"
 - Be specific: quote numbers, dates, model names, pricing — whatever is in the source
-- visual_prompt: vivid DALL-E 3 prompt (no real logos, no named public figures)
+- visual_prompt: photorealistic DALL-E 3 prompt. Use specific company/product names from the announcement and a serious editorial news style (no logos, no named public figures).
 
 Structure the 5 scenes as:
   0. Hook — what just happened, why it matters RIGHT NOW
