@@ -93,6 +93,28 @@ def has_audio_stream(path: Path) -> bool:
     return any(stream.get("codec_type") == "audio" for stream in info.get("streams", []))
 
 
+def ensure_audio_stream(path: Path, output: Path) -> Path:
+    """Return *path* if it already has audio, else mux in a silent AAC track."""
+    if has_audio_stream(path):
+        return path
+    if output.exists():
+        return output
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    dur = duration(path)
+    _run([
+        "ffmpeg", "-y",
+        "-i", str(path),
+        "-f", "lavfi",
+        "-i", f"anullsrc=channel_layout=stereo:sample_rate=44100:duration={dur:.3f}",
+        "-map", "0:v:0", "-map", "1:a:0",
+        "-c:v", "copy", "-c:a", "aac",
+        "-shortest",
+        str(output),
+    ])
+    return output
+
+
 def get_frame(video: Path, t: float) -> np.ndarray:
     """Extract a single RGB frame at time *t* seconds. Returns H×W×3 uint8 array."""
     w, h = video_size(video)
@@ -271,6 +293,74 @@ def title_card(
     return output
 
 
+def overlay_title_card(
+    video: Path,
+    heading: str,
+    output: Path,
+    *,
+    duration_sec: float = 2.5,
+) -> Path:
+    """Overlay a full-screen title card on the first seconds of *video*.
+
+    Unlike ``title_card()``, this preserves the source audio and does not extend
+    the clip duration.
+    """
+    if output.exists():
+        return output
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    lines: list[str] = []
+    for width in (34, 48, 64):
+        lines = textwrap.wrap(heading, width=width)
+        if len(lines) <= 2:
+            break
+
+    W, H = 1280, 720
+    line_h = 70
+    total_h = len(lines) * line_h
+    mid_y = H // 2
+    bar_above_y = mid_y - total_h // 2 - 20
+    bar_below_y = mid_y + total_h // 2 + 14
+    end_t = max(0.1, duration_sec)
+
+    filters: list[str] = [
+        (
+            f"drawbox=x=0:y=0:w={W}:h={H}:color=0x0D1117:t=fill:"
+            f"enable='between(t,0,{end_t:.2f})'"
+        ),
+        (
+            f"drawbox=x=80:y={bar_above_y}:w={W - 160}:h=3:color=0x38BDF8:t=fill:"
+            f"enable='between(t,0,{end_t:.2f})'"
+        ),
+        (
+            f"drawbox=x=80:y={bar_below_y}:w={W - 160}:h=3:color=0x38BDF8:t=fill:"
+            f"enable='between(t,0,{end_t:.2f})'"
+        ),
+    ]
+
+    y_start = mid_y - total_h // 2
+    for i, line in enumerate(lines):
+        esc_line = _esc(line)
+        y = y_start + i * line_h
+        filters.append(
+            f"drawtext=fontfile={_FONT}:text='{esc_line}'"
+            f":fontcolor=white:fontsize=56"
+            f":x=(w-text_w)/2:y={y}"
+            f":shadowx=2:shadowy=2:shadowcolor=black"
+            f":enable='between(t,0,{end_t:.2f})'"
+        )
+
+    _run([
+        "ffmpeg", "-y",
+        "-i", str(video),
+        "-vf", ",".join(filters),
+        "-c:v", "libx264", "-crf", "18", "-preset", "medium",
+        "-c:a", "copy",
+        str(output),
+    ])
+    return output
+
+
 def quote_card_clip(
     png_path: Path,
     output: Path,
@@ -339,7 +429,13 @@ def end_card_clip(
     return output
 
 
-def burn_chyron(video: Path, heading: str, output: Path) -> Path:
+def burn_chyron(
+    video: Path,
+    heading: str,
+    output: Path,
+    *,
+    start_sec: float = 0.0,
+) -> Path:
     """Burn a lower-third chyron (heading text) onto *video* for the first few seconds.
 
     The chyron is shown for min(4, duration) seconds.
@@ -352,14 +448,15 @@ def burn_chyron(video: Path, heading: str, output: Path) -> Path:
 
     try:
         dur = duration(video)
-        chyron_dur = min(4.0, dur)
+        start_sec = max(0.0, min(start_sec, dur))
+        chyron_end = min(dur, start_sec + 4.0)
         esc_heading = _esc(heading)
         vf = (
             f"drawtext=fontfile={_FONT}:text='{esc_heading}'"
             f":fontcolor=white:fontsize=48"
             f":x=(w-text_w)/2:y=h-100"
             f":shadowx=2:shadowy=2:shadowcolor=black@0.8"
-            f":enable='between(t,0,{chyron_dur:.2f})'"
+            f":enable='between(t,{start_sec:.2f},{chyron_end:.2f})'"
         )
         _run([
             "ffmpeg", "-y",

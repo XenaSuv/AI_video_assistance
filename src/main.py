@@ -96,16 +96,35 @@ def _needs_video_rebuild(video_path: Path) -> bool:
             assembled_dir / "end_card.mp4",
         )
     )
+    legacy_title_cards = any(assembled_dir.glob("title_*.mp4"))
+    intro_outro_audio_missing = any(
+        path.exists() and not ffmpeg_utils.has_audio_stream(path)
+        for path in (
+            assembled_dir / "intro_resized.mp4",
+            assembled_dir / "outro_resized.mp4",
+            assembled_dir / "body_with_outro.mp4",
+        )
+    )
     if not video_path.exists():
         return True
-    if legacy_end_card:
-        logger.warning(f"Cached video uses legacy generated end card; rebuilding: {video_path}")
+    if legacy_end_card or legacy_title_cards or intro_outro_audio_missing:
+        if legacy_end_card:
+            reason = "legacy generated end card"
+        elif legacy_title_cards:
+            reason = "legacy standalone title cards"
+        else:
+            reason = "intro/outro cache without audio stream"
+        logger.warning(f"Cached video uses {reason}; rebuilding: {video_path}")
         video_path.unlink(missing_ok=True)
         for cached in (
             assembled_dir / "content.mp4",
             assembled_dir / "content_music.mp4",
+            assembled_dir / "body_with_outro.mp4",
+            assembled_dir / "body_with_music.mp4",
             assembled_dir / "end_card.png",
             assembled_dir / "end_card.mp4",
+            assembled_dir / "intro_with_audio.mp4",
+            assembled_dir / "outro_with_audio.mp4",
         ):
             cached.unlink(missing_ok=True)
         for cached in assembled_dir.glob("title_*.mp4"):

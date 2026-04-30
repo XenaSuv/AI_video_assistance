@@ -99,7 +99,7 @@ def build_short(
         base_path = source_clips[0]
     else:
         cat_path = assembled_dir / "short_source_cat.mp4"
-        base_path = ffmpeg_utils.concat(source_clips, cat_path)
+        base_path = ffmpeg_utils.concat(source_clips, cat_path, video_only=True)
 
     # 2. Loop/trim to target duration
     looped_path = assembled_dir / "short_looped.mp4"

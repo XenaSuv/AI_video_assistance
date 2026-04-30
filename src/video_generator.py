@@ -160,79 +160,97 @@ def assemble_video(
             )
 
         # Chyron: skip for quote-card scenes (attribution line already identifies the scene)
+        title_overlay_sec = 0.0
+        title_ready_clip = assembled_clip
+        if scene.idx > 0:
+            title_overlay_sec = 2.5
+            title_ready_clip = assembled_dir / f"scene_{scene.idx:02d}_title_overlay.mp4"
+            title_ready_clip = ffmpeg_utils.overlay_title_card(
+                assembled_clip,
+                scene.heading,
+                title_ready_clip,
+                duration_sec=title_overlay_sec,
+            )
+
         chyron_clip = assembled_dir / f"scene_{scene.idx:02d}_chyron.mp4"
         if not has_quote:
-            chyron_clip = ffmpeg_utils.burn_chyron(assembled_clip, scene.heading, chyron_clip)
+            chyron_clip = ffmpeg_utils.burn_chyron(
+                title_ready_clip,
+                scene.heading,
+                chyron_clip,
+                start_sec=title_overlay_sec,
+            )
         else:
-            chyron_clip = assembled_clip   # no chyron — quote card handles attribution
-
-        # Title card before all scenes except the first
-        if scene.idx > 0:
-            card_path = assembled_dir / f"title_{scene.idx:02d}.mp4"
-            card_path = ffmpeg_utils.title_card(scene.heading, card_path)
-            ordered_segments.append(card_path)
+            chyron_clip = title_ready_clip   # no chyron — quote card handles attribution
 
         ordered_segments.append(chyron_clip)
         logger.info(
             f"Scene {scene.idx} assembled: {target_dur:.1f}s"
-            + (" (+ title card)" if scene.idx > 0 else "")
+            + (" (+ title overlay)" if scene.idx > 0 else "")
         )
 
     # Concatenate all scene segments into content.mp4
     content_path = assembled_dir / "content.mp4"
     content_path = ffmpeg_utils.concat(ordered_segments, content_path)
 
-    # Mix background music (non-fatal)
-    music_path = _resolve_music_path()
-    if music_path:
-        content_music = assembled_dir / "content_music.mp4"
-        content_path = ffmpeg_utils.mix_music(
-            content_path,
-            music_path,
-            content_music,
-            volume=settings.background_music_volume,
-        )
-
     # Wrap with intro / outro
     has_intro = intro_path and intro_path.exists()
     has_outro = outro_path and outro_path.exists()
 
-    if has_intro or has_outro:
-        parts: list[Path] = []
-        if has_intro:
-            # Resize intro if needed
-            intro_w, intro_h = ffmpeg_utils.video_size(intro_path)
-            if (intro_w, intro_h) != (VIDEO_W, VIDEO_H):
-                logger.info(
-                    f"Intro: resizing {intro_w}×{intro_h} → {VIDEO_W}×{VIDEO_H}"
-                )
-                intro_resized = assembled_dir / "intro_resized.mp4"
-                intro_path = ffmpeg_utils.resize_video(
-                    intro_path, intro_resized, width=VIDEO_W, height=VIDEO_H
-                )
-            parts.append(intro_path)
-            logger.info(f"Intro: {intro_path.name}")
+    if has_intro:
+        intro_w, intro_h = ffmpeg_utils.video_size(intro_path)
+        if (intro_w, intro_h) != (VIDEO_W, VIDEO_H):
+            logger.info(
+                f"Intro: resizing {intro_w}×{intro_h} → {VIDEO_W}×{VIDEO_H}"
+            )
+            intro_resized = assembled_dir / "intro_resized.mp4"
+            intro_path = ffmpeg_utils.resize_video(
+                intro_path, intro_resized, width=VIDEO_W, height=VIDEO_H
+            )
+        intro_audio = assembled_dir / "intro_with_audio.mp4"
+        intro_path = ffmpeg_utils.ensure_audio_stream(intro_path, intro_audio)
+        logger.info(f"Intro: {intro_path.name}")
 
-        parts.append(content_path)
+    if has_outro:
+        outro_w, outro_h = ffmpeg_utils.video_size(outro_path)
+        if (outro_w, outro_h) != (VIDEO_W, VIDEO_H):
+            logger.info(
+                f"Outro: resizing {outro_w}×{outro_h} → {VIDEO_W}×{VIDEO_H}"
+            )
+            outro_resized = assembled_dir / "outro_resized.mp4"
+            outro_path = ffmpeg_utils.resize_video(
+                outro_path, outro_resized, width=VIDEO_W, height=VIDEO_H
+            )
+        outro_audio = assembled_dir / "outro_with_audio.mp4"
+        outro_path = ffmpeg_utils.ensure_audio_stream(outro_path, outro_audio)
+        logger.info(f"Outro: {outro_path.name}")
 
-        if has_outro:
-            outro_w, outro_h = ffmpeg_utils.video_size(outro_path)
-            if (outro_w, outro_h) != (VIDEO_W, VIDEO_H):
-                logger.info(
-                    f"Outro: resizing {outro_w}×{outro_h} → {VIDEO_W}×{VIDEO_H}"
-                )
-                outro_resized = assembled_dir / "outro_resized.mp4"
-                outro_path = ffmpeg_utils.resize_video(
-                    outro_path, outro_resized, width=VIDEO_W, height=VIDEO_H
-                )
-            parts.append(outro_path)
-            logger.info(f"Outro: {outro_path.name}")
+    body_parts = [content_path]
+    if has_outro:
+        body_parts.append(outro_path)
 
-        final_path = ffmpeg_utils.concat(parts, output_path)
+    if len(body_parts) == 1:
+        body_path = body_parts[0]
     else:
-        # No intro/outro — just copy content to output_path
+        body_path = assembled_dir / "body_with_outro.mp4"
+        body_path = ffmpeg_utils.concat(body_parts, body_path)
+
+    # Mix background music under content and outro so it reaches the true end.
+    music_path = _resolve_music_path()
+    if music_path:
+        body_music = assembled_dir / "body_with_music.mp4"
+        body_path = ffmpeg_utils.mix_music(
+            body_path,
+            music_path,
+            body_music,
+            volume=settings.background_music_volume,
+        )
+
+    if has_intro:
+        final_path = ffmpeg_utils.concat([intro_path, body_path], output_path)
+    else:
         import shutil
-        shutil.copy2(str(content_path), str(output_path))
+        shutil.copy2(str(body_path), str(output_path))
         final_path = output_path
 
     logger.info(f"Final video written: {final_path}")
