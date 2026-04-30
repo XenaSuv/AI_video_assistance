@@ -1,7 +1,7 @@
 """Breaking-news pipeline — triggered when a major AI announcement is detected.
 
-    load_item → script → voice → video → shorts → thumbnail → upload
-    └─ if RU_ENABLED: translate → ru-voice → reassemble → ru-shorts → ru-thumbnail → ru-upload
+    load_item → short-script → voice → clips → short → upload
+    └─ if RU_ENABLED: translate → ru-voice → ru-short → ru-upload
 
 Output lives in output/breaking/YYYY-MM-DD-HHMM/ so simultaneous breaking
 runs on the same day stay separate.
@@ -24,19 +24,17 @@ from pathlib import Path
 from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import src.ffmpeg_utils as ffmpeg_utils
 from config import settings
 from src.breaking_detector import mark_publish_failed, mark_published
-from src.breaking_script_generator import generate_breaking_script, generate_breaking_short_script
-from src.main import _get_shared_outro, _load_audio_durations, _needs_video_rebuild, _run_language_variant
-from src.subtitle_generator import generate_subtitles
+from src.breaking_script_generator import generate_breaking_short_script
+from src.main import _load_audio_durations
 from src.scraper import NewsItem
 from src.script_generator import Scene, VideoScript
 from src.shorts_generator import build_short, create_short_video
-from src.thumbnail_generator import generate_thumbnail
-from src.video_generator import build_video
+from src.translator import translate_script
+from src.video_generator import generate_clips_for_scene
 from src.voice_generator import synthesize_script
-from src.youtube_uploader import publish_episode
+from src.youtube_uploader import upload_short
 from src.slack_notifier import notify_success, notify_failure
 
 
@@ -62,7 +60,7 @@ def _load_cached_script(path: Path) -> VideoScript | None:
 
 
 def run_breaking_pipeline(item: NewsItem, skip_upload: bool = False) -> dict:
-    """Execute the full breaking-news pipeline for *item*. Returns a summary dict."""
+    """Execute the short-only breaking-news pipeline for *item*."""
     now      = dt.datetime.now()
     slug     = now.strftime("%Y-%m-%d-%H%M")
     run_dir  = settings.output_dir / "breaking" / slug
@@ -81,65 +79,41 @@ def run_breaking_pipeline(item: NewsItem, skip_upload: bool = False) -> dict:
     }
 
     try:
-        # 1. Script
-        script_cache = run_dir / "script.json"
-        script = _load_cached_script(script_cache)
-        if script is None:
-            script = generate_breaking_script(item)
-            script.save(script_cache)
-        summary["video_title"] = script.title
-        summary["num_scenes"]  = len(script.scenes)
-
-        # 2. Voice
-        audio_dir = run_dir / "audio"
-        if not audio_dir.exists() or len(list(audio_dir.glob("*.mp3"))) < len(script.scenes):
-            synthesize_script(script, run_dir)
-            script.save(script_cache)
-        else:
-            logger.info("Reusing cached audio; measuring durations")
-            _load_audio_durations(script, audio_dir)
-
-        summary["total_duration_sec"] = sum(s.duration_sec for s in script.scenes)
-
-        # 3. Subtitles (non-fatal)
-        subtitle_path = None
-        try:
-            subtitle_path = generate_subtitles(
-                script, run_dir / "audio", run_dir / "subtitles.srt",
-            )
-        except Exception as exc:
-            logger.warning(f"Subtitle generation failed (non-fatal): {exc}")
-
-        # 4. Video (Stable Diffusion replaces DALL-E when STABILITY_API_KEY is set)
-        long_video = run_dir / "final_video.mp4"
-        if _needs_video_rebuild(long_video):
-            build_video(script, run_dir, is_breaking=True, outro_path=_get_shared_outro())
-        else:
-            logger.info(f"Reusing cached {long_video.name}")
-
-        # 5. Shorts
+        # 1. Short script
         short_script_cache = run_dir / "short_script.json"
         short_script = _load_cached_script(short_script_cache)
         if short_script is None:
             short_script = generate_breaking_short_script(item)
             short_script.save(short_script_cache)
-        summary["short_title"] = short_script.title
+        summary["title"] = short_script.title
         summary["shorts_description"] = short_script.description
         summary["shorts_tags"] = short_script.tags
+        summary["num_scenes"] = len(short_script.scenes)
 
+        # 2. Voice
         audio_short_dir = run_dir / "audio_short"
         if not audio_short_dir.exists() or len(list(audio_short_dir.glob("*.mp3"))) < len(short_script.scenes):
             synthesize_script(short_script, run_dir, audio_subdir="audio_short")
+            short_script.save(short_script_cache)
         else:
             logger.info("Reusing cached short audio; measuring durations")
             _load_audio_durations(short_script, audio_short_dir)
 
+        summary["total_duration_sec"] = sum(s.duration_sec for s in short_script.scenes)
+
+        # 3. Source visuals for the Short
+        clip_dir = run_dir / "clips"
+        clip_dir.mkdir(parents=True, exist_ok=True)
+        for scene in short_script.scenes:
+            generate_clips_for_scene(scene, clip_dir, run_dir=run_dir, is_breaking=True)
+
+        # 4. Short assembly
         short_video = run_dir / "shorts.mp4"
         if not short_video.exists():
             try:
                 build_short(
                     short_script,
-                    long_video,
+                    run_dir / "_short_visual_fallback.mp4",
                     run_dir,
                     audio_subdir="audio_short",
                 )
@@ -158,43 +132,85 @@ def run_breaking_pipeline(item: NewsItem, skip_upload: bool = False) -> dict:
         else:
             logger.info(f"Reusing cached {short_video.name}")
 
-        # 6. Thumbnail
-        thumbnail = generate_thumbnail(long_video, script.title, run_dir)
-
-        # 7. Upload (English)
+        # 5. Upload (English)
         if skip_upload:
             logger.info("--skip-upload; files on disk")
             summary["status"] = "built_not_uploaded"
         else:
             try:
-                ids = publish_episode(
-                    script, long_video, short_video,
-                    thumbnail=thumbnail,
-                    subtitle_path=subtitle_path,
+                short_id = upload_short(
+                    short_video,
+                    title=short_script.title,
+                    description=short_script.description,
+                    tags=short_script.tags[:10] + ["shorts", "breaking news", "ai news"],
                 )
-                summary.update(ids)
+                summary["short_id"] = short_id
                 summary["status"] = "published"
-                mark_published(settings.data_dir, item, video_id=ids.get("long_id", ""))
+                mark_published(settings.data_dir, item, video_id=short_id)
             except Exception as upload_exc:
                 summary["status"] = "publish_failed"
                 summary["publish_error"] = str(upload_exc)
                 mark_publish_failed(settings.data_dir, item, error=str(upload_exc))
                 raise
 
-        # 8. Russian variant (optional)
+        # 6. Russian variant (optional)
         if settings.ru_enabled:
-            ru = _run_language_variant(
-                english_script = script,
-                run_dir        = run_dir,
-                lang_code      = "ru",
-                lang_name      = "Russian",
-                voice_id       = settings.ru_elevenlabs_voice_id,
-                voice_model    = settings.ru_elevenlabs_model,
-                client_secrets = settings.ru_youtube_client_secrets,
-                token_file     = settings.ru_youtube_token_file,
-                skip_upload    = skip_upload,
-                outro_path     = _get_shared_outro(),
-            )
+            ru_script_cache = run_dir / "short_script_ru.json"
+            ru_script = _load_cached_script(ru_script_cache)
+            if ru_script is None:
+                ru_script = translate_script(short_script, "Russian")
+                ru_script.save(ru_script_cache)
+
+            ru_audio_dir = run_dir / "audio_short_ru"
+            if not ru_audio_dir.exists() or len(list(ru_audio_dir.glob("*.mp3"))) < len(ru_script.scenes):
+                synthesize_script(
+                    ru_script,
+                    run_dir,
+                    voice_id=settings.ru_elevenlabs_voice_id,
+                    model_id=settings.ru_elevenlabs_model,
+                    audio_subdir="audio_short_ru",
+                )
+                ru_script.save(ru_script_cache)
+            else:
+                logger.info("Reusing cached Russian short audio; measuring durations")
+                _load_audio_durations(ru_script, ru_audio_dir)
+
+            ru_short_video = run_dir / "shorts_ru.mp4"
+            if not ru_short_video.exists():
+                try:
+                    build_short(
+                        ru_script,
+                        run_dir / "_short_visual_fallback.mp4",
+                        run_dir,
+                        audio_subdir="audio_short_ru",
+                        out_name=ru_short_video.name,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        f"Russian breaking short generation from source clips failed: {exc} "
+                        "— falling back to caption-only short"
+                    )
+                    create_short_video(
+                        ru_script.scenes[0].narration,
+                        run_dir,
+                        out_name=ru_short_video.name,
+                        duration_sec=min(60.0, float(ru_script.scenes[0].duration_sec or 45.0)),
+                        audio_path=ru_audio_dir / "scene_00.mp3",
+                    )
+
+            ru: dict = {"title": ru_script.title}
+            if skip_upload:
+                ru["status"] = "built_not_uploaded"
+            else:
+                ru["short_id"] = upload_short(
+                    ru_short_video,
+                    title=ru_script.title,
+                    description=ru_script.description,
+                    tags=ru_script.tags[:10] + ["shorts", "ai news"],
+                    client_secrets=settings.ru_youtube_client_secrets,
+                    token_file=settings.ru_youtube_token_file,
+                )
+                ru["status"] = "published"
             summary["ru"] = ru
 
         notify_success(summary, "breaking")

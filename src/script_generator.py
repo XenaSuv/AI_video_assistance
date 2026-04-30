@@ -186,7 +186,7 @@ Output MUST be a single valid JSON object. No markdown fences. No commentary.
 }"""
 
 
-USER_PROMPT_TMPL = """Write a {target_words}-word daily AI news script (~15 min at 150 wpm) \
+USER_PROMPT_TMPL = """Write a {target_words}-word daily AI news script (~{target_minutes} min at 150 wpm) \
 broken into {num_scenes} scenes.
 
 Close with a sign-off that invites likes/subscribes without being cringey.
@@ -316,8 +316,10 @@ def generate_script(
         raise ValueError("No news items provided")
 
     client = OpenAI(api_key=settings.openai_api_key)
+    target_minutes = max(1, round(settings.script_target_words / 150))
     user_prompt = USER_PROMPT_TMPL.format(
         target_words=settings.script_target_words,
+        target_minutes=target_minutes,
         num_scenes=num_scenes,
         items_block=_build_items_block(items),
     )

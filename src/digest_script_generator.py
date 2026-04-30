@@ -1,7 +1,7 @@
-"""Generate a Sunday "Week in AI" digest script from the week's daily scripts.
+"""Generate a "Week in AI" digest script from the most recent daily scripts.
 
 Strategy:
-  1. Scan output/ for script.json files dated Mon–Sat of the current week
+  1. Collect the 6 most recent daily scripts before the digest date
   2. Extract each day's title + scene headings + narration summaries
   3. Call GPT to write a compact 7-8 minute recap video (~900-1100 words)
 
@@ -97,11 +97,6 @@ def _log_usage(usage, label: str = "") -> None:
     )
 
 
-def _week_dates(sunday: date) -> list[date]:
-    """Return Mon–Sat dates preceding the given Sunday."""
-    return [sunday - timedelta(days=d) for d in range(6, 0, -1)]
-
-
 def _load_daily_script(output_dir: Path, data_dir: Path, day: date) -> dict | None:
     """Try data/digest_scripts/{date}.json first (CI-persisted), then output/{date}/script.json (local)."""
     candidates = [
@@ -145,13 +140,14 @@ def collect_week_scripts(
     data_dir: Path | None = None,
     sunday: date | None = None,
 ) -> tuple[list[date], list[str]]:
-    """Return (found_dates, summary_blocks) for Mon-Sat preceding *sunday*."""
+    """Return (found_dates, summary_blocks) for the 6 most recent daily scripts."""
     sunday = sunday or date.today()
     data_dir = data_dir or (output_dir.parent / "data")
     found_dates: list[date] = []
     blocks: list[str] = []
 
-    for day in _week_dates(sunday):
+    day = sunday - timedelta(days=1)
+    while day >= sunday - timedelta(days=21) and len(found_dates) < 6:
         data = _load_daily_script(output_dir, data_dir, day)
         if data:
             found_dates.append(day)
@@ -159,7 +155,10 @@ def collect_week_scripts(
             logger.info(f"Digest: loaded {day.isoformat()} — {data.get('title', '?')}")
         else:
             logger.debug(f"Digest: no script found for {day.isoformat()}")
+        day -= timedelta(days=1)
 
+    found_dates.reverse()
+    blocks.reverse()
     return found_dates, blocks
 
 

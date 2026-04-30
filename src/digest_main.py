@@ -1,7 +1,7 @@
 """Sunday "Week in AI" digest pipeline.
 
-    collect_week_scripts → digest_script → voice → video → shorts → thumbnail → upload
-    └─ if RU_ENABLED: translate → ru-voice → reassemble → ru-shorts → ru-thumbnail → ru-upload
+    collect_recent_daily_scripts → digest_script → voice → video → thumbnail → upload
+    └─ if RU_ENABLED: translate → ru-voice → reassemble → ru-thumbnail → ru-upload
 
 Output lives in output/digest/YYYY-MM-DD/ using Sunday's date.
 Safe to re-run: cached artifacts are reused.
@@ -37,7 +37,6 @@ from src.main import (
 )
 from src.subtitle_generator import generate_subtitles
 from src.script_generator import Scene, VideoScript
-from src.shorts_generator import build_short
 from src.thumbnail_ab import (
     generate_thumbnail_variants,
     pick_thumbnail,
@@ -75,17 +74,17 @@ def run_digest_pipeline(
     summary: dict = {"date": date_str, "run_dir": str(run_dir), "type": "digest"}
 
     try:
-        # 1. Collect the week's daily scripts
+        # 1. Collect the most recent daily scripts
         found_dates, week_blocks = collect_week_scripts(
             settings.output_dir, settings.data_dir, sunday
         )
         if not week_blocks:
             raise RuntimeError(
-                f"No daily scripts found for the week ending {date_str}. "
-                "Run the daily pipeline for at least one day first."
+                f"No recent daily scripts found before {date_str}. "
+                "Run the daily pipeline first."
             )
         summary["days_found"] = [d.isoformat() for d in found_dates]
-        logger.info(f"Found {len(found_dates)} daily scripts: {[d.isoformat() for d in found_dates]}")
+        logger.info(f"Found {len(found_dates)} recent daily scripts: {[d.isoformat() for d in found_dates]}")
 
         # 2. Script
         script_cache = run_dir / "script.json"
@@ -130,25 +129,18 @@ def run_digest_pipeline(
         else:
             logger.info(f"Reusing cached {long_video.name}")
 
-        # 6. Shorts
-        short_video = run_dir / "shorts.mp4"
-        if not short_video.exists():
-            build_short(script, long_video, run_dir)
-        else:
-            logger.info(f"Reusing cached {short_video.name}")
-
-        # 7. Thumbnail A/B
+        # 6. Thumbnail A/B
         thumb_variants = generate_thumbnail_variants(long_video, script.title, run_dir)
         thumbnail      = pick_thumbnail(thumb_variants, settings.data_dir, "digest")
         summary["thumbnail_style"] = thumbnail.stem.removeprefix("thumbnail_")
 
-        # 8. Upload (English)
+        # 7. Upload (English)
         if skip_upload:
             logger.info("--skip-upload; files on disk")
             summary["status"] = "built_not_uploaded"
         else:
             ids = publish_episode(
-                script, long_video, short_video,
+                script, long_video, None,
                 thumbnail=thumbnail,
                 subtitle_path=subtitle_path,
             )
@@ -158,7 +150,7 @@ def run_digest_pipeline(
                 record_usage(script.hook, video_id, settings.data_dir, "digest")
                 record_thumbnail_usage(thumbnail, video_id, settings.data_dir, "digest")
 
-        # 9. Russian variant (optional)
+        # 8. Russian variant (optional)
         if settings.ru_enabled:
             _ru_intro = settings.source_dir / "ai-digest-intro.mp4"
             ru = _run_language_variant(
@@ -173,6 +165,7 @@ def run_digest_pipeline(
                 skip_upload    = skip_upload,
                 intro_path     = _ru_intro if _ru_intro.exists() else None,
                 outro_path     = _get_shared_outro(),
+                include_short  = False,
             )
             summary["ru"] = ru
 

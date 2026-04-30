@@ -172,6 +172,8 @@ jobs:
           path: |
             logs/
             output/breaking/*/run.log
-            output/breaking/*/script.json
-            output/breaking/*/thumbnail.jpg
+            output/breaking/*/short_script.json
+            output/breaking/*/short_script_ru.json
+            output/breaking/*/shorts.mp4
+            output/breaking/*/shorts_ru.mp4
           retention-days: 14

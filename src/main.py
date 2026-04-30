@@ -1,7 +1,7 @@
 """Main pipeline orchestrator. Runs the full daily workflow:
 
-    scrape → deduplicate → script → voice → video → shorts → thumbnail → upload
-    └─ if RU_ENABLED: translate → ru-voice → reassemble → ru-shorts → ru-thumbnail → ru-upload
+    scrape → deduplicate → script → voice → video → thumbnail → upload
+    └─ if RU_ENABLED: translate → ru-voice → reassemble → ru-thumbnail → ru-upload
 
 Safe to re-run: cached artifacts in output/YYYY-MM-DD/ are reused.
 """
@@ -21,13 +21,11 @@ from config import settings
 from src.deduplicator import SeenStories
 from src.digest_script_generator import save_for_digest
 from src.hook_selector import record_usage
-from src.shorts_mvp import run_shorts_mvp
 from src.analytics import get_recommendations
 from src.performance_tracker import save_result
 from src.scraper import scrape_all, NewsItem
 from src.viral_selector import pick_viral_news
 from src.script_generator import Scene, VideoScript, generate_script
-from src.shorts_generator import build_short
 from src.subtitle_generator import generate_subtitles
 from src.thumbnail_ab import (
     generate_thumbnail_variants,
@@ -39,10 +37,7 @@ from src.translator import translate_script
 from src.video_generator import assemble_video, build_video
 from src.voice_generator import synthesize_script
 from src.youtube_uploader import publish_episode
-from src.tiktok_uploader import post_short as tiktok_post_short
 from src.slack_notifier import notify_success, notify_failure
-from src.weekly_shorts_generator import build_tutorial_shorts
-from src.youtube_uploader import upload_video
 
 
 def _setup_logging(run_dir: Path) -> None:
@@ -164,6 +159,7 @@ def _run_language_variant(
     skip_upload: bool = False,
     intro_path: Path | None = None,
     outro_path: Path | None = None,
+    include_short: bool = True,
 ) -> dict:
     """Translate + re-voice + reassemble for a non-English language variant.
 
@@ -223,14 +219,16 @@ def _run_language_variant(
     else:
         logger.info(f"Reusing cached {long_video.name}")
 
-    # 4. Shorts
-    short_video = run_dir / f"shorts_{lang_code}.mp4"
-    if not short_video.exists():
-        build_short(script, long_video, run_dir,
-                    audio_subdir=audio_subdir,
-                    out_name=short_video.name)
-    else:
-        logger.info(f"Reusing cached {short_video.name}")
+    short_video: Path | None = None
+    if include_short:
+        short_video = run_dir / f"shorts_{lang_code}.mp4"
+        if not short_video.exists():
+            from src.shorts_generator import build_short
+            build_short(script, long_video, run_dir,
+                        audio_subdir=audio_subdir,
+                        out_name=short_video.name)
+        else:
+            logger.info(f"Reusing cached {short_video.name}")
 
     # 5. Thumbnail
     thumbnail = generate_thumbnail(
@@ -293,8 +291,8 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         news = seen.filter_new(news)
         summary["num_news_items"] = len(news)
 
-        # 1c. Pick only the most viral stories for shorts/script generation.
-        viral_news = pick_viral_news(news, top_n=2)
+        # 1c. Pick the most relevant stories for the daily long-form roundup.
+        viral_news = pick_viral_news(news, top_n=6)
         if not viral_news:
             logger.warning("Viral selector found no items; falling back to original scrape")
         else:
@@ -358,36 +356,18 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         if credits:
             script.description += "\n\nVideo clips provided by Pexels:\n" + "\n".join(credits)
 
-        # 5. MVP: run a lightweight Shorts-only flow for the first 1-2 items (with video clips).
-        for item in news[:2]:
-            try:
-                run_shorts_mvp(item)
-            except Exception as exc:
-                logger.warning(f"Shorts MVP failed for item: {exc}")
-
-        # 5a. Shorts (hook-based digest short)
-        short_video = run_dir / "shorts.mp4"
-        if not short_video.exists():
-            build_short(script, long_video, run_dir)
-        else:
-            logger.info(f"Reusing cached {short_video.name}")
-
-        # 5b. Per-scene Shorts (one per scene with short_narration)
-        scene_shorts = build_tutorial_shorts(script, run_dir)
-        summary["scene_shorts_count"] = len(scene_shorts)
-
-        # 7. Thumbnail A/B
+        # 6. Thumbnail A/B
         thumb_variants = generate_thumbnail_variants(long_video, script.title, run_dir)
         thumbnail      = pick_thumbnail(thumb_variants, settings.data_dir, "daily")
         summary["thumbnail_style"] = thumbnail.stem.removeprefix("thumbnail_")
 
-        # 8. Upload (English)
+        # 7. Upload (English)
         if skip_upload:
             logger.info("--skip-upload specified; leaving files on disk")
             summary["status"] = "built_not_uploaded"
         else:
             ids = publish_episode(
-                script, long_video, short_video,
+                script, long_video, None,
                 thumbnail=thumbnail,
                 subtitle_path=subtitle_path,
             )
@@ -399,39 +379,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
                 record_thumbnail_usage(thumbnail, video_id, settings.data_dir, "daily")
                 save_result(video_id, script.hook, script.title, script.description)
 
-        # 8b. Upload per-scene Shorts
-        if not skip_upload and scene_shorts:
-            scene_short_ids: list[str] = []
-            for short_path in scene_shorts:
-                try:
-                    scene_idx = int(short_path.stem.split("_")[1])
-                    scene     = script.scenes[scene_idx]
-                    sid = upload_video(
-                        short_path,
-                        title=f"{scene.heading} | AI News",
-                        description=(
-                            f"{scene.short_narration or scene.heading}\n\n"
-                            f"Full video: {script.title}\n\n"
-                            "#Shorts #AI #AINews #ArtificialIntelligence"
-                        ),
-                        tags=script.tags + ["shorts", "ai news"],
-                        is_short=True,
-                    )
-                    scene_short_ids.append(sid)
-                except Exception as exc:
-                    logger.warning(f"Per-scene Short upload failed (non-fatal): {exc}")
-            summary["scene_short_ids"] = scene_short_ids
-
-        # 9. TikTok Short (optional)
-        if settings.tiktok_enabled and not skip_upload and short_video.exists():
-            try:
-                caption = f"{script.hook}\n\n#AI #ArtificialIntelligence #TechNews #AINews"
-                summary["tiktok_id"] = tiktok_post_short(short_video, caption)
-            except Exception as e:
-                logger.warning(f"TikTok upload failed (non-fatal): {e}")
-                summary["tiktok_error"] = str(e)
-
-        # 10. Russian variant (optional)
+        # 8. Russian variant (optional)
         if settings.ru_enabled:
             _ru_intro = settings.source_dir / "ai-novosti-intro.mp4"
             ru = _run_language_variant(
@@ -446,6 +394,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
                 skip_upload    = skip_upload,
                 intro_path     = _ru_intro if _ru_intro.exists() else None,
                 outro_path     = _get_shared_outro(),
+                include_short  = False,
             )
             summary["ru"] = ru
 
