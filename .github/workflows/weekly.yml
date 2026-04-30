@@ -128,6 +128,9 @@ jobs:
           OUTPUT_DIR:             output
           LOG_DIR:                logs
           DATA_DIR:               data
+          BACKGROUND_MUSIC_PATH:  ${{ vars.BACKGROUND_MUSIC_PATH || 'background_music.mp3' }}
+          BACKGROUND_MUSIC_VOLUME: ${{ vars.BACKGROUND_MUSIC_VOLUME || '0.10' }}
+          SHORTS_MUSIC_VOLUME:    ${{ vars.SHORTS_MUSIC_VOLUME || '0.13' }}
           # Russian variant
           RU_ENABLED:             ${{ vars.RU_ENABLED || 'false' }}
           RU_ELEVENLABS_VOICE_ID: ${{ secrets.RU_ELEVENLABS_VOICE_ID }}

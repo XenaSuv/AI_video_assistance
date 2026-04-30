@@ -113,6 +113,9 @@ jobs:
           LOG_DIR: logs
           DATA_DIR: data
           DEDUP_TTL_DAYS: "30"
+          BACKGROUND_MUSIC_PATH: ${{ vars.BACKGROUND_MUSIC_PATH || 'background_music.mp3' }}
+          BACKGROUND_MUSIC_VOLUME: ${{ vars.BACKGROUND_MUSIC_VOLUME || '0.10' }}
+          SHORTS_MUSIC_VOLUME: ${{ vars.SHORTS_MUSIC_VOLUME || '0.13' }}
           # TikTok — set TIKTOK_ENABLED=true once auth is configured
           TIKTOK_ENABLED:        ${{ vars.TIKTOK_ENABLED || 'false' }}
           TIKTOK_CLIENT_KEY:     ${{ secrets.TIKTOK_CLIENT_KEY }}
