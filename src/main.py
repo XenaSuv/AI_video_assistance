@@ -59,6 +59,12 @@ def _get_intro_duration(intro_path: Path | None) -> float:
     return ffmpeg_utils.duration(intro_path)
 
 
+def _get_shared_outro() -> Path | None:
+    """Return the shared outro clip used across all pipelines."""
+    outro_path = settings.source_dir / "ai-news-outro.mp4"
+    return outro_path if outro_path.exists() else None
+
+
 def _load_cached_script(path: Path) -> VideoScript | None:
     if not path.exists():
         return None
@@ -82,8 +88,28 @@ def _load_audio_durations(script: VideoScript, audio_dir: Path) -> None:
 
 
 def _needs_video_rebuild(video_path: Path) -> bool:
-    """Return True when a cached final video is missing or has no audio stream."""
+    """Return True when a cached final video is missing or built with stale rules."""
+    assembled_dir = video_path.parent / "assembled"
+    legacy_end_card = any(
+        path.exists() for path in (
+            assembled_dir / "end_card.png",
+            assembled_dir / "end_card.mp4",
+        )
+    )
     if not video_path.exists():
+        return True
+    if legacy_end_card:
+        logger.warning(f"Cached video uses legacy generated end card; rebuilding: {video_path}")
+        video_path.unlink(missing_ok=True)
+        for cached in (
+            assembled_dir / "content.mp4",
+            assembled_dir / "content_music.mp4",
+            assembled_dir / "end_card.png",
+            assembled_dir / "end_card.mp4",
+        ):
+            cached.unlink(missing_ok=True)
+        for cached in assembled_dir.glob("title_*.mp4"):
+            cached.unlink(missing_ok=True)
         return True
     try:
         if ffmpeg_utils.has_audio_stream(video_path):
@@ -93,10 +119,10 @@ def _needs_video_rebuild(video_path: Path) -> bool:
 
     logger.warning(f"Cached video has no audio stream; rebuilding: {video_path}")
     video_path.unlink(missing_ok=True)
-    assembled_dir = video_path.parent / "assembled"
     for cached in (
         assembled_dir / "content.mp4",
         assembled_dir / "content_music.mp4",
+        assembled_dir / "end_card.png",
         assembled_dir / "end_card.mp4",
     ):
         cached.unlink(missing_ok=True)
@@ -285,7 +311,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
 
         # 4. Subtitles (non-fatal: errors are logged and pipeline continues)
         _en_intro = settings.source_dir / "ai-news-intro.mp4"
-        _en_outro = settings.source_dir / "ai-news-outro.mp4"
+        _en_outro = _get_shared_outro()
         subtitle_path: Path | None = None
         try:
             subtitle_path = generate_subtitles(
@@ -302,7 +328,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         if _needs_video_rebuild(long_video):
             build_video(script, run_dir,
                         intro_path=_en_intro if _en_intro.exists() else None,
-                        outro_path=_en_outro if _en_outro.exists() else None)
+                        outro_path=_en_outro)
             seen.mark_featured(news)
         else:
             logger.info(f"Reusing cached {long_video.name}")
@@ -389,7 +415,6 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         # 10. Russian variant (optional)
         if settings.ru_enabled:
             _ru_intro = settings.source_dir / "ai-novosti-intro.mp4"
-            _ru_outro = settings.source_dir / "ai-novosti-outro.mp4"
             ru = _run_language_variant(
                 english_script = script,
                 run_dir        = run_dir,
@@ -401,7 +426,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
                 token_file     = settings.ru_youtube_token_file,
                 skip_upload    = skip_upload,
                 intro_path     = _ru_intro if _ru_intro.exists() else None,
-                outro_path     = _ru_outro if _ru_outro.exists() else None,
+                outro_path     = _get_shared_outro(),
             )
             summary["ru"] = ru
 

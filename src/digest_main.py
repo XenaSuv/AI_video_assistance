@@ -29,6 +29,7 @@ from src.digest_script_generator import collect_week_scripts, generate_digest_sc
 from src.hook_selector import record_usage
 from src.main import (
     _get_intro_duration,
+    _get_shared_outro,
     _load_audio_durations,
     _load_cached_script,
     _needs_video_rebuild,
@@ -108,7 +109,7 @@ def run_digest_pipeline(
 
         # 4. Subtitles (non-fatal)
         _en_intro = settings.source_dir / "ai-digest-intro-en.mp4"
-        _en_outro = settings.source_dir / "ai-news-outro.mp4"
+        _en_outro = _get_shared_outro()
         subtitle_path = None
         try:
             subtitle_path = generate_subtitles(
@@ -125,7 +126,7 @@ def run_digest_pipeline(
         if _needs_video_rebuild(long_video):
             build_video(script, run_dir,
                         intro_path=_en_intro if _en_intro.exists() else None,
-                        outro_path=_en_outro if _en_outro.exists() else None)
+                        outro_path=_en_outro)
         else:
             logger.info(f"Reusing cached {long_video.name}")
 
@@ -160,7 +161,6 @@ def run_digest_pipeline(
         # 9. Russian variant (optional)
         if settings.ru_enabled:
             _ru_intro = settings.source_dir / "ai-digest-intro.mp4"
-            _ru_outro = settings.source_dir / "ai-novosti-outro.mp4"
             ru = _run_language_variant(
                 english_script = script,
                 run_dir        = run_dir,
@@ -172,7 +172,7 @@ def run_digest_pipeline(
                 token_file     = settings.ru_youtube_token_file,
                 skip_upload    = skip_upload,
                 intro_path     = _ru_intro if _ru_intro.exists() else None,
-                outro_path     = _ru_outro if _ru_outro.exists() else None,
+                outro_path     = _get_shared_outro(),
             )
             summary["ru"] = ru
 

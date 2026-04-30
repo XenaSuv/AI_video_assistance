@@ -28,7 +28,7 @@ import src.ffmpeg_utils as ffmpeg_utils
 from config import settings
 from src.breaking_detector import mark_publish_failed, mark_published
 from src.breaking_script_generator import generate_breaking_script, generate_breaking_short_script
-from src.main import _load_audio_durations, _needs_video_rebuild, _run_language_variant
+from src.main import _get_shared_outro, _load_audio_durations, _needs_video_rebuild, _run_language_variant
 from src.subtitle_generator import generate_subtitles
 from src.scraper import NewsItem
 from src.script_generator import Scene, VideoScript
@@ -113,7 +113,7 @@ def run_breaking_pipeline(item: NewsItem, skip_upload: bool = False) -> dict:
         # 4. Video (Stable Diffusion replaces DALL-E when STABILITY_API_KEY is set)
         long_video = run_dir / "final_video.mp4"
         if _needs_video_rebuild(long_video):
-            build_video(script, run_dir, is_breaking=True)
+            build_video(script, run_dir, is_breaking=True, outro_path=_get_shared_outro())
         else:
             logger.info(f"Reusing cached {long_video.name}")
 
@@ -193,6 +193,7 @@ def run_breaking_pipeline(item: NewsItem, skip_upload: bool = False) -> dict:
                 client_secrets = settings.ru_youtube_client_secrets,
                 token_file     = settings.ru_youtube_token_file,
                 skip_upload    = skip_upload,
+                outro_path     = _get_shared_outro(),
             )
             summary["ru"] = ru
 
