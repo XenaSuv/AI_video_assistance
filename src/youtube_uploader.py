@@ -15,6 +15,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
+from google.auth.exceptions import RefreshError
 from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -50,7 +51,19 @@ def _get_creds(
         with open(token_file, "rb") as f:
             creds = pickle.load(f)
     if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
+        try:
+            creds.refresh(Request())
+        except RefreshError as exc:
+            logger.warning(
+                "Existing YouTube token refresh failed: {}. "
+                "Removing stale token and re-running OAuth flow.",
+                exc,
+            )
+            creds = None
+            try:
+                token_file.unlink()
+            except OSError:
+                pass
     if not creds or not creds.valid:
         if not client_secrets.exists():
             raise FileNotFoundError(
