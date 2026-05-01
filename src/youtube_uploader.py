@@ -71,7 +71,15 @@ def _get_creds(
                 "Download OAuth client_secrets.json from Google Cloud Console."
             )
         flow = InstalledAppFlow.from_client_secrets_file(str(client_secrets), SCOPES)
-        creds = flow.run_local_server(port=0)
+        try:
+            creds = flow.run_local_server(port=0)
+        except Exception as exc:
+            logger.warning(
+                "Unable to launch local browser for OAuth: %s. "
+                "Falling back to console authorization.",
+                exc,
+            )
+            creds = flow.run_console()
         with open(token_file, "wb") as f:
             pickle.dump(creds, f)
     return creds
