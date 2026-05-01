@@ -219,8 +219,7 @@ def fetch_broll_clip(
 
     if not pexels_key and not pixabay_key:
         logger.warning(
-            f"Scene {scene.idx}: video_query set but no PEXELS_API_KEY / "
-            "PIXABAY_API_KEY configured — falling back to DALL-E"
+            f"Scene {scene.idx}: video_query set but no PPIXABAY_API_KEY configured — falling back to DALL-E"
         )
 
     return None   # signal: use DALL-E

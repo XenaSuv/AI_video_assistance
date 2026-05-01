@@ -79,7 +79,7 @@ def _get_creds(
                 "Falling back to console authorization.",
                 exc,
             )
-            creds = flow.run_console()
+            creds = flow.run_local_server(port=0, open_browser=False)
         with open(token_file, "wb") as f:
             pickle.dump(creds, f)
     return creds
