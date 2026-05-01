@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import pickle
 import sys
+import os
 from pathlib import Path
 
 from google.auth.transport.requests import Request
@@ -71,15 +72,24 @@ def _get_creds(
                 "Download OAuth client_secrets.json from Google Cloud Console."
             )
         flow = InstalledAppFlow.from_client_secrets_file(str(client_secrets), SCOPES)
-        try:
-            creds = flow.run_local_server(port=0)
-        except Exception as exc:
-            logger.warning(
-                "Unable to launch local browser for OAuth: %s. "
-                "Falling back to console authorization.",
-                exc,
-            )
+        headless = (
+            os.getenv("CI", "").lower() in ("1", "true")
+            or os.getenv("GITHUB_ACTIONS", "").lower() == "true"
+            or not os.getenv("DISPLAY")
+        )
+        if headless:
+            logger.info("Headless environment detected; using OAuth local server without opening a browser.")
             creds = flow.run_local_server(port=0, open_browser=False)
+        else:
+            try:
+                creds = flow.run_local_server(port=0)
+            except Exception as exc:
+                logger.warning(
+                    "Unable to launch local browser for OAuth: %s. "
+                    "Falling back to headless authorization.",
+                    exc,
+                )
+                creds = flow.run_local_server(port=0, open_browser=False)
         with open(token_file, "wb") as f:
             pickle.dump(creds, f)
     return creds
