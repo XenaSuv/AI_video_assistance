@@ -21,12 +21,20 @@ Fully automated production system that generates daily AI news videos, weekly tu
 
 ## Core Architecture
 
-The pipeline combines AI-powered editorial intelligence with human-like storytelling to create engaging content.
+The pipeline combines AI-powered editorial intelligence with human-like storytelling to create engaging content, and continuously learns from viewer engagement metrics.
 
 ### Editorial Intelligence Layer
 - **Editorial Brain**: Analyzes news stories, selects angles, defines personas, and plans scene structure
 - **Humanizer Agent**: Transforms AI-generated scripts into natural, conversational narration
 - **Micro-Hook Agent**: Inserts attention-grabbing hooks with voice pacing annotations
+- **Feedback Analyzer**: Monitors video performance and learns what works
+
+### Learning Loop
+```
+published_video → YouTube/TikTok metrics → feedback_analyzer → insights → editorial_brain
+                                                                           └── boost high-performing angles/formats
+                                                                           └── hook_optimizer → micro_hooks
+```
 
 ### Production Pipeline
 ```
@@ -69,7 +77,32 @@ ElevenLabs-powered TTS with dramatic pacing:
 - **Multi-Language**: 30+ languages with native voice models
 - **Scene-Based**: Per-scene MP3 generation with duration tracking
 
-### 5. Other Components
+### 5. Feedback Analyzer (`src/feedback_analyzer.py`)
+Monitors video performance and guides editorial decisions:
+- **Metrics Collection**: Pulls views, retention curves, watch time from YouTube/TikTok
+- **Retention Analysis**: Identifies drop points and best-performing segments
+- **Hook Scoring**: Measures effectiveness of opening hooks (30s retention metric)
+- **Performance Learning**: Tracks angle and format success rates over time
+- **Recommendations**: Generates actionable insights for future content
+- **Editorial Feedback Loop**: Boosts high-performing angles/formats in editorial brain
+- **YouTube Analytics Integration**: Uses `src/youtube_analytics.py` for real-time metrics and retention curves
+
+### 6. YouTube Analytics Client (`src/youtube_analytics.py`)
+Direct integration with YouTube Analytics API:
+- **Video Metrics**: Retrieves views, average view duration, and view percentage
+- **Retention Curves**: Gets audience watch ratio over elapsed video time
+- **Hook Performance**: Measures 30-second retention for hook effectiveness analysis
+- **Real-time Data**: Fetches live performance data for continuous optimization
+
+### 7. Hook Optimizer (`src/hook_optimizer.py`)
+Learns from hook performance to optimize future hook generation:
+- **Pattern Extraction**: Analyzes successful vs unsuccessful hook patterns from feedback data
+- **Performance Scoring**: Ranks hook types and templates by engagement metrics
+- **Context Filtering**: Recommends hooks based on editorial angle, format, and persona
+- **Avoidance Patterns**: Identifies and filters out underperforming hook types
+- **Optimization Integration**: Provides recommendations to micro-hook agent for improved engagement
+
+### 8. Other Components
 - **Scraper**: Multi-source AI news aggregation (arXiv, HuggingFace, HackerNews, official blogs)
 - **Deduplicator**: SQLite-based rolling window prevents content recycling
 - **Script Generator**: GPT-4o structured narration with metadata
@@ -137,6 +170,30 @@ The system runs on GitHub Actions with scheduled workflows. Configure secrets fo
 docker build -t ai-video .
 docker run -v $(pwd)/output:/app/output ai-video
 ```
+
+---
+
+## Learning & Optimization
+
+The system continuously learns from viewer engagement to improve future content:
+
+### Feedback Loop
+1. **Video Published** → YouTube/TikTok
+2. **Feedback Analyzer** → Fetches retention curves, views, watch time
+3. **Insights Generated** → Hook scores, drop points, recommendations
+4. **Editorial Brain Updates** → Boosts high-performing angles and formats
+5. **Next Video** → Benefits from learned patterns
+
+### Key Metrics
+- **Hook Score**: Retention at 30-second mark (target: >0.6)
+- **Average Watch %**: Overall completion rate (target: >50%)
+- **Best Segment**: Where viewers stayed longest
+- **Drop Points**: Where retention fell >15%
+- **Angle Performance**: Which editorial angles drive engagement
+- **Format Performance**: Which structures (hot-take vs deep-dive) work best
+
+### Feedback History
+Performance data stored in `data/feedback_history.json` for trend analysis and optimization.
 
 ---
 

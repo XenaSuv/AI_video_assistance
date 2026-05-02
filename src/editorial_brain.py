@@ -18,6 +18,7 @@ import sys
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 from config import settings
 from src.scraper import NewsItem
+from src.feedback_analyzer import FeedbackAnalyzer
 
 ANGLE_CANDIDATES = [
     {
@@ -105,6 +106,9 @@ class EditorialBrain:
     def __init__(self, llm: OpenAI | None = None, config: dict[str, Any] | None = None):
         self.llm = llm or OpenAI(api_key=settings.openai_api_key)
         self.config = config or {}
+        self.feedback_analyzer = FeedbackAnalyzer()
+        self.angle_performance_cache = {}
+        self.format_performance_cache = {}
 
     def run(
         self,
@@ -248,7 +252,15 @@ class EditorialBrain:
         scored = []
         for candidate in ANGLE_CANDIDATES:
             score = self._angle_score(story, candidate["key"])
+            
+            # Boost score based on past performance
+            perf = self.feedback_analyzer.get_angle_performance(candidate["key"])
+            if perf and perf.get("avg_hook_score", 0) > 0.7:
+                score *= 1.2  # Boost high-performing angles
+                logger.debug(f"Boosting {candidate['key']} based on past performance: {perf['avg_hook_score']}")
+            
             scored.append((score, candidate))
+        
         chosen = max(scored, key=lambda item: item[0])[1]
         logger.debug(
             "Angle scores for %s: %s",
@@ -390,15 +402,30 @@ class EditorialBrain:
             return {"format": "quick_hit", "scenes": 5, "pacing": "fast"}
         complexity = self._complexity_score(story)
         controversy = self._controversy_score(story)
+        
+        # Check format performance history
+        base_format = None
         if complexity > 0.7:
-            return {"format": "deep_dive", "scenes": 10, "pacing": "slow"}
-        if controversy > 0.55:
-            return {"format": "hot_take", "scenes": 4, "pacing": "fast"}
-        if angle == "technical_breakthrough":
-            return {"format": "deep_dive", "scenes": 10, "pacing": "slow"}
-        if variation == "fast_news":
+            base_format = "deep_dive"
+        elif controversy > 0.55:
+            base_format = "hot_take"
+        elif angle == "technical_breakthrough":
+            base_format = "deep_dive"
+        else:
+            base_format = "quick_hit"
+        
+        # Boost format based on past performance
+        fmt_perf = self.feedback_analyzer.get_format_performance(base_format)
+        if fmt_perf and fmt_perf.get("avg_hook_score", 0) > 0.7:
+            logger.debug(f"Format {base_format} performing well (score: {fmt_perf['avg_hook_score']})")
+        
+        if base_format == "deep_dive":
+            return {"format": base_format, "scenes": 10, "pacing": "slow"}
+        elif base_format == "hot_take":
+            return {"format": base_format, "scenes": 4, "pacing": "fast"}
+        elif variation == "fast_news":
             return {"format": "quick_hit", "scenes": 5, "pacing": "fast"}
-        if variation == "storytelling":
+        elif variation == "storytelling":
             return {"format": "deep_dive", "scenes": 9, "pacing": "measured"}
         return {"format": "quick_hit", "scenes": 6, "pacing": "medium"}
 

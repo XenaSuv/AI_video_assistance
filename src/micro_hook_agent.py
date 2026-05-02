@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import random
 from typing import Any
 
 from loguru import logger
@@ -15,6 +16,7 @@ from pathlib import Path as _Path
 import sys
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 from config import settings
+from src.hook_optimizer import HookOptimizer
 
 
 class MicroHookAgent:
@@ -56,6 +58,7 @@ class MicroHookAgent:
     def __init__(self, llm: OpenAI | None = None, hook_frequency: int = 3):
         self.llm = llm or OpenAI(api_key=settings.openai_api_key)
         self.hook_frequency = hook_frequency  # Insert hook every N paragraphs
+        self.hook_optimizer = HookOptimizer()
 
     def run(
         self,
@@ -65,6 +68,19 @@ class MicroHookAgent:
     ) -> dict[str, Any]:
         """Insert micro-hooks into the script."""
         logger.info("Starting micro-hook insertion")
+
+        # Get optimized hook patterns
+        editorial_context = {
+            "angle": scene_plan[0].get("angle", "unknown") if scene_plan else "unknown",
+            "format": "unknown",  # Will be determined from scene_plan
+            "persona": persona,
+        }
+
+        optimized = self.hook_optimizer.run(editorial_context)
+        recommended_patterns = optimized.get("recommended_patterns", [])
+        avoid_patterns = optimized.get("avoid_patterns", [])
+
+        logger.info(f"Using {len(recommended_patterns)} optimized hook patterns")
 
         # Split script into paragraphs
         paragraphs = self._split_into_paragraphs(script)
@@ -81,13 +97,14 @@ class MicroHookAgent:
 
             # Insert hook every N paragraphs (but not at the very end)
             if (i + 1) % self.hook_frequency == 0 and i < len(paragraphs) - 1:
-                hook = self._generate_hook(hook_types, para, scene_plan)
+                hook = self._generate_hook(hook_types, para, scene_plan, recommended_patterns, avoid_patterns)
                 if hook:
                     enhanced_paragraphs.append(hook)
                     inserted_hooks.append({
                         "position": len("\n\n".join(enhanced_paragraphs)),
                         "type": hook["type"],
                         "text": hook["text"],
+                        "optimized": hook.get("optimized", False),
                     })
                     hook_count += 1
 
@@ -97,6 +114,7 @@ class MicroHookAgent:
         return {
             "final_script": final_script,
             "inserted_hooks": inserted_hooks,
+            "optimization": optimized,
         }
 
     def _split_into_paragraphs(self, script: str) -> list[str]:
@@ -123,11 +141,35 @@ class MicroHookAgent:
         self,
         hook_types: list[str],
         context: str,
-        scene_plan: list[dict[str, Any]]
+        scene_plan: list[dict[str, Any]],
+        recommended_patterns: list[str],
+        avoid_patterns: list[str]
     ) -> dict[str, Any] | None:
         """Generate a contextually appropriate micro-hook with voice annotations."""
-        # Simple rule-based generation first
-        hook_type = hook_types[len(context) % len(hook_types)]  # Rotate types
+        # Use optimized patterns if available
+        if recommended_patterns:
+            # Try to use a recommended pattern first
+            for pattern in recommended_patterns:
+                if pattern in self.HOOK_TYPES:
+                    hook_type = pattern
+                    if hook_type in hook_types:  # Ensure it matches persona
+                        templates = self.HOOK_TYPES[hook_type]
+                        template = templates[len(context.split()) % len(templates)]
+                        annotated_text = f"[PAUSE_SHORT]\n{template}\n[PAUSE_SHORT]"
+                        return {
+                            "type": hook_type,
+                            "text": annotated_text,
+                            "optimized": True,
+                        }
+
+        # Avoid patterns that have performed poorly
+        filtered_hook_types = [ht for ht in hook_types if ht not in avoid_patterns]
+
+        if not filtered_hook_types:
+            filtered_hook_types = hook_types  # Fallback if all are avoided
+
+        # Simple rule-based generation
+        hook_type = filtered_hook_types[len(context) % len(filtered_hook_types)]
 
         templates = self.HOOK_TYPES[hook_type]
         # Pick template based on context length for variety
@@ -139,6 +181,7 @@ class MicroHookAgent:
         return {
             "type": hook_type,
             "text": annotated_text,
+            "optimized": False,
         }
 
 
