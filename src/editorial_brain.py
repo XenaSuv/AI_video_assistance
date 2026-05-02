@@ -509,6 +509,9 @@ class EditorialBrain:
             return {"persona": persona, "energy_level": "high", "pacing": "purposeful"}
         return {"persona": persona, "energy_level": "medium", "pacing": "balanced"}
 
+    def _is_breaking(self, story: NewsItem) -> bool:
+        return bool(re.search(r"\bBREAKING\b", story.title))
+
     def _complexity_score(self, story: NewsItem) -> float:
         text = f"{story.title} {story.summary}".lower()
         terms = ["benchmark", "architectur", "parameters", "fine-tun", "training", "dataset", "latency", "throughput", "model size"]
