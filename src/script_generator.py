@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.analytics import get_proven_hooks, get_proven_titles, top_keywords
 from src.scraper import NewsItem
+from src.editorial_brain import editorial_plan_to_prompt, EditorialPlan
 
 
 @dataclass
@@ -69,10 +70,8 @@ class VideoScript:
 # --------------------- Prompt ---------------------
 
 SYSTEM_PROMPT = """You are the writer and producer for a daily AI news YouTube channel.
-Your scripts sound like a knowledgeable friend explaining the latest AI developments —
-NOT a press release or corporate blog post. You cite specific papers, companies,
-researchers, and real numbers. Honest about limitations; no hype.
-No "welcome back to the channel" filler — assume viewers know the channel.
+Your scripts sound like a human AI YouTuber with an editorial voice —
+a knowledgeable friend, not a press release or corporate blog post. Write like a real creator with energy, curiosity, skepticism, and specific detail. Cite papers, companies, researchers, and real numbers. Be honest about limitations; avoid hype. No "welcome back to the channel" filler — assume viewers know the channel.
 
 === NARRATION STYLE ===
 - Write conversationally: contractions ("it's", "you'll", "they've", "here's") are good
@@ -153,6 +152,14 @@ hook_variants: exactly 3 distinct hooks, each 5-10 seconds when spoken aloud:
   variant 0 — lead with the most surprising single fact or number from today's news
   variant 1 — open with a provocative "what if" or rhetorical question
   variant 2 — bold declarative statement of the biggest implication
+
+=== STRICT REQUIREMENTS ===
+- You MUST follow the provided hook exactly as the opening line
+- You MUST reflect the persona tone in every paragraph
+- You MUST structure the script according to scene_plan and the editorial plan
+- You MUST write like a human YouTuber, not a robotic summary
+- You MUST include at least one opinionated statement per scene
+- Avoid neutral news tone
 
 === OUTPUT FORMAT ===
 Output MUST be a single valid JSON object. No markdown fences. No commentary.
@@ -306,6 +313,7 @@ def generate_script(
     items: list[NewsItem],
     num_scenes: int = 8,
     data_dir: Path | None = None,
+    editorial_plan: EditorialPlan | dict[str, Any] | None = None,
 ) -> VideoScript:
     """Call GPT to produce a structured VideoScript.
 
@@ -331,6 +339,18 @@ def generate_script(
                 logger.info("Added analytics guidance to script prompt")
         except Exception as exc:
             logger.warning(f"Failed to add analytics guidance: {exc}")
+    if editorial_plan is not None:
+        try:
+            if isinstance(editorial_plan, dict):
+                editorial_plan = EditorialPlan(
+                    selected_stories=editorial_plan.get("selected_stories", []),
+                    editorial_plan=editorial_plan.get("editorial_plan", []),
+                    global_style=editorial_plan.get("global_style", {}),
+                )
+            user_prompt += "\n\n" + editorial_plan_to_prompt(editorial_plan)
+            logger.info("Added editorial plan guidance to script prompt")
+        except Exception as exc:
+            logger.warning(f"Failed to add editorial plan guidance: {exc}")
 
     logger.info(f"Requesting script from {settings.openai_model} "
                 f"({settings.script_target_words} words, {num_scenes} scenes)")

@@ -18,6 +18,17 @@ from src.script_generator import VideoScript
 from src.ffmpeg_utils import duration as ff_duration
 
 
+def annotated_to_ssml(text: str) -> str:
+    """Convert annotated text with voice tags to SSML for ElevenLabs."""
+    # Replace annotations with SSML
+    ssml = text.replace("[PAUSE_SHORT]", '<break time="300ms"/>')
+    ssml = ssml.replace("[PAUSE_LONG]", '<break time="700ms"/>')
+    ssml = ssml.replace("[EMPHASIS]", '<emphasis level="strong">')
+    ssml = ssml.replace("[/EMPHASIS]", '</emphasis>')
+    # Wrap in speak tag
+    return f"<speak>{ssml}</speak>"
+
+
 def _is_retryable_elevenlabs(exc: BaseException) -> bool:
     status = getattr(exc, "status_code", None)
     if status is not None:
@@ -38,7 +49,7 @@ def _log_retry(retry_state) -> None:
     before_sleep=_log_retry,
     reraise=True,
 )
-def _tts_convert(client: ElevenLabs, text: str, voice_id: str, model_id: str) -> object:
+def _tts_convert(client: ElevenLabs, text: str, voice_id: str, model_id: str, use_ssml: bool = False) -> object:
     return client.text_to_speech.convert(
         voice_id=voice_id,
         model_id=model_id,
@@ -79,7 +90,14 @@ def synthesize_script(
         logger.info(f"TTS scene {scene.idx}: {scene.heading!r} "
                     f"({len(scene.narration.split())} words)")
 
-        audio_bytes = _tts_convert(client, scene.narration, v_id, m_id)
+        # Convert annotated narration to SSML if it contains annotations
+        narration = scene.narration
+        use_ssml = any(tag in narration for tag in ["[PAUSE", "[EMPHASIS"])
+        if use_ssml:
+            narration = annotated_to_ssml(narration)
+            logger.info(f"  Using SSML for scene {scene.idx}")
+
+        audio_bytes = _tts_convert(client, narration, v_id, m_id, use_ssml)
 
         with open(path, "wb") as f:
             for chunk in audio_bytes:

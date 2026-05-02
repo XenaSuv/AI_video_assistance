@@ -113,3 +113,12 @@ class SeenStories:
                 (self._cutoff(),),
             ).fetchone()[0]
         return {"total_seen": total, "in_ttl_window": in_ttl, "ttl_days": self.ttl_days}
+
+    def recent_titles(self, limit: int = 100) -> list[str]:
+        """Return the most recent featured story titles for editorial history."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT title FROM seen_stories ORDER BY featured_date DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [row[0] for row in rows]

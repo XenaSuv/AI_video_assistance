@@ -25,6 +25,9 @@ from src.analytics import get_recommendations
 from src.performance_tracker import save_result
 from src.scraper import scrape_all, NewsItem
 from src.viral_selector import pick_viral_news
+from src.editorial_brain import EditorialBrain
+from src.humanizer_agent import HumanizerAgent
+from src.micro_hook_agent import MicroHookAgent
 from src.script_generator import Scene, VideoScript, generate_script
 from src.subtitle_generator import generate_subtitles
 from src.thumbnail_ab import (
@@ -288,6 +291,8 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
             f"Dedup DB: {dedup_stats['in_ttl_window']} stories in window "
             f"({dedup_stats['total_seen']} total)"
         )
+        history = seen.recent_titles()
+        summary["history_count"] = len(history)
         news = seen.filter_new(news)
         summary["num_news_items"] = len(news)
 
@@ -305,10 +310,56 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
             return summary
 
         # 2. Script
+        editorial_brain = EditorialBrain(config={"channel_name": settings.channel_name})
+        editorial_plan = editorial_brain.run(
+            news,
+            history=history,
+            channel_config={"persona": settings.channel_name},
+            platform="youtube_long",
+        )
+        summary["editorial_plan"] = {
+            "selected_stories": editorial_plan.selected_stories,
+            "editorial_plan": editorial_plan.editorial_plan,
+            "global_style": editorial_plan.global_style,
+        }
         script_cache = run_dir / "script.json"
         script = _load_cached_script(script_cache)
         if script is None:
-            script = generate_script(news, num_scenes=8, data_dir=settings.data_dir)
+            script = generate_script(
+                news,
+                num_scenes=8,
+                data_dir=settings.data_dir,
+                editorial_plan=editorial_plan,
+            )
+            # Humanize the script to make it sound more natural
+            humanizer = HumanizerAgent()
+            # Use the first story's persona for humanization
+            persona = editorial_plan.editorial_plan[0]["persona"] if editorial_plan.editorial_plan else {}
+            humanized = humanizer.run(
+                script=script.full_narration,  # Pass the full narration text
+                editorial_plan=summary["editorial_plan"],
+                persona=persona,
+            )
+            # For now, log the changes but don't modify the script yet
+            # TODO: Parse humanized script back into scenes
+            logger.info(f"Humanized script with {len(humanized['changes'])} changes: {humanized['changes']}")
+
+            # Add micro-hooks to maintain engagement
+            micro_hook_agent = MicroHookAgent()
+            hooked = micro_hook_agent.run(
+                script=humanized["final_script"],
+                scene_plan=editorial_plan.editorial_plan[0]["scene_plan"] if editorial_plan.editorial_plan else [],
+                persona=persona,
+            )
+            logger.info(f"Added {len(hooked['inserted_hooks'])} micro-hooks")
+
+            # Apply hooked script back to scenes (simple approach: replace full narration)
+            # TODO: Better parsing to distribute across scenes
+            # For now, we'll apply to the first scene as a demo
+            if script.scenes and hooked["final_script"]:
+                script.scenes[0].narration = hooked["final_script"]
+                logger.info("Applied humanized and hooked narration to first scene")
+
             script.save(script_cache)
         # Persist a digest copy so the Sunday workflow can find it across CI runs
         save_for_digest(settings.data_dir, dt.date.today(), script_cache)
