@@ -117,6 +117,7 @@ class EditorialBrain:
         history: list[str] | None = None,
         channel_config: dict[str, Any] | None = None,
         platform: str = "youtube_long",
+        hook_candidates: list[str] | None = None,
         strategy: dict[str, Any] | None = None,
     ) -> EditorialPlan:
         history = history or []
@@ -127,7 +128,7 @@ class EditorialBrain:
         variation = random.choice(["controversial", "explainer", "storytelling", "fast_news"])
         plans = []
         for story in selected:
-            plan = self._plan_story(story, history, channel_config, platform, variation, strategy)
+            plan = self._plan_story(story, history, channel_config, platform, variation, strategy, hook_candidates)
             plans.append(plan)
 
         style = self._choose_global_style(channel_config, platform)
@@ -173,14 +174,15 @@ class EditorialBrain:
         platform: str,
         variation: str,
         strategy: dict[str, Any] | None = None,
+        hook_candidates: list[str] | None = None,
     ) -> dict[str, Any]:
         angle_data = self._pick_angle(story, history, strategy)
         angle = angle_data["label"]
         conflict = angle_data["conflict"]
         persona = self._select_persona(story, channel_config)
         tone = self._select_tone(story, angle_data["key"], variation)
-        hook_variants = self._generate_hook_variants(story, angle_data["key"])
-        hook = self._rank_hooks(hook_variants, story)
+        hook_variants = self._generate_hook_variants(story, angle_data["key"], hook_candidates, strategy)
+        hook = self._select_hook(hook_variants, hook_candidates, story, strategy)
         format_data = self._decide_format(story, angle_data["key"], variation, strategy)
         fmt = format_data["format"]
         scene_plan = self._director_bridge(format_data, angle_data["key"], variation)
@@ -346,7 +348,13 @@ class EditorialBrain:
             return "direct"
         return "curious"
 
-    def _generate_hook_variants(self, story: NewsItem, angle: str) -> list[str]:
+    def _generate_hook_variants(
+        self,
+        story: NewsItem,
+        angle: str,
+        hook_candidates: list[str] | None = None,
+        strategy: dict[str, Any] | None = None,
+    ) -> list[str]:
         texts = []
         base = story.title.rstrip(".")
         conflict = self._conflict_phrase(story)
@@ -399,6 +407,23 @@ class EditorialBrain:
             {hook: round(score, 2) for score, hook in scored},
         )
         return chosen
+
+    def _select_hook(
+        self,
+        hook_variants: list[str],
+        hook_candidates: list[str] | None,
+        story: NewsItem,
+        strategy: dict[str, Any] | None = None,
+    ) -> str:
+        """Choose the final hook, optionally using mutated candidates."""
+        use_mutation = hook_candidates is not None and random.random() < 0.6
+        if use_mutation and hook_candidates:
+            candidates = [self._normalize_hook(h) for h in hook_candidates if self._normalize_hook(h)]
+            if candidates:
+                logger.debug("Using mutated hook candidate")
+                return random.choice(candidates)
+
+        return self._rank_hooks(hook_variants, story)
 
     def _hook_curiosity(self, hook: str) -> float:
         return min(1.0, len(re.findall(r"\b(what|why|how|could|might|if|think)\b", hook.lower())) * 0.3 + 0.2)

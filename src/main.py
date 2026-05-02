@@ -24,12 +24,11 @@ from src.hook_selector import record_usage
 from src.analytics import get_recommendations
 from src.decision_engine import DecisionEngine
 from src.feedback_analyzer import FeedbackAnalyzer
+from src.hook_mutation_engine import HookMutationEngine
 from src.performance_tracker import save_result
 from src.scraper import scrape_all, NewsItem
 from src.viral_selector import pick_viral_news
 from src.editorial_brain import EditorialBrain
-from src.feedback_analyzer import FeedbackAnalyzer
-from src.decision_engine import DecisionEngine
 from src.humanizer_agent import HumanizerAgent
 from src.micro_hook_agent import MicroHookAgent
 from src.script_generator import Scene, VideoScript, generate_script
@@ -280,15 +279,30 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
     )
 
     try:
-        # 1. Scrape
-        news_cache = run_dir / "news.json"
-        if news_cache.exists():
-            logger.info("Reusing cached news.json")
-            news = [NewsItem(**n) for n in json.loads(news_cache.read_text())]
-        else:
-            news = scrape_all(top_n=10)
-            news_cache.write_text(json.dumps([n.to_dict() for n in news], indent=2))
+        # 2. Script
+        top_recs = get_recommendations()
+        top_hooks = top_recs.get("top_hooks", [])
 
+        mutation_engine = HookMutationEngine()
+        mutated = mutation_engine.run(
+            top_hooks,
+            context={
+                "angle": strategy.get("angle_weights") and max(strategy["angle_weights"], key=strategy["angle_weights"].get) or "unknown",
+                "persona": {"style": settings.channel_name},
+                "format": strategy.get("format_weights") and max(strategy["format_weights"], key=strategy["format_weights"].get) or "unknown",
+            },
+        )
+        mutated_hooks = mutated.get("mutated_hooks", [])
+
+        editorial_brain = EditorialBrain(config={"channel_name": settings.channel_name})
+        editorial_plan = editorial_brain.run(
+            news,
+            history=history,
+            channel_config={"persona": settings.channel_name},
+            platform="youtube_long",
+            strategy=strategy,
+            hook_candidates=mutated_hooks,
+        )
         # 1b. Dedup
         dedup_stats = seen.stats()
         logger.info(
