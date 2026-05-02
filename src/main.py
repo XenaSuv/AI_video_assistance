@@ -314,8 +314,8 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         strategy = decision_engine.decide(feedback_history)
 
         logger.info(
-            f"Strategic decisions: mode={strategy.get('mode', 'unknown')}, "
-            f"exploration={strategy.get('exploration_rate', 0):.2f}"
+            f"Strategic decisions: mode={strategy.mode}, "
+            f"exploration={strategy.exploration_rate:.2f}"
         )
 
         top_recs = get_recommendations()
@@ -324,9 +324,9 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         mutated = mutation_engine.run(
             top_hooks,
             context={
-                "angle": (strategy.get("angle_weights") and max(strategy["angle_weights"], key=strategy["angle_weights"].get)) or "unknown",
+                "angle": (max(strategy.angle_weights, key=strategy.angle_weights.get) if strategy.angle_weights else "unknown"),
                 "persona": {"style": settings.channel_name},
-                "format": (strategy.get("format_weights") and max(strategy["format_weights"], key=strategy["format_weights"].get)) or "unknown",
+                "format": (max(strategy.format_weights, key=strategy.format_weights.get) if strategy.format_weights else "unknown"),
             },
         )
         mutated_hooks = mutated.get("mutated_hooks", [])
@@ -369,10 +369,10 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
                 editorial_plan=summary["editorial_plan"],
                 persona=persona,
             )
-            logger.info(f"Humanized script with {len(humanized['changes'])} changes: {humanized['changes']}")
+            logger.info(f"Humanized script with {len(humanized.changes)} changes: {humanized.changes}")
 
             # Distribute humanized text back to scenes by splitting on markers
-            humanized_text = humanized["final_script"]
+            humanized_text = humanized.final_script
             scene_texts: dict[int, str] = {}
             parts = re.split(r"<<<SCENE_(\d+)>>>", humanized_text)
             # parts = ["preamble", "0", "text0", "1", "text1", ...]
@@ -415,8 +415,8 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
                     scene_plan=scene_plan,
                     persona=persona,
                 )
-                if hooked["final_script"]:
-                    scene.narration = hooked["final_script"]
+                if hooked.final_script:
+                    scene.narration = hooked.final_script
             logger.info(f"Applied micro-hooks to {len(script.scenes)} scenes")
 
             script.save(script_cache)

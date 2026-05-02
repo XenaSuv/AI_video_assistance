@@ -20,6 +20,7 @@ from config import settings
 from src.scraper import NewsItem
 from src.feedback_analyzer import FeedbackAnalyzer
 from src.decision_engine import DecisionEngine
+from src.types import ContentStrategy
 
 ANGLE_CANDIDATES = [
     {
@@ -118,7 +119,7 @@ class EditorialBrain:
         channel_config: dict[str, Any] | None = None,
         platform: str = "youtube_long",
         hook_candidates: list[str] | None = None,
-        strategy: dict[str, Any] | None = None,
+        strategy: ContentStrategy | None = None,
     ) -> EditorialPlan:
         history = history or []
         channel_config = channel_config or {}
@@ -173,7 +174,7 @@ class EditorialBrain:
         channel_config: dict[str, Any],
         platform: str,
         variation: str,
-        strategy: dict[str, Any] | None = None,
+        strategy: ContentStrategy | None = None,
         hook_candidates: list[str] | None = None,
     ) -> dict[str, Any]:
         angle_data = self._pick_angle(story, history, strategy)
@@ -260,13 +261,13 @@ class EditorialBrain:
             
             # Boost score based on past performance
             perf = self.feedback_analyzer.get_angle_performance(candidate["key"])
-            if perf and perf.get("avg_hook_score", 0) > 0.7:
-                score *= 1.2  # Boost high-performing angles
-                logger.debug(f"Boosting {candidate['key']} based on past performance: {perf['avg_hook_score']}")
+            if perf and perf.avg_hook_score > 0.7:
+                score *= 1.2
+                logger.debug(f"Boosting {candidate['key']} based on past performance: {perf.avg_hook_score}")
             
             # Apply decision engine strategy weights
-            if strategy and "angle_weights" in strategy:
-                angle_weights = strategy["angle_weights"]
+            if strategy and strategy.angle_weights:
+                angle_weights = strategy.angle_weights
                 # Map angle keys to weights (simplified mapping)
                 weight_key = candidate["key"]
                 if weight_key in angle_weights:
@@ -353,7 +354,7 @@ class EditorialBrain:
         story: NewsItem,
         angle: str,
         hook_candidates: list[str] | None = None,
-        strategy: dict[str, Any] | None = None,
+        strategy: ContentStrategy | None = None,
     ) -> list[str]:
         texts = []
         base = story.title.rstrip(".")
@@ -413,7 +414,7 @@ class EditorialBrain:
         hook_variants: list[str],
         hook_candidates: list[str] | None,
         story: NewsItem,
-        strategy: dict[str, Any] | None = None,
+        strategy: ContentStrategy | None = None,
     ) -> str:
         """Choose the final hook, optionally using mutated candidates."""
         use_mutation = hook_candidates is not None and random.random() < 0.6
@@ -454,13 +455,12 @@ class EditorialBrain:
         
         # Boost format based on past performance
         fmt_perf = self.feedback_analyzer.get_format_performance(base_format)
-        if fmt_perf and fmt_perf.get("avg_hook_score", 0) > 0.7:
-            logger.debug(f"Format {base_format} performing well (score: {fmt_perf['avg_hook_score']})")
-        
-        # Apply decision engine strategy
-        if strategy and "format_weights" in strategy:
-            format_weights = strategy["format_weights"]
-            mode = strategy.get("mode", "balanced")
+        if fmt_perf and fmt_perf.avg_hook_score > 0.7:
+            logger.debug(f"Format {base_format} performing well (score: {fmt_perf.avg_hook_score})")
+
+        if strategy and strategy.format_weights:
+            format_weights = strategy.format_weights
+            mode = strategy.mode
             
             # Consider mode-specific adjustments
             candidates = []

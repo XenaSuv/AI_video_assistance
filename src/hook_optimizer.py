@@ -17,6 +17,7 @@ from pathlib import Path as _Path
 import sys
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 from config import settings
+from src.types import HookOptimizationResult
 
 
 @dataclass
@@ -36,7 +37,7 @@ class HookOptimizer:
         self.exploration_rate = exploration_rate  # 20% of time try new patterns
         self.hook_history = Path(settings.data_dir) / "hook_patterns.json"
 
-    def run(self, editorial_context: dict[str, Any]) -> dict[str, Any]:
+    def run(self, editorial_context: dict[str, Any]) -> HookOptimizationResult:
         """Generate optimized hook recommendations based on context."""
         logger.info("Running hook optimization")
 
@@ -56,16 +57,13 @@ class HookOptimizer:
         recommended = self._select_top_patterns(filtered, top_n=5)
         avoid = self._select_worst_patterns(filtered, bottom_n=3)
 
-        result = {
-            "recommended_patterns": recommended,
-            "avoid_patterns": avoid,
-            "context": editorial_context,
-            "exploration_enabled": random.random() < self.exploration_rate,
-        }
-
-        # Calculate style bias
-        result["style_bias"] = self._calculate_style_bias(recommended, editorial_context)
-
+        result = HookOptimizationResult(
+            recommended_patterns=recommended,
+            avoid_patterns=avoid,
+            context=editorial_context,
+            exploration_enabled=random.random() < self.exploration_rate,
+            style_bias=self._calculate_style_bias(recommended, editorial_context),
+        )
         self._save_patterns(result)
         return result
 
@@ -271,7 +269,7 @@ class HookOptimizer:
 
         return bias
 
-    def _save_patterns(self, result: dict[str, Any]) -> None:
+    def _save_patterns(self, result: HookOptimizationResult) -> None:
         """Save pattern analysis for debugging."""
         try:
             history = []
@@ -280,10 +278,10 @@ class HookOptimizer:
 
             history.append({
                 "timestamp": str(__import__("datetime").datetime.now()),
-                "recommended_patterns": result["recommended_patterns"],
-                "avoid_patterns": result["avoid_patterns"],
-                "context": result["context"],
-                "style_bias": result["style_bias"],
+                "recommended_patterns": result.recommended_patterns,
+                "avoid_patterns": result.avoid_patterns,
+                "context": result.context,
+                "style_bias": result.style_bias,
             })
 
             # Keep last 100 entries
@@ -293,30 +291,30 @@ class HookOptimizer:
         except Exception as exc:
             logger.warning(f"Failed to save patterns: {exc}")
 
-    def _default_recommendations(self) -> dict[str, Any]:
+    def _default_recommendations(self) -> HookOptimizationResult:
         """Return default recommendations when no history is available."""
-        return {
-            "recommended_patterns": [
+        return HookOptimizationResult(
+            recommended_patterns=[
                 "but here is the problem",
                 "and this is where it gets interesting",
                 "no one is talking about this",
                 "if you are building anything with ai",
                 "this might affect you more than you think",
             ],
-            "avoid_patterns": [
+            avoid_patterns=[
                 "in this video we will",
                 "today we discuss",
                 "as you can see",
             ],
-            "context": {},
-            "exploration_enabled": True,
-            "style_bias": {
+            context={},
+            exploration_enabled=True,
+            style_bias={
                 "controversy": 0.6,
                 "curiosity": 0.7,
                 "emotion": 0.5,
                 "evidence": 0.5,
             },
-        }
+        )
 
 
 def get_optimized_hooks(

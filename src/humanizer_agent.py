@@ -15,6 +15,7 @@ from pathlib import Path as _Path
 import sys
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 from config import settings
+from src.types import HumanizationResult
 
 
 class HumanizerAgent:
@@ -37,7 +38,7 @@ class HumanizerAgent:
         script: str,
         editorial_plan: dict[str, Any],
         persona: dict[str, Any],
-    ) -> dict[str, Any]:
+    ) -> HumanizationResult:
         """Humanize the script with multiple passes."""
         logger.info("Starting humanization process")
 
@@ -69,10 +70,7 @@ class HumanizerAgent:
         changes.extend(change6)
 
         logger.info(f"Humanization complete with {len(changes)} changes")
-        return {
-            "final_script": script,
-            "changes": changes,
-        }
+        return HumanizationResult(final_script=script, changes=changes)
 
     def _structure_breaker(self, script: str) -> tuple[str, list[str]]:
         """Break perfect paragraph structure into shorter, punchier chunks."""
@@ -277,7 +275,7 @@ def humanize_script(
     humanization_level: float = 0.7,
     chaos_level: float = 0.4,
     emotion_level: float = 0.6,
-) -> dict[str, Any]:
+) -> HumanizationResult:
     """Convenience function for single humanization call."""
     agent = HumanizerAgent(
         humanization_level=humanization_level,

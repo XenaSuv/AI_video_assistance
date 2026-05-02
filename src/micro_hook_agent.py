@@ -17,6 +17,7 @@ import sys
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 from config import settings
 from src.hook_optimizer import HookOptimizer
+from src.types import InsertedHook, MicroHookResult
 
 
 class MicroHookAgent:
@@ -65,20 +66,19 @@ class MicroHookAgent:
         script: str,
         scene_plan: list[dict[str, Any]],
         persona: dict[str, Any],
-    ) -> dict[str, Any]:
+    ) -> MicroHookResult:
         """Insert micro-hooks into the script."""
         logger.info("Starting micro-hook insertion")
 
-        # Get optimized hook patterns
         editorial_context = {
             "angle": scene_plan[0].get("angle", "unknown") if scene_plan else "unknown",
-            "format": "unknown",  # Will be determined from scene_plan
+            "format": "unknown",
             "persona": persona,
         }
 
         optimized = self.hook_optimizer.run(editorial_context)
-        recommended_patterns = optimized.get("recommended_patterns", [])
-        avoid_patterns = optimized.get("avoid_patterns", [])
+        recommended_patterns = optimized.recommended_patterns
+        avoid_patterns = optimized.avoid_patterns
 
         logger.info(f"Using {len(recommended_patterns)} optimized hook patterns")
 
@@ -100,22 +100,22 @@ class MicroHookAgent:
                 hook = self._generate_hook(hook_types, para, scene_plan, recommended_patterns, avoid_patterns)
                 if hook:
                     enhanced_paragraphs.append(hook)
-                    inserted_hooks.append({
-                        "position": len("\n\n".join(enhanced_paragraphs)),
-                        "type": hook["type"],
-                        "text": hook["text"],
-                        "optimized": hook.get("optimized", False),
-                    })
+                    inserted_hooks.append(InsertedHook(
+                        position=len("\n\n".join(enhanced_paragraphs)),
+                        type=hook["type"],
+                        text=hook["text"],
+                        optimized=hook.get("optimized", False),
+                    ))
                     hook_count += 1
 
         final_script = "\n\n".join(enhanced_paragraphs)
         logger.info(f"Inserted {hook_count} micro-hooks")
 
-        return {
-            "final_script": final_script,
-            "inserted_hooks": inserted_hooks,
-            "optimization": optimized,
-        }
+        return MicroHookResult(
+            final_script=final_script,
+            inserted_hooks=inserted_hooks,
+            optimization=optimized,
+        )
 
     def _split_into_paragraphs(self, script: str) -> list[str]:
         """Split script into paragraphs."""
