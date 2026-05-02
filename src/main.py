@@ -45,6 +45,7 @@ from src.video_generator import assemble_video, build_video
 from src.voice_generator import synthesize_script
 from src.youtube_uploader import publish_episode
 from src.slack_notifier import notify_success, notify_failure
+from src.checkpoint import PipelineCheckpoint
 
 
 def _setup_logging(run_dir: Path) -> None:
@@ -274,6 +275,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
     logger.info(f"=== AI News Pipeline: {date_str} ===")
 
     summary = {"date": date_str, "run_dir": str(run_dir)}
+    cp = PipelineCheckpoint(run_dir)
     seen = SeenStories(
         settings.data_dir / "seen_stories.db",
         ttl_days=settings.dedup_ttl_days,
@@ -281,216 +283,274 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
 
     try:
         # 1. Scrape, deduplicate, and select stories
-        news = scrape_all()
-        summary["scraped_items"] = len(news)
-        dedup_stats = seen.stats()
-        logger.info(
-            f"Dedup DB: {dedup_stats['in_ttl_window']} stories in window "
-            f"({dedup_stats['total_seen']} total)"
-        )
-        history = seen.recent_titles()
-        summary["history_count"] = len(history)
-        news = seen.filter_new(news)
-        summary["num_news_items"] = len(news)
+        if not cp.is_done("scrape"):
+            news = scrape_all()
+            dedup_stats = seen.stats()
+            logger.info(
+                f"Dedup DB: {dedup_stats['in_ttl_window']} stories in window "
+                f"({dedup_stats['total_seen']} total)"
+            )
+            history = seen.recent_titles()
+            news = seen.filter_new(news)
 
-        # 1c. Pick the most relevant stories for the daily long-form roundup.
-        viral_news = pick_viral_news(news, top_n=6)
-        if not viral_news:
-            logger.warning("Viral selector found no items; falling back to original scrape")
+            viral_news = pick_viral_news(news, top_n=6)
+            if not viral_news:
+                logger.warning("Viral selector found no items; falling back to original scrape")
+            else:
+                news = viral_news
+                logger.info(f"Selected {len(news)} viral stories")
+
+            cp.mark_done("scrape", {
+                "scraped_items": len(news),
+                "history_count": len(history),
+                "num_news_items": len(news),
+                "num_viral_news": len(viral_news) if viral_news else 0,
+                # Persist news titles so we can restore on resume
+                "news_titles": [n.title for n in news],
+            })
         else:
-            news = viral_news
-            summary["num_viral_news"] = len(news)
-            logger.info(f"Selected {len(news)} viral stories")
+            logger.info("Step 1 (scrape) already done — reusing cached news list")
+            # Restore lightweight state from checkpoint; real objects are
+            # reconstructed below from cached script.json if needed.
+            meta = cp.metadata("scrape")
+            history = seen.recent_titles()
+            # Re-scrape to get full NewsItem objects (cheap, idempotent)
+            raw_news = scrape_all()
+            raw_news = seen.filter_new(raw_news)
+            viral_news = pick_viral_news(raw_news, top_n=6)
+            news = viral_news if viral_news else raw_news
+
+        meta = cp.metadata("scrape")
+        summary["scraped_items"]  = meta.get("scraped_items", len(news))
+        summary["history_count"]  = meta.get("history_count", 0)
+        summary["num_news_items"] = meta.get("num_news_items", len(news))
+        if meta.get("num_viral_news"):
+            summary["num_viral_news"] = meta["num_viral_news"]
 
         if dry_run:
             logger.info("Dry run — stopping after scrape")
             return summary
 
         # 2. Script
-        feedback_analyzer = FeedbackAnalyzer()
-        feedback_history = feedback_analyzer.load_feedback_history()
-
-        decision_engine = DecisionEngine()
-        strategy = decision_engine.decide(feedback_history)
-
-        logger.info(
-            f"Strategic decisions: mode={strategy.mode}, "
-            f"exploration={strategy.exploration_rate:.2f}"
-        )
-
-        top_recs = get_recommendations()
-        top_hooks = top_recs.get("top_hooks", [])
-        mutation_engine = HookMutationEngine()
-        mutated = mutation_engine.run(
-            top_hooks,
-            context={
-                "angle": (max(strategy.angle_weights, key=strategy.angle_weights.get) if strategy.angle_weights else "unknown"),
-                "persona": {"style": settings.channel_name},
-                "format": (max(strategy.format_weights, key=strategy.format_weights.get) if strategy.format_weights else "unknown"),
-            },
-        )
-        mutated_hooks = mutated.get("mutated_hooks", [])
-
-        editorial_brain = EditorialBrain(config={"channel_name": settings.channel_name})
-        editorial_plan = editorial_brain.run(
-            news,
-            history=history,
-            channel_config={"persona": settings.channel_name},
-            platform="youtube_long",
-            strategy=strategy,
-            hook_candidates=mutated_hooks,
-        )
-        summary["editorial_plan"] = {
-            "selected_stories": editorial_plan.selected_stories,
-            "editorial_plan": editorial_plan.editorial_plan,
-            "global_style": editorial_plan.global_style,
-        }
         script_cache = run_dir / "script.json"
-        script = _load_cached_script(script_cache)
-        if script is None:
-            script = generate_script(
+        if not cp.is_done("script"):
+            feedback_analyzer = FeedbackAnalyzer()
+            feedback_history = feedback_analyzer.load_feedback_history()
+
+            decision_engine = DecisionEngine()
+            strategy = decision_engine.decide(feedback_history)
+
+            logger.info(
+                f"Strategic decisions: mode={strategy.mode}, "
+                f"exploration={strategy.exploration_rate:.2f}"
+            )
+
+            top_recs = get_recommendations()
+            top_hooks = top_recs.get("top_hooks", [])
+            mutation_engine = HookMutationEngine()
+            mutated = mutation_engine.run(
+                top_hooks,
+                context={
+                    "angle": (max(strategy.angle_weights, key=strategy.angle_weights.get) if strategy.angle_weights else "unknown"),
+                    "persona": {"style": settings.channel_name},
+                    "format": (max(strategy.format_weights, key=strategy.format_weights.get) if strategy.format_weights else "unknown"),
+                },
+            )
+            mutated_hooks = mutated.get("mutated_hooks", [])
+
+            editorial_brain = EditorialBrain(config={"channel_name": settings.channel_name})
+            editorial_plan = editorial_brain.run(
                 news,
-                num_scenes=8,
-                data_dir=settings.data_dir,
-                editorial_plan=editorial_plan,
+                history=history,
+                channel_config={"persona": settings.channel_name},
+                platform="youtube_long",
+                strategy=strategy,
+                hook_candidates=mutated_hooks,
             )
-            # Humanize the script to make it sound more natural
-            humanizer = HumanizerAgent()
-            persona = editorial_plan.editorial_plan[0]["persona"] if editorial_plan.editorial_plan else {}
+            summary["editorial_plan"] = {
+                "selected_stories": editorial_plan.selected_stories,
+                "editorial_plan": editorial_plan.editorial_plan,
+                "global_style": editorial_plan.global_style,
+            }
 
-            # Embed scene markers so the LLM preserves boundaries across all passes
-            SCENE_MARKER = "<<<SCENE_{idx}>>>"
-            marked_narration = "\n\n".join(
-                f"{SCENE_MARKER.format(idx=s.idx)}\n{s.narration}"
-                for s in script.scenes
-            )
-            humanized = humanizer.run(
-                script=marked_narration,
-                editorial_plan=summary["editorial_plan"],
-                persona=persona,
-            )
-            logger.info(f"Humanized script with {len(humanized.changes)} changes: {humanized.changes}")
-
-            # Distribute humanized text back to scenes by splitting on markers
-            humanized_text = humanized.final_script
-            scene_texts: dict[int, str] = {}
-            parts = re.split(r"<<<SCENE_(\d+)>>>", humanized_text)
-            # parts = ["preamble", "0", "text0", "1", "text1", ...]
-            for i in range(1, len(parts) - 1, 2):
-                idx = int(parts[i])
-                text = parts[i + 1].strip()
-                if text:
-                    scene_texts[idx] = text
-
-            if len(scene_texts) == len(script.scenes):
-                # Markers survived — apply per scene
-                for scene in script.scenes:
-                    if scene.idx in scene_texts:
-                        scene.narration = scene_texts[scene.idx]
-                logger.info("Applied humanized narration to all scenes via markers")
-            else:
-                # Markers were lost — fall back to proportional word-count split
-                logger.warning(
-                    f"Scene markers lost after humanization "
-                    f"(found {len(scene_texts)}/{len(script.scenes)}); "
-                    "falling back to proportional split"
+            script = _load_cached_script(script_cache)
+            if script is None:
+                script = generate_script(
+                    news,
+                    num_scenes=8,
+                    data_dir=settings.data_dir,
+                    editorial_plan=editorial_plan,
                 )
-                words = humanized_text.split()
-                original_counts = [len(s.narration.split()) for s in script.scenes]
-                total_original = sum(original_counts) or 1
-                pos = 0
-                for scene, orig_count in zip(script.scenes, original_counts):
-                    share = round(len(words) * orig_count / total_original)
-                    chunk = words[pos: pos + share]
-                    if chunk:
-                        scene.narration = " ".join(chunk)
-                    pos += share
+                humanizer = HumanizerAgent()
+                persona = editorial_plan.editorial_plan[0]["persona"] if editorial_plan.editorial_plan else {}
 
-            # Add micro-hooks to maintain engagement — run per scene
-            micro_hook_agent = MicroHookAgent()
-            scene_plan = editorial_plan.editorial_plan[0]["scene_plan"] if editorial_plan.editorial_plan else []
-            for scene in script.scenes:
-                hooked = micro_hook_agent.run(
-                    script=scene.narration,
-                    scene_plan=scene_plan,
+                SCENE_MARKER = "<<<SCENE_{idx}>>>"
+                marked_narration = "\n\n".join(
+                    f"{SCENE_MARKER.format(idx=s.idx)}\n{s.narration}"
+                    for s in script.scenes
+                )
+                humanized = humanizer.run(
+                    script=marked_narration,
+                    editorial_plan=summary["editorial_plan"],
                     persona=persona,
                 )
-                if hooked.final_script:
-                    scene.narration = hooked.final_script
-            logger.info(f"Applied micro-hooks to {len(script.scenes)} scenes")
+                logger.info(f"Humanized script with {len(humanized.changes)} changes: {humanized.changes}")
 
-            script.save(script_cache)
-        # Persist a digest copy so the Sunday workflow can find it across CI runs
-        save_for_digest(settings.data_dir, dt.date.today(), script_cache)
+                humanized_text = humanized.final_script
+                scene_texts: dict[int, str] = {}
+                parts = re.split(r"<<<SCENE_(\d+)>>>", humanized_text)
+                for i in range(1, len(parts) - 1, 2):
+                    idx = int(parts[i])
+                    text = parts[i + 1].strip()
+                    if text:
+                        scene_texts[idx] = text
+
+                if len(scene_texts) == len(script.scenes):
+                    for scene in script.scenes:
+                        if scene.idx in scene_texts:
+                            scene.narration = scene_texts[scene.idx]
+                    logger.info("Applied humanized narration to all scenes via markers")
+                else:
+                    logger.warning(
+                        f"Scene markers lost after humanization "
+                        f"(found {len(scene_texts)}/{len(script.scenes)}); "
+                        "falling back to proportional split"
+                    )
+                    words = humanized_text.split()
+                    original_counts = [len(s.narration.split()) for s in script.scenes]
+                    total_original = sum(original_counts) or 1
+                    pos = 0
+                    for scene, orig_count in zip(script.scenes, original_counts):
+                        share = round(len(words) * orig_count / total_original)
+                        chunk = words[pos: pos + share]
+                        if chunk:
+                            scene.narration = " ".join(chunk)
+                        pos += share
+
+                micro_hook_agent = MicroHookAgent()
+                scene_plan = editorial_plan.editorial_plan[0]["scene_plan"] if editorial_plan.editorial_plan else []
+                for scene in script.scenes:
+                    hooked = micro_hook_agent.run(
+                        script=scene.narration,
+                        scene_plan=scene_plan,
+                        persona=persona,
+                    )
+                    if hooked.final_script:
+                        scene.narration = hooked.final_script
+                logger.info(f"Applied micro-hooks to {len(script.scenes)} scenes")
+
+                script.save(script_cache)
+
+            save_for_digest(settings.data_dir, dt.date.today(), script_cache)
+            cp.mark_done("script", {"title": script.title, "num_scenes": len(script.scenes)})
+        else:
+            logger.info("Step 2 (script) already done — loading cached script.json")
+            script = _load_cached_script(script_cache)
+            if script is None:
+                raise RuntimeError("Checkpoint says script is done but script.json is missing")
+            save_for_digest(settings.data_dir, dt.date.today(), script_cache)
+
         summary["title"]      = script.title
         summary["num_scenes"] = len(script.scenes)
 
         # 3. Voice
         audio_dir = run_dir / "audio"
-        if not audio_dir.exists() or len(list(audio_dir.glob("*.mp3"))) < len(script.scenes):
-            synthesize_script(script, run_dir)
-            script.save(script_cache)
+        if not cp.is_done("voice"):
+            if not audio_dir.exists() or len(list(audio_dir.glob("*.mp3"))) < len(script.scenes):
+                synthesize_script(script, run_dir)
+                script.save(script_cache)
+            else:
+                logger.info("Reusing cached audio; measuring durations")
+                _load_audio_durations(script, audio_dir)
+            cp.mark_done("voice", {"total_duration_sec": sum(s.duration_sec for s in script.scenes)})
         else:
-            logger.info("Reusing cached audio; measuring durations")
+            logger.info("Step 3 (voice) already done — measuring cached audio durations")
             _load_audio_durations(script, audio_dir)
 
         summary["total_duration_sec"] = sum(s.duration_sec for s in script.scenes)
 
-        # 4. Subtitles (non-fatal: errors are logged and pipeline continues)
+        # 4. Subtitles (non-fatal)
         _en_intro = settings.source_dir / "ai-news-intro.mp4"
         _en_outro = _get_shared_outro()
-        subtitle_path: Path | None = None
-        try:
-            subtitle_path = generate_subtitles(
-                script,
-                run_dir / "audio",
-                run_dir / "subtitles.srt",
-                intro_duration=_get_intro_duration(_en_intro if _en_intro.exists() else None),
-            )
-        except Exception as exc:
-            logger.warning(f"Subtitle generation failed (non-fatal): {exc}")
+        subtitle_path: Path | None = run_dir / "subtitles.srt"
+        subtitle_path = subtitle_path if subtitle_path.exists() else None
+        if not cp.is_done("subtitles"):
+            try:
+                subtitle_path = generate_subtitles(
+                    script,
+                    run_dir / "audio",
+                    run_dir / "subtitles.srt",
+                    intro_duration=_get_intro_duration(_en_intro if _en_intro.exists() else None),
+                )
+                cp.mark_done("subtitles")
+            except Exception as exc:
+                logger.warning(f"Subtitle generation failed (non-fatal): {exc}")
+        else:
+            logger.info("Step 4 (subtitles) already done")
 
         # 5. Video
         long_video = run_dir / "final_video.mp4"
-        if _needs_video_rebuild(long_video):
+        if not cp.is_done("video") or _needs_video_rebuild(long_video):
             build_video(script, run_dir,
                         intro_path=_en_intro if _en_intro.exists() else None,
                         outro_path=_en_outro)
             seen.mark_featured(news)
+            cp.mark_done("video")
         else:
-            logger.info(f"Reusing cached {long_video.name}")
+            logger.info(f"Step 5 (video) already done — reusing {long_video.name}")
 
-        # 4b. Append B-roll credits to description (Pexels attribution)
         from src.broll_fetcher import get_pexels_credits
         credits = get_pexels_credits(run_dir)
         if credits:
             script.description += "\n\nVideo clips provided by Pexels:\n" + "\n".join(credits)
 
         # 6. Thumbnail A/B
-        thumb_variants = generate_thumbnail_variants(long_video, script.title, run_dir)
-        thumbnail      = pick_thumbnail(thumb_variants, settings.data_dir, "daily")
+        if not cp.is_done("thumbnail"):
+            thumb_variants = generate_thumbnail_variants(long_video, script.title, run_dir)
+            thumbnail      = pick_thumbnail(thumb_variants, settings.data_dir, "daily")
+            cp.mark_done("thumbnail", {"style": thumbnail.stem.removeprefix("thumbnail_")})
+        else:
+            logger.info("Step 6 (thumbnail) already done")
+            _style = cp.metadata("thumbnail").get("style", "default")
+            thumbnail = run_dir / f"thumbnail_{_style}.jpg"
+            if not thumbnail.exists():
+                # Re-generate if file was deleted
+                thumb_variants = generate_thumbnail_variants(long_video, script.title, run_dir)
+                thumbnail      = pick_thumbnail(thumb_variants, settings.data_dir, "daily")
+
         summary["thumbnail_style"] = thumbnail.stem.removeprefix("thumbnail_")
 
         # 7. Upload (English)
-        if skip_upload:
-            logger.info("--skip-upload specified; leaving files on disk")
-            summary["status"] = "built_not_uploaded"
+        if not cp.is_done("upload_en"):
+            if skip_upload:
+                logger.info("--skip-upload specified; leaving files on disk")
+                summary["status"] = "built_not_uploaded"
+                cp.mark_done("upload_en", {"skipped": True})
+            else:
+                ids = publish_episode(
+                    script, long_video, None,
+                    thumbnail=thumbnail,
+                    subtitle_path=subtitle_path,
+                )
+                summary.update(ids)
+                summary["status"] = "published"
+                summary["analytics"] = get_recommendations()
+                if video_id := ids.get("video_id"):
+                    record_usage(script.hook, video_id, settings.data_dir, "daily")
+                    record_thumbnail_usage(thumbnail, video_id, settings.data_dir, "daily")
+                    save_result(video_id, script.hook, script.title, script.description)
+                cp.mark_done("upload_en", {k: v for k, v in ids.items()})
         else:
-            ids = publish_episode(
-                script, long_video, None,
-                thumbnail=thumbnail,
-                subtitle_path=subtitle_path,
-            )
-            summary.update(ids)
-            summary["status"] = "published"
-            summary["analytics"] = get_recommendations()
-            if video_id := ids.get("video_id"):
-                record_usage(script.hook, video_id, settings.data_dir, "daily")
-                record_thumbnail_usage(thumbnail, video_id, settings.data_dir, "daily")
-                save_result(video_id, script.hook, script.title, script.description)
+            logger.info("Step 7 (upload_en) already done")
+            meta = cp.metadata("upload_en")
+            if meta.get("skipped"):
+                summary["status"] = "built_not_uploaded"
+            else:
+                summary.update(meta)
+                summary["status"] = "published"
 
         # 8. Russian variant (optional)
-        if settings.ru_enabled:
+        if settings.ru_enabled and not cp.is_done("upload_ru"):
             _ru_intro = settings.source_dir / "ai-novosti-intro.mp4"
             ru = _run_language_variant(
                 english_script = script,
@@ -507,6 +567,10 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
                 include_short  = False,
             )
             summary["ru"] = ru
+            cp.mark_done("upload_ru", ru)
+        elif settings.ru_enabled:
+            logger.info("Step 8 (upload_ru) already done")
+            summary["ru"] = cp.metadata("upload_ru")
 
         notify_success(summary, "daily")
         logger.info(f"=== DONE ===  {json.dumps(summary, indent=2)}")
