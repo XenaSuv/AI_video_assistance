@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 import sys
 import traceback
 from pathlib import Path
@@ -355,32 +356,68 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
             )
             # Humanize the script to make it sound more natural
             humanizer = HumanizerAgent()
-            # Use the first story's persona for humanization
             persona = editorial_plan.editorial_plan[0]["persona"] if editorial_plan.editorial_plan else {}
+
+            # Embed scene markers so the LLM preserves boundaries across all passes
+            SCENE_MARKER = "<<<SCENE_{idx}>>>"
+            marked_narration = "\n\n".join(
+                f"{SCENE_MARKER.format(idx=s.idx)}\n{s.narration}"
+                for s in script.scenes
+            )
             humanized = humanizer.run(
-                script=script.full_narration,  # Pass the full narration text
+                script=marked_narration,
                 editorial_plan=summary["editorial_plan"],
                 persona=persona,
             )
-            # For now, log the changes but don't modify the script yet
-            # TODO: Parse humanized script back into scenes
             logger.info(f"Humanized script with {len(humanized['changes'])} changes: {humanized['changes']}")
 
-            # Add micro-hooks to maintain engagement
-            micro_hook_agent = MicroHookAgent()
-            hooked = micro_hook_agent.run(
-                script=humanized["final_script"],
-                scene_plan=editorial_plan.editorial_plan[0]["scene_plan"] if editorial_plan.editorial_plan else [],
-                persona=persona,
-            )
-            logger.info(f"Added {len(hooked['inserted_hooks'])} micro-hooks")
+            # Distribute humanized text back to scenes by splitting on markers
+            humanized_text = humanized["final_script"]
+            scene_texts: dict[int, str] = {}
+            parts = re.split(r"<<<SCENE_(\d+)>>>", humanized_text)
+            # parts = ["preamble", "0", "text0", "1", "text1", ...]
+            for i in range(1, len(parts) - 1, 2):
+                idx = int(parts[i])
+                text = parts[i + 1].strip()
+                if text:
+                    scene_texts[idx] = text
 
-            # Apply hooked script back to scenes (simple approach: replace full narration)
-            # TODO: Better parsing to distribute across scenes
-            # For now, we'll apply to the first scene as a demo
-            if script.scenes and hooked["final_script"]:
-                script.scenes[0].narration = hooked["final_script"]
-                logger.info("Applied humanized and hooked narration to first scene")
+            if len(scene_texts) == len(script.scenes):
+                # Markers survived — apply per scene
+                for scene in script.scenes:
+                    if scene.idx in scene_texts:
+                        scene.narration = scene_texts[scene.idx]
+                logger.info("Applied humanized narration to all scenes via markers")
+            else:
+                # Markers were lost — fall back to proportional word-count split
+                logger.warning(
+                    f"Scene markers lost after humanization "
+                    f"(found {len(scene_texts)}/{len(script.scenes)}); "
+                    "falling back to proportional split"
+                )
+                words = humanized_text.split()
+                original_counts = [len(s.narration.split()) for s in script.scenes]
+                total_original = sum(original_counts) or 1
+                pos = 0
+                for scene, orig_count in zip(script.scenes, original_counts):
+                    share = round(len(words) * orig_count / total_original)
+                    chunk = words[pos: pos + share]
+                    if chunk:
+                        scene.narration = " ".join(chunk)
+                    pos += share
+
+            # Add micro-hooks to maintain engagement — run per scene
+            micro_hook_agent = MicroHookAgent()
+            scene_plan = editorial_plan.editorial_plan[0]["scene_plan"] if editorial_plan.editorial_plan else []
+            for scene in script.scenes:
+                hooked = micro_hook_agent.run(
+                    script=scene.narration,
+                    scene_plan=scene_plan,
+                    persona=persona,
+                )
+                if hooked["final_script"]:
+                    scene.narration = hooked["final_script"]
+            logger.info(f"Applied micro-hooks to {len(script.scenes)} scenes")
 
             script.save(script_cache)
         # Persist a digest copy so the Sunday workflow can find it across CI runs

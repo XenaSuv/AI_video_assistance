@@ -284,3 +284,4 @@ def humanize_script(
         chaos_level=chaos_level,
         emotion_level=emotion_level,
     )
+    return agent.run(script, editorial_plan, persona)
