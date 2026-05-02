@@ -279,31 +279,9 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
     )
 
     try:
-        # 2. Script
-        top_recs = get_recommendations()
-        top_hooks = top_recs.get("top_hooks", [])
-
-        mutation_engine = HookMutationEngine()
-        mutated = mutation_engine.run(
-            top_hooks,
-            context={
-                "angle": strategy.get("angle_weights") and max(strategy["angle_weights"], key=strategy["angle_weights"].get) or "unknown",
-                "persona": {"style": settings.channel_name},
-                "format": strategy.get("format_weights") and max(strategy["format_weights"], key=strategy["format_weights"].get) or "unknown",
-            },
-        )
-        mutated_hooks = mutated.get("mutated_hooks", [])
-
-        editorial_brain = EditorialBrain(config={"channel_name": settings.channel_name})
-        editorial_plan = editorial_brain.run(
-            news,
-            history=history,
-            channel_config={"persona": settings.channel_name},
-            platform="youtube_long",
-            strategy=strategy,
-            hook_candidates=mutated_hooks,
-        )
-        # 1b. Dedup
+        # 1. Scrape, deduplicate, and select stories
+        news = scrape_all()
+        summary["scraped_items"] = len(news)
         dedup_stats = seen.stats()
         logger.info(
             f"Dedup DB: {dedup_stats['in_ttl_window']} stories in window "
@@ -339,6 +317,19 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
             f"exploration={strategy.get('exploration_rate', 0):.2f}"
         )
 
+        top_recs = get_recommendations()
+        top_hooks = top_recs.get("top_hooks", [])
+        mutation_engine = HookMutationEngine()
+        mutated = mutation_engine.run(
+            top_hooks,
+            context={
+                "angle": (strategy.get("angle_weights") and max(strategy["angle_weights"], key=strategy["angle_weights"].get)) or "unknown",
+                "persona": {"style": settings.channel_name},
+                "format": (strategy.get("format_weights") and max(strategy["format_weights"], key=strategy["format_weights"].get)) or "unknown",
+            },
+        )
+        mutated_hooks = mutated.get("mutated_hooks", [])
+
         editorial_brain = EditorialBrain(config={"channel_name": settings.channel_name})
         editorial_plan = editorial_brain.run(
             news,
@@ -346,6 +337,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
             channel_config={"persona": settings.channel_name},
             platform="youtube_long",
             strategy=strategy,
+            hook_candidates=mutated_hooks,
         )
         summary["editorial_plan"] = {
             "selected_stories": editorial_plan.selected_stories,
