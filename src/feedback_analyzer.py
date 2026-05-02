@@ -18,6 +18,7 @@ import sys
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 from config import settings
 from src.youtube_analytics import get_video_metrics, get_retention_curve
+from src.tiktok_analytics import get_video_metrics as get_tiktok_video_metrics
 
 
 @dataclass
@@ -126,16 +127,25 @@ class FeedbackAnalyzer:
             return None
 
     def _get_tiktok_metrics(self, video_id: str) -> VideoMetrics | None:
-        """Fetch metrics from TikTok API (simplified)."""
-        # This is a placeholder - TikTok API access is limited
-        logger.info(f"TikTok metrics for {video_id}: placeholder implementation")
+        """Fetch metrics from TikTok Content API v2 (video.list scope required)."""
+        raw = get_tiktok_video_metrics(video_id, settings.tiktok_token_file)
+        if not raw:
+            return None
+
+        avg_pct = raw["avg_view_percentage"]
+        retention_curve = self._estimate_retention_curve(avg_pct)
+
+        avg_duration_sec = 0
+        if raw["duration_sec"] > 0:
+            avg_duration_sec = round(raw["duration_sec"] * avg_pct)
+
         return VideoMetrics(
             video_id=video_id,
             platform="tiktok",
-            views=0,
-            avg_view_duration_sec=0,
-            avg_view_percentage=0.0,
-            retention_curve=[1.0, 0.8, 0.6, 0.4],
+            views=raw["views"],
+            avg_view_duration_sec=avg_duration_sec,
+            avg_view_percentage=avg_pct,
+            retention_curve=retention_curve,
         )
 
     def _estimate_retention_curve(self, avg_percentage: float) -> list[float]:

@@ -37,7 +37,7 @@ _AUTH_URL   = "https://www.tiktok.com/v2/auth/authorize/"
 _TOKEN_URL  = "https://open.tiktokapis.com/v2/oauth/token/"
 _UPLOAD_URL = "https://open.tiktokapis.com/v2/post/publish/video/init/"
 _CHUNK_SIZE = 10 * 1024 * 1024   # 10 MB per chunk
-_SCOPES     = "video.publish,video.upload,user.info.basic"
+_SCOPES     = "video.publish,video.upload,user.info.basic,video.list"
 _REDIRECT   = "http://localhost:8080/callback"
 
 
