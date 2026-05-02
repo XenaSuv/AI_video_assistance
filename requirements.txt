@@ -1,7 +1,7 @@
 # HTTP / scraping
-requests==2.33.1
-beautifulsoup4==4.14.3
-arxiv==2.1.3
+requests>=2.32.0,<2.34
+beautifulsoup4>=4.12.0
+arxiv>=2.1.0
 
 # LLM
 openai==2.33.0
