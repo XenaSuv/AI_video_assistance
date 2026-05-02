@@ -19,6 +19,7 @@ sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 from config import settings
 from src.youtube_analytics import get_video_metrics, get_retention_curve
 from src.tiktok_analytics import get_video_metrics as get_tiktok_video_metrics
+from src.types import PerformanceStats
 
 
 @dataclass
@@ -259,52 +260,50 @@ class FeedbackAnalyzer:
             logger.warning(f"Failed to load feedback history: {exc}")
         return []
 
-    def get_angle_performance(self, angle: str) -> dict[str, Any]:
+    def get_angle_performance(self, angle: str) -> PerformanceStats | None:
         """Get performance metrics for a specific angle."""
         try:
             history = []
             if self.feedback_db.exists():
                 history = json.loads(self.feedback_db.read_text())
 
-            angle_records = [h for h in history if h.get("angle") == angle]
-            if not angle_records:
-                return {}
+            records = [h for h in history if h.get("angle") == angle]
+            if not records:
+                return None
 
-            avg_hook_score = sum(h["hook_score"] for h in angle_records) / len(angle_records)
-            avg_watch_time = sum(h["avg_view_percentage"] for h in angle_records) / len(angle_records)
-
-            return {
-                "angle": angle,
-                "sample_size": len(angle_records),
-                "avg_hook_score": round(avg_hook_score, 2),
-                "avg_watch_time": round(avg_watch_time, 2),
-                "success_rate": len([h for h in angle_records if h["hook_score"] > 0.6]) / len(angle_records),
-            }
+            avg_hook_score = sum(h["hook_score"] for h in records) / len(records)
+            avg_watch_time = sum(h["avg_view_percentage"] for h in records) / len(records)
+            return PerformanceStats(
+                category=angle,
+                sample_size=len(records),
+                avg_hook_score=round(avg_hook_score, 2),
+                avg_watch_time=round(avg_watch_time, 2),
+                success_rate=len([h for h in records if h["hook_score"] > 0.6]) / len(records),
+            )
         except Exception as exc:
             logger.warning(f"Failed to get angle performance: {exc}")
-            return {}
+            return None
 
-    def get_format_performance(self, fmt: str) -> dict[str, Any]:
+    def get_format_performance(self, fmt: str) -> PerformanceStats | None:
         """Get performance metrics for a specific format."""
         try:
             history = []
             if self.feedback_db.exists():
                 history = json.loads(self.feedback_db.read_text())
 
-            format_records = [h for h in history if h.get("format") == fmt]
-            if not format_records:
-                return {}
+            records = [h for h in history if h.get("format") == fmt]
+            if not records:
+                return None
 
-            avg_hook_score = sum(h["hook_score"] for h in format_records) / len(format_records)
-            avg_watch_time = sum(h["avg_view_percentage"] for h in format_records) / len(format_records)
-
-            return {
-                "format": fmt,
-                "sample_size": len(format_records),
-                "avg_hook_score": round(avg_hook_score, 2),
-                "avg_watch_time": round(avg_watch_time, 2),
-                "success_rate": len([h for h in format_records if h["hook_score"] > 0.6]) / len(format_records),
-            }
+            avg_hook_score = sum(h["hook_score"] for h in records) / len(records)
+            avg_watch_time = sum(h["avg_view_percentage"] for h in records) / len(records)
+            return PerformanceStats(
+                category=fmt,
+                sample_size=len(records),
+                avg_hook_score=round(avg_hook_score, 2),
+                avg_watch_time=round(avg_watch_time, 2),
+                success_rate=len([h for h in records if h["hook_score"] > 0.6]) / len(records),
+            )
         except Exception as exc:
             logger.warning(f"Failed to get format performance: {exc}")
-            return {}
+            return None

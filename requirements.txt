@@ -1,10 +1,10 @@
 # HTTP / scraping
-requests>=2.32.0
-beautifulsoup4>=4.12.0
-arxiv>=2.1.0
+requests==2.33.1
+beautifulsoup4==4.14.3
+arxiv==2.1.3
 
 # LLM
-openai>=1.54.0
+openai==2.33.0
 
 # TTS
 elevenlabs>=1.10.0
@@ -16,16 +16,17 @@ imageio>=2.34.0
 imageio-ffmpeg>=0.5.0
 
 # Google / YouTube
-google-api-python-client>=2.147.0
-google-auth-httplib2>=0.2.0
+google-api-python-client==2.195.0
+google-auth==2.50.0
+google-auth-httplib2==0.3.1
 google-auth-oauthlib>=1.2.1
 
 # Scheduling
 APScheduler>=3.10.4
-python-dotenv>=1.0.1
+python-dotenv==1.2.2
 
 # Logging
-loguru>=0.7.2
+loguru==0.7.3
 
 # Retry
 tenacity>=8.3.0
@@ -34,5 +35,5 @@ tenacity>=8.3.0
 playwright>=1.45.0
 
 # Testing
-pytest>=8.3.0
-pytest-mock>=3.14.0
+pytest==9.0.3
+pytest-mock==3.15.1

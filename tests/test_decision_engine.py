@@ -1,6 +1,7 @@
 """Tests for DecisionEngine — pure logic, no external dependencies."""
 import pytest
 from src.decision_engine import DecisionEngine
+from src.types import ContentStrategy
 
 
 @pytest.fixture
@@ -18,37 +19,41 @@ def engine_low_min_samples():
 class TestDecide:
     def test_empty_history_returns_default(self, engine):
         result = engine.decide([])
-        assert result["mode"] == "balanced"
-        assert result["angle_weights"] == {}
-        assert result["format_weights"] == {}
-        assert result["confidence"] == 0.3
-        assert result["exploration_rate"] == engine.base_exploration
+        assert result.mode == "balanced"
+        assert result.angle_weights == {}
+        assert result.format_weights == {}
+        assert result.confidence == 0.3
+        assert result.exploration_rate == engine.base_exploration
 
-    def test_returns_all_required_keys(self, engine, feedback_history):
+    def test_returns_content_strategy_with_all_fields(self, engine, feedback_history):
         result = engine.decide(feedback_history)
-        for key in ("angle_weights", "format_weights", "exploration_rate", "mode", "confidence"):
-            assert key in result
+        assert isinstance(result, ContentStrategy)
+        assert hasattr(result, "angle_weights")
+        assert hasattr(result, "format_weights")
+        assert hasattr(result, "exploration_rate")
+        assert hasattr(result, "mode")
+        assert hasattr(result, "confidence")
 
     def test_low_retention_triggers_growth_mode(self, engine, low_performing_feedback):
         result = engine.decide(low_performing_feedback)
-        assert result["mode"] == "growth"
+        assert result.mode == "growth"
 
     def test_high_retention_triggers_safe_mode(self, engine, high_performing_feedback):
         result = engine.decide(high_performing_feedback)
-        assert result["mode"] == "safe"
+        assert result.mode == "safe"
 
     def test_medium_retention_stays_balanced(self, engine, feedback_history):
         result = engine.decide(feedback_history)
-        assert result["mode"] == "balanced"
+        assert result.mode == "balanced"
 
     def test_exploration_rate_is_bounded(self, engine, feedback_history):
         result = engine.decide(feedback_history)
-        assert 0.1 <= result["exploration_rate"] <= 0.4
+        assert 0.1 <= result.exploration_rate <= 0.4
 
     def test_confidence_increases_with_sample_size(self, engine):
         small = [{"hook_score": 0.7, "avg_view_percentage": 0.6, "angle": "a", "format": "b"}] * 3
         large = [{"hook_score": 0.7, "avg_view_percentage": 0.6, "angle": "a", "format": "b"}] * 10
-        assert engine.decide(small)["confidence"] <= engine.decide(large)["confidence"]
+        assert engine.decide(small).confidence <= engine.decide(large).confidence
 
 
 # ── _compute_weights() ────────────────────────────────────────────────────────
@@ -168,30 +173,30 @@ class TestComputeConfidence:
 
 # ── get_recommended_angle() ───────────────────────────────────────────────────
 
+def _strategy(**kwargs) -> ContentStrategy:
+    defaults = dict(angle_weights={}, format_weights={}, exploration_rate=0.2, mode="balanced", confidence=0.5)
+    defaults.update(kwargs)
+    return ContentStrategy(**defaults)
+
+
 class TestGetRecommendedAngle:
     def test_exploits_highest_weight(self, engine):
-        strategy = {
-            "angle_weights": {"technical_breakthrough": 0.9, "hot_take": 0.3},
-            "exploration_rate": 0.0,
-        }
-        angles = ["technical_breakthrough", "hot_take"]
-        result = engine.get_recommended_angle(strategy, angles)
+        strategy = _strategy(
+            angle_weights={"technical_breakthrough": 0.9, "hot_take": 0.3},
+            exploration_rate=0.0,
+        )
+        result = engine.get_recommended_angle(strategy, ["technical_breakthrough", "hot_take"])
         assert result == "technical_breakthrough"
 
     def test_returns_valid_angle_always(self, engine):
-        strategy = {"angle_weights": {}, "exploration_rate": 1.0}
+        strategy = _strategy(angle_weights={}, exploration_rate=1.0)
         angles = ["a", "b", "c"]
-        result = engine.get_recommended_angle(strategy, angles)
-        assert result in angles
+        assert engine.get_recommended_angle(strategy, angles) in angles
 
     def test_ignores_weights_not_in_available_list(self, engine):
-        strategy = {
-            "angle_weights": {"unknown_angle": 0.99},
-            "exploration_rate": 0.0,
-        }
+        strategy = _strategy(angle_weights={"unknown_angle": 0.99}, exploration_rate=0.0)
         angles = ["technical_breakthrough"]
-        result = engine.get_recommended_angle(strategy, angles)
-        assert result in angles
+        assert engine.get_recommended_angle(strategy, angles) in angles
 
 
 # ── _adjust_for_mode() ────────────────────────────────────────────────────────

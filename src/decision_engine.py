@@ -13,6 +13,7 @@ from pathlib import Path as _Path
 import sys
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 from config import settings
+from src.types import ContentStrategy
 
 
 class DecisionEngine:
@@ -29,41 +30,28 @@ class DecisionEngine:
         self.hook_success_threshold = self.config.get("hook_success_threshold", 0.6)
         self.hook_excellent_threshold = self.config.get("hook_excellent_threshold", 0.75)
 
-    def decide(self, feedback_history: list[dict[str, Any]]) -> dict[str, Any]:
-        """Make strategic decisions based on feedback history.
-
-        Args:
-            feedback_history: List of feedback analysis results
-
-        Returns:
-            Decision dictionary with weights and strategy
-        """
+    def decide(self, feedback_history: list[dict[str, Any]]) -> ContentStrategy:
+        """Make strategic decisions based on feedback history."""
         logger.info(f"Making strategic decisions based on {len(feedback_history)} feedback items")
 
         if not feedback_history:
             logger.info("No feedback history - using default decisions")
             return self._default_decision()
 
-        # Compute performance-based weights
         angle_weights = self._compute_weights(feedback_history, key="angle")
         format_weights = self._compute_weights(feedback_history, key="format")
-
-        # Adaptive exploration rate
         exploration_rate = self._compute_exploration(feedback_history)
-
-        # Select operational mode
         mode = self._select_mode(feedback_history)
 
-        decision = {
-            "angle_weights": angle_weights,
-            "format_weights": format_weights,
-            "exploration_rate": exploration_rate,
-            "mode": mode,
-            "confidence": self._compute_confidence(feedback_history),
-        }
-
+        strategy = ContentStrategy(
+            angle_weights=angle_weights,
+            format_weights=format_weights,
+            exploration_rate=exploration_rate,
+            mode=mode,
+            confidence=self._compute_confidence(feedback_history),
+        )
         logger.info(f"Decision: mode={mode}, exploration={exploration_rate:.2f}, {len(angle_weights)} angle weights")
-        return decision
+        return strategy
 
     def _compute_weights(self, feedback: list[dict[str, Any]], key: str) -> dict[str, float]:
         """Compute performance weights for angles or formats.
@@ -191,69 +179,39 @@ class DecisionEngine:
 
         return 0.6  # Moderate confidence
 
-    def _default_decision(self) -> dict[str, Any]:
+    def _default_decision(self) -> ContentStrategy:
         """Return default decision when no feedback is available."""
-        return {
-            "angle_weights": {},
-            "format_weights": {},
-            "exploration_rate": self.base_exploration,
-            "mode": "balanced",
-            "confidence": 0.3,
-        }
+        return ContentStrategy(
+            angle_weights={},
+            format_weights={},
+            exploration_rate=self.base_exploration,
+            mode="balanced",
+            confidence=0.3,
+        )
 
-    def get_recommended_angle(self, strategy: dict[str, Any], available_angles: list[str]) -> str:
-        """Get recommended angle based on strategy and exploration.
+    def get_recommended_angle(self, strategy: ContentStrategy, available_angles: list[str]) -> str:
+        """Get recommended angle based on strategy and exploration."""
+        available_weights = {k: v for k, v in strategy.angle_weights.items() if k in available_angles}
 
-        Args:
-            strategy: Decision strategy from decide()
-            available_angles: List of available angle options
-
-        Returns:
-            Recommended angle string
-        """
-        weights = strategy.get("angle_weights", {})
-        exploration_rate = strategy.get("exploration_rate", self.base_exploration)
-
-        # Filter to available angles
-        available_weights = {k: v for k, v in weights.items() if k in available_angles}
-
-        # Exploration: random choice
-        if not available_weights or random.random() < exploration_rate:
+        if not available_weights or random.random() < strategy.exploration_rate:
             return random.choice(available_angles)
 
-        # Exploitation: choose highest weighted
         return max(available_weights, key=available_weights.get)
 
-    def get_recommended_format(self, strategy: dict[str, Any], available_formats: list[str]) -> str:
-        """Get recommended format based on strategy and exploration.
+    def get_recommended_format(self, strategy: ContentStrategy, available_formats: list[str]) -> str:
+        """Get recommended format based on strategy and exploration."""
+        mode = strategy.mode
 
-        Args:
-            strategy: Decision strategy from decide()
-            available_formats: List of available format options
+        available_weights = {k: v for k, v in strategy.format_weights.items() if k in available_formats}
 
-        Returns:
-            Recommended format string
-        """
-        weights = strategy.get("format_weights", {})
-        exploration_rate = strategy.get("exploration_rate", self.base_exploration)
-        mode = strategy.get("mode", "balanced")
-
-        # Filter to available formats
-        available_weights = {k: v for k, v in weights.items() if k in available_formats}
-
-        # Apply mode-specific adjustments
         if mode == "growth":
-            # In growth mode, slightly favor riskier formats
             available_weights = self._adjust_for_mode(available_weights, growth_boost=0.1)
         elif mode == "safe":
-            # In safe mode, strongly favor proven formats
             available_weights = self._adjust_for_mode(available_weights, safe_boost=0.2)
 
-        # Exploration: random choice
-        if not available_weights or random.random() < exploration_rate:
+        if not available_weights or random.random() < strategy.exploration_rate:
             return random.choice(available_formats)
 
-        # Exploitation: choose highest weighted
         return max(available_weights, key=available_weights.get)
 
     def _adjust_for_mode(self, weights: dict[str, float], growth_boost: float = 0.0, safe_boost: float = 0.0) -> dict[str, float]:
