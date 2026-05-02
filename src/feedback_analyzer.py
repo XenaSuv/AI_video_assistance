@@ -240,6 +240,15 @@ class FeedbackAnalyzer:
         except Exception as exc:
             logger.warning(f"Failed to save feedback: {exc}")
 
+    def load_feedback_history(self) -> list[dict[str, Any]]:
+        """Load saved feedback history from storage."""
+        try:
+            if self.feedback_db.exists():
+                return json.loads(self.feedback_db.read_text())
+        except Exception as exc:
+            logger.warning(f"Failed to load feedback history: {exc}")
+        return []
+
     def get_angle_performance(self, angle: str) -> dict[str, Any]:
         """Get performance metrics for a specific angle."""
         try:

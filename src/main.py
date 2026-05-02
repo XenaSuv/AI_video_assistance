@@ -22,10 +22,14 @@ from src.deduplicator import SeenStories
 from src.digest_script_generator import save_for_digest
 from src.hook_selector import record_usage
 from src.analytics import get_recommendations
+from src.decision_engine import DecisionEngine
+from src.feedback_analyzer import FeedbackAnalyzer
 from src.performance_tracker import save_result
 from src.scraper import scrape_all, NewsItem
 from src.viral_selector import pick_viral_news
 from src.editorial_brain import EditorialBrain
+from src.feedback_analyzer import FeedbackAnalyzer
+from src.decision_engine import DecisionEngine
 from src.humanizer_agent import HumanizerAgent
 from src.micro_hook_agent import MicroHookAgent
 from src.script_generator import Scene, VideoScript, generate_script
@@ -310,12 +314,24 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
             return summary
 
         # 2. Script
+        feedback_analyzer = FeedbackAnalyzer()
+        feedback_history = feedback_analyzer.load_feedback_history()
+
+        decision_engine = DecisionEngine()
+        strategy = decision_engine.decide(feedback_history)
+
+        logger.info(
+            f"Strategic decisions: mode={strategy.get('mode', 'unknown')}, "
+            f"exploration={strategy.get('exploration_rate', 0):.2f}"
+        )
+
         editorial_brain = EditorialBrain(config={"channel_name": settings.channel_name})
         editorial_plan = editorial_brain.run(
             news,
             history=history,
             channel_config={"persona": settings.channel_name},
             platform="youtube_long",
+            strategy=strategy,
         )
         summary["editorial_plan"] = {
             "selected_stories": editorial_plan.selected_stories,

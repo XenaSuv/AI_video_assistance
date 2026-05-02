@@ -19,6 +19,7 @@ sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 from config import settings
 from src.scraper import NewsItem
 from src.feedback_analyzer import FeedbackAnalyzer
+from src.decision_engine import DecisionEngine
 
 ANGLE_CANDIDATES = [
     {
@@ -116,6 +117,7 @@ class EditorialBrain:
         history: list[str] | None = None,
         channel_config: dict[str, Any] | None = None,
         platform: str = "youtube_long",
+        strategy: dict[str, Any] | None = None,
     ) -> EditorialPlan:
         history = history or []
         channel_config = channel_config or {}
@@ -125,7 +127,7 @@ class EditorialBrain:
         variation = random.choice(["controversial", "explainer", "storytelling", "fast_news"])
         plans = []
         for story in selected:
-            plan = self._plan_story(story, history, channel_config, platform, variation)
+            plan = self._plan_story(story, history, channel_config, platform, variation, strategy)
             plans.append(plan)
 
         style = self._choose_global_style(channel_config, platform)
@@ -170,15 +172,16 @@ class EditorialBrain:
         channel_config: dict[str, Any],
         platform: str,
         variation: str,
+        strategy: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        angle_data = self._pick_angle(story, history)
+        angle_data = self._pick_angle(story, history, strategy)
         angle = angle_data["label"]
         conflict = angle_data["conflict"]
         persona = self._select_persona(story, channel_config)
         tone = self._select_tone(story, angle_data["key"], variation)
         hook_variants = self._generate_hook_variants(story, angle_data["key"])
         hook = self._rank_hooks(hook_variants, story)
-        format_data = self._decide_format(story, angle_data["key"], variation)
+        format_data = self._decide_format(story, angle_data["key"], variation, strategy)
         fmt = format_data["format"]
         scene_plan = self._director_bridge(format_data, angle_data["key"], variation)
 
@@ -248,7 +251,7 @@ class EditorialBrain:
             days = 3
         return max(0.0, min(1.0, (7 - days) / 7))
 
-    def _pick_angle(self, story: NewsItem, history: list[str]) -> dict[str, str]:
+    def _pick_angle(self, story: NewsItem, history: list[str], strategy: dict[str, Any] | None = None) -> dict[str, str]:
         scored = []
         for candidate in ANGLE_CANDIDATES:
             score = self._angle_score(story, candidate["key"])
@@ -258,6 +261,16 @@ class EditorialBrain:
             if perf and perf.get("avg_hook_score", 0) > 0.7:
                 score *= 1.2  # Boost high-performing angles
                 logger.debug(f"Boosting {candidate['key']} based on past performance: {perf['avg_hook_score']}")
+            
+            # Apply decision engine strategy weights
+            if strategy and "angle_weights" in strategy:
+                angle_weights = strategy["angle_weights"]
+                # Map angle keys to weights (simplified mapping)
+                weight_key = candidate["key"]
+                if weight_key in angle_weights:
+                    weight = angle_weights[weight_key]
+                    score *= (0.8 + weight * 0.4)  # Weight between 0.8-1.2
+                    logger.debug(f"Strategy weight for {weight_key}: {weight} (adjusted score: {score:.2f})")
             
             scored.append((score, candidate))
         
@@ -397,7 +410,7 @@ class EditorialBrain:
     def _hook_surprise(self, hook: str) -> float:
         return min(1.0, len(re.findall(r"\b(never|nobody|no one|surprising|unexpected|hidden|secret|quietly)\b", hook.lower())) * 0.3 + 0.1)
 
-    def _decide_format(self, story: NewsItem, angle: str, variation: str) -> dict[str, Any]:
+    def _decide_format(self, story: NewsItem, angle: str, variation: str, strategy: dict[str, Any] | None = None) -> dict[str, Any]:
         if self._is_breaking(story):
             return {"format": "quick_hit", "scenes": 5, "pacing": "fast"}
         complexity = self._complexity_score(story)
@@ -418,6 +431,31 @@ class EditorialBrain:
         fmt_perf = self.feedback_analyzer.get_format_performance(base_format)
         if fmt_perf and fmt_perf.get("avg_hook_score", 0) > 0.7:
             logger.debug(f"Format {base_format} performing well (score: {fmt_perf['avg_hook_score']})")
+        
+        # Apply decision engine strategy
+        if strategy and "format_weights" in strategy:
+            format_weights = strategy["format_weights"]
+            mode = strategy.get("mode", "balanced")
+            
+            # Consider mode-specific adjustments
+            candidates = []
+            if base_format in format_weights:
+                candidates.append((format_weights[base_format], base_format))
+            
+            # Add alternative formats based on mode
+            if mode == "growth":
+                # In growth mode, consider riskier formats
+                if "hot_take" in format_weights:
+                    candidates.append((format_weights["hot_take"] * 1.1, "hot_take"))
+            elif mode == "safe":
+                # In safe mode, strongly favor proven formats
+                if base_format in format_weights and format_weights[base_format] > 0.7:
+                    candidates.append((format_weights[base_format] * 1.2, base_format))
+            
+            if candidates:
+                best_format = max(candidates, key=lambda x: x[0])[1]
+                logger.debug(f"Strategy selected format: {best_format} (mode: {mode})")
+                base_format = best_format
         
         if base_format == "deep_dive":
             return {"format": base_format, "scenes": 10, "pacing": "slow"}
