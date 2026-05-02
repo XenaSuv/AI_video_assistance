@@ -43,6 +43,7 @@ _CAPTION_TRACK_NAMES: dict[str, str] = {
 def _get_creds(
     client_secrets: Path | None = None,
     token_file: Path | None = None,
+    force_browser: bool = False,
 ):
     client_secrets = client_secrets or settings.youtube_client_secrets
     token_file     = token_file     or settings.youtube_token_file
@@ -55,6 +56,17 @@ def _get_creds(
         try:
             creds.refresh(Request())
         except RefreshError as exc:
+            headless = (
+                os.getenv("CI", "").lower() in ("1", "true")
+                or os.getenv("GITHUB_ACTIONS", "").lower() == "true"
+                or not os.getenv("DISPLAY")
+            ) and not force_browser
+            if headless:
+                raise RuntimeError(
+                    f"YouTube refresh token expired and cannot re-authorize in headless CI environment. "
+                    f"Please update the token manually by running 'python src/youtube_uploader.py --auth --force' locally, "
+                    f"then commit the updated config/token.pickle to the repository."
+                ) from exc
             logger.warning(
                 "Existing YouTube token refresh failed: {}. "
                 "Removing stale token and re-running OAuth flow.",
@@ -76,7 +88,7 @@ def _get_creds(
             os.getenv("CI", "").lower() in ("1", "true")
             or os.getenv("GITHUB_ACTIONS", "").lower() == "true"
             or not os.getenv("DISPLAY")
-        )
+        ) and not force_browser
         if headless:
             logger.info("Headless environment detected; using OAuth local server without opening a browser.")
             creds = flow.run_local_server(port=0, open_browser=False)
@@ -315,16 +327,17 @@ def publish_episode(
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--auth",    action="store_true", help="Run OAuth flow only")
+    parser.add_argument("--force",   action="store_true", help="Force browser-based OAuth even in headless environment")
     parser.add_argument("--profile", default="default",   choices=["default", "ru"],
                         help="Which channel credentials to use")
     args = parser.parse_args()
 
     if args.auth:
         if args.profile == "ru":
-            _get_creds(settings.ru_youtube_client_secrets, settings.ru_youtube_token_file)
+            _get_creds(settings.ru_youtube_client_secrets, settings.ru_youtube_token_file, force_browser=args.force)
             logger.info(f"RU OAuth token saved to {settings.ru_youtube_token_file}")
         else:
-            _get_creds()
+            _get_creds(force_browser=args.force)
             logger.info(f"OAuth token saved to {settings.youtube_token_file}")
 
 
