@@ -89,7 +89,8 @@ class Settings:
 
     # Pipeline
     script_target_words: int = int(_env("SCRIPT_TARGET_WORDS", "2200"))
-    daily_run_hour_utc: int = int(_env("DAILY_RUN_HOUR_UTC", "8"))
+    daily_run_hour_utc: int  = int(_env("DAILY_RUN_HOUR_UTC", "8"))
+    topic_run_hour_utc: int  = int(_env("TOPIC_RUN_HOUR_UTC", "10"))  # Tue & Thu upload time
     output_dir: Path = ROOT / _env("OUTPUT_DIR", "output")
     log_dir: Path = ROOT / _env("LOG_DIR", "logs")
     data_dir: Path = ROOT / _env("DATA_DIR", "data")
