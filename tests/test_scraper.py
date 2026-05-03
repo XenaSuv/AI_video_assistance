@@ -9,6 +9,7 @@ import pytest
 
 from src.scraper import (
     NewsItem,
+    ScraperCache,
     _deep_collect,
     _from_html_links,
     _from_nextjs,
@@ -442,7 +443,7 @@ class TestScrapeAll:
              patch("src.scraper.scrape_huggingface", return_value=[items[1]]), \
              patch("src.scraper.scrape_arxiv", return_value=[]), \
              patch("src.scraper.scrape_hackernews", return_value=[]):
-            result = scrape_all(top_n=10)
+            result = scrape_all(top_n=10, cache_dir=False)
         titles = [r.title for r in result]
         assert len(titles) == len(set(t.lower()[:60] for t in titles))
 
@@ -455,7 +456,7 @@ class TestScrapeAll:
              patch("src.scraper.scrape_huggingface", return_value=community), \
              patch("src.scraper.scrape_arxiv", return_value=[]), \
              patch("src.scraper.scrape_hackernews", return_value=[]):
-            result = scrape_all(top_n=10)
+            result = scrape_all(top_n=10, cache_dir=False)
         scores = [r.score for r in result]
         # At least one official item should appear
         assert any(s >= 4.0 for s in scores)
@@ -469,7 +470,7 @@ class TestScrapeAll:
              patch("src.scraper.scrape_huggingface", return_value=community), \
              patch("src.scraper.scrape_arxiv", return_value=[]), \
              patch("src.scraper.scrape_hackernews", return_value=[]):
-            result = scrape_all(top_n=10)
+            result = scrape_all(top_n=10, cache_dir=False)
         community_count = sum(1 for r in result if r.score < 4.0)
         assert community_count >= 3
 
@@ -480,7 +481,7 @@ class TestScrapeAll:
              patch("src.scraper.scrape_huggingface", return_value=[]), \
              patch("src.scraper.scrape_arxiv", return_value=[]), \
              patch("src.scraper.scrape_hackernews", return_value=[]):
-            result = scrape_all(top_n=7)
+            result = scrape_all(top_n=7, cache_dir=False)
         assert len(result) <= 7
 
     def test_returns_list_when_all_sources_empty(self):
@@ -488,8 +489,110 @@ class TestScrapeAll:
              patch("src.scraper.scrape_huggingface", return_value=[]), \
              patch("src.scraper.scrape_arxiv", return_value=[]), \
              patch("src.scraper.scrape_hackernews", return_value=[]):
-            result = scrape_all()
+            result = scrape_all(cache_dir=False)
         assert result == []
+
+
+# ── ScraperCache ─────────────────────────────────────────────────────────────
+
+class TestScraperCache:
+    def _item(self, title: str = "Test paper about AI") -> NewsItem:
+        return NewsItem(source="HuggingFace", title=title,
+                        url="https://example.com/paper",
+                        summary="A summary.", authors=["Author"],
+                        published=dt.date.today().isoformat(), score=1.0)
+
+    def test_miss_on_empty_dir(self, tmp_path):
+        cache = ScraperCache(tmp_path / "cache")
+        assert cache.get("huggingface") is None
+
+    def test_set_and_get_returns_same_items(self, tmp_path):
+        cache = ScraperCache(tmp_path)
+        items = [self._item("Paper one"), self._item("Paper two")]
+        cache.set("huggingface", items)
+        result = cache.get("huggingface")
+        assert result is not None
+        assert len(result) == 2
+        assert result[0].title == "Paper one"
+
+    def test_roundtrip_preserves_all_fields(self, tmp_path):
+        cache = ScraperCache(tmp_path)
+        original = self._item("Detailed paper title here")
+        cache.set("arxiv", [original])
+        loaded = cache.get("arxiv")[0]
+        assert loaded.source    == original.source
+        assert loaded.title     == original.title
+        assert loaded.url       == original.url
+        assert loaded.score     == original.score
+        assert loaded.authors   == original.authors
+        assert loaded.published == original.published
+
+    def test_stale_cache_returns_none(self, tmp_path):
+        cache = ScraperCache(tmp_path)
+        # Write a cache file with yesterday's date
+        yesterday = (dt.date.today() - dt.timedelta(days=1)).isoformat()
+        path = tmp_path / "huggingface.json"
+        path.write_text(json.dumps({"date": yesterday, "items": []}))
+        assert cache.get("huggingface") is None
+
+    def test_today_cache_is_fresh(self, tmp_path):
+        cache = ScraperCache(tmp_path)
+        items = [self._item()]
+        cache.set("hackernews", items)
+        result = cache.get("hackernews")
+        assert result is not None and len(result) == 1
+
+    def test_cache_file_is_valid_json(self, tmp_path):
+        cache = ScraperCache(tmp_path)
+        cache.set("arxiv", [self._item()])
+        data = json.loads((tmp_path / "arxiv.json").read_text())
+        assert "date" in data
+        assert "items" in data
+        assert data["date"] == dt.date.today().isoformat()
+
+    def test_creates_cache_dir_if_missing(self, tmp_path):
+        nested = tmp_path / "a" / "b" / "cache"
+        cache = ScraperCache(nested)
+        cache.set("test", [self._item()])
+        assert (nested / "test.json").exists()
+
+    def test_scrape_all_uses_cache(self, tmp_path):
+        """Second call should not invoke scrape functions again."""
+        items = [self._item(f"Story number {i} about AI news") for i in range(3)]
+        cache = ScraperCache(tmp_path)
+        for key in ("official_sources", "huggingface", "arxiv", "hackernews"):
+            cache.set(key, items if key == "official_sources" else [])
+
+        with patch("src.scraper.scrape_official_sources") as mock_official, \
+             patch("src.scraper.scrape_huggingface") as mock_hf, \
+             patch("src.scraper.scrape_arxiv") as mock_ax, \
+             patch("src.scraper.scrape_hackernews") as mock_hn:
+            result = scrape_all(top_n=10, cache_dir=tmp_path)
+
+        mock_official.assert_not_called()
+        mock_hf.assert_not_called()
+        mock_ax.assert_not_called()
+        mock_hn.assert_not_called()
+        assert len(result) == len(items)
+
+    def test_scrape_all_populates_cache(self, tmp_path):
+        """First call with empty cache should write results to disk."""
+        items = [self._item(f"Official AI news story {i}") for i in range(3)]
+        with patch("src.scraper.scrape_official_sources", return_value=items), \
+             patch("src.scraper.scrape_huggingface", return_value=[]), \
+             patch("src.scraper.scrape_arxiv", return_value=[]), \
+             patch("src.scraper.scrape_hackernews", return_value=[]):
+            scrape_all(top_n=10, cache_dir=tmp_path)
+
+        assert (tmp_path / "official_sources.json").exists()
+        cached = ScraperCache(tmp_path).get("official_sources")
+        assert cached is not None and len(cached) == 3
+
+    def test_corrupted_cache_file_returns_none(self, tmp_path):
+        path = tmp_path / "huggingface.json"
+        path.write_text("{corrupted json[[[")
+        cache = ScraperCache(tmp_path)
+        assert cache.get("huggingface") is None
 
 
 # ── NewsItem ──────────────────────────────────────────────────────────────────
