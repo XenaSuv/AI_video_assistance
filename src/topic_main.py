@@ -55,6 +55,9 @@ from src.topic_segment_generator import (
     pick_next_topic,
     _load_ideas,
 )
+from src.open_loop_agent import apply_open_loops
+from src.comment_magnet_agent import apply_comment_magnet
+from src.pacing_auditor import audit_pacing
 
 
 def run_topic_pipeline(
@@ -90,6 +93,54 @@ def run_topic_pipeline(
         script = _load_cached_script(script_cache)
         if script is None:
             script = generate_topic_script(idea)
+
+            # 2a. Open-loop pass — rewrites intro + adds payoff closings
+            ol_result = apply_open_loops(script)
+            script = ol_result.script
+            if ol_result.modified:
+                loops_info = [
+                    {"teaser": l.teaser, "closing": l.closing, "target_scene": l.target_scene_idx}
+                    for l in ol_result.loops
+                ]
+                (run_dir / "open_loops.json").write_text(
+                    json.dumps(loops_info, indent=2)
+                )
+
+            # 2b. Comment-magnet pass — adds one polarizing question before sign-off
+            cm_result = apply_comment_magnet(
+                script, subject=idea.subject, format_name=idea.format
+            )
+            script = cm_result.script
+            if cm_result.modified:
+                (run_dir / "comment_magnet.json").write_text(
+                    json.dumps({
+                        "question": cm_result.question,
+                        "inserted_at_scene": cm_result.inserted_at_scene,
+                    }, indent=2)
+                )
+
+            # 2c. Pacing audit — detect flat zones and inject pattern interrupts
+            pa_result = audit_pacing(script, subject=idea.subject)
+            script = pa_result.script
+            if pa_result.modified:
+                audit_info = {
+                    "flat_zones": [
+                        {
+                            "scenes": z.scene_indices,
+                            "interrupt_at": z.interrupt_at,
+                            "interrupt": z.interrupt_text,
+                        }
+                        for z in pa_result.flat_zones
+                    ],
+                    "scores": [
+                        {"scene": s.idx, "score": s.score, "signals": s.signals}
+                        for s in pa_result.scores
+                    ],
+                }
+                (run_dir / "pacing_audit.json").write_text(
+                    json.dumps(audit_info, indent=2)
+                )
+
             script.save(script_cache)
             logger.info(f"Script saved → {script_cache}")
         else:
