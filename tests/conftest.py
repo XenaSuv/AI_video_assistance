@@ -11,8 +11,9 @@ from unittest.mock import MagicMock
 os.environ.setdefault("OPENAI_API_KEY", "test-key-openai")
 os.environ.setdefault("ELEVENLABS_API_KEY", "test-key-elevenlabs")
 
-# Stub google / googleapiclient so tests run without the full Google SDK
+# Stub heavy C-extension / optional deps so tests run without full installs
 for _mod in (
+    # Google SDK
     "googleapiclient",
     "googleapiclient.discovery",
     "googleapiclient.errors",
@@ -23,6 +24,8 @@ for _mod in (
     "google.auth.transport.requests",
     "google_auth_oauthlib",
     "google_auth_oauthlib.flow",
+    # numpy / ffmpeg_utils (pulled in by quality_gate and video modules)
+    "numpy",
 ):
     sys.modules.setdefault(_mod, MagicMock())
 

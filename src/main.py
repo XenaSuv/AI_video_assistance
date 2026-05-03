@@ -46,6 +46,7 @@ from src.voice_generator import synthesize_script
 from src.youtube_uploader import publish_episode
 from src.slack_notifier import notify_success, notify_failure
 from src.checkpoint import PipelineCheckpoint
+from src.quality_gate import run_gate, QualityGateError
 
 
 def _setup_logging(run_dir: Path) -> None:
@@ -332,15 +333,13 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
             return summary
 
         # 2. Script
+        # Load feedback history once — reused by DecisionEngine and quality gate.
+        feedback_analyzer = FeedbackAnalyzer()
+        feedback_analyzer.collect_deferred_feedback(min_age_hours=24.0)
+        feedback_history = feedback_analyzer.load_feedback_history()
+
         script_cache = run_dir / "script.json"
         if not cp.is_done("script"):
-            feedback_analyzer = FeedbackAnalyzer()
-            # Collect deferred metrics from prior runs (YouTube Analytics
-            # data is only reliable after ~24 h, so we analyze yesterday's
-            # video at the start of today's run).
-            feedback_analyzer.collect_deferred_feedback(min_age_hours=24.0)
-            feedback_history = feedback_analyzer.load_feedback_history()
-
             decision_engine = DecisionEngine()
             strategy = decision_engine.decide(feedback_history)
 
@@ -524,6 +523,12 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
 
         summary["thumbnail_style"] = thumbnail.stem.removeprefix("thumbnail_")
 
+        # 6b. Quality gate — blocks publish if hard checks fail
+        quality_report = run_gate(script, audio_dir, feedback_history)
+        summary["quality_score"] = quality_report.score
+        if quality_report.warnings:
+            summary["quality_warnings"] = quality_report.warnings
+
         # 7. Upload (English)
         if not cp.is_done("upload_en"):
             if skip_upload:
@@ -584,6 +589,13 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
 
         notify_success(summary, "daily")
         logger.info(f"=== DONE ===  {json.dumps(summary, indent=2)}")
+
+    except QualityGateError as e:
+        logger.error(f"Quality gate blocked publish: {e}")
+        summary["status"] = "quality_gate_failed"
+        summary["error"]  = str(e)
+        notify_failure(e, "daily", summary, str(e))
+        raise
 
     except Exception as e:
         logger.error(f"Pipeline failed: {e}")
