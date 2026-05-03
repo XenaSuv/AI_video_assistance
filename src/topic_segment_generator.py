@@ -115,6 +115,28 @@ _SHARED_RULES = """
 - Fill "infographic_data" when a scene has concrete numbers to compare (bar_chart,
   stat_card, comparison, timeline — same JSON schema as the daily news script)
 
+=== REALISTIC SCREENSHOTS ===
+For scenes that demo a specific AI tool UI, set "screenshot_url" to the tool's
+real public page so a live browser screenshot replaces the DALL-E illustration.
+
+Rules for screenshot_url:
+- Only use real, publicly accessible URLs that require NO login (marketing pages,
+  docs pages, pricing pages, landing pages)
+- Prefer the most visually rich page for the scene (e.g. feature page > homepage)
+- Set null for any scene that is abstract, opinionated, or doesn't show a UI
+- Maximum 3 screenshot_url scenes per script — the rest use DALL-E / stock video
+- Leave visual_prompt filled even when screenshot_url is set (used as fallback)
+
+Good screenshot_url examples:
+  "https://www.perplexity.ai"
+  "https://www.runway.ml"
+  "https://elevenlabs.io"
+  "https://www.midjourney.com"
+  "https://gamma.app"
+  "https://www.notion.so/product/ai"
+  "https://cursor.sh"
+  "https://www.heygen.com"
+
 === OUTPUT FORMAT ===
 Return a single valid JSON object, no markdown fences:
 {
@@ -126,7 +148,8 @@ Return a single valid JSON object, no markdown fences:
     {
       "heading": "max 8 words",
       "narration": "spoken text",
-      "visual_prompt": "DALL-E 3 photorealistic description",
+      "visual_prompt": "DALL-E 3 photorealistic description — always required as fallback",
+      "screenshot_url": null,
       "video_query": null,
       "infographic_data": null,
       "short_narration": null,
@@ -310,6 +333,8 @@ def generate_topic_script(
         infographic = s.get("infographic_data") or None
         if infographic and not isinstance(infographic, dict):
             infographic = None
+        raw_url = (s.get("screenshot_url") or "").strip()
+        screenshot_url = raw_url if raw_url.startswith("http") else None
         scenes.append(Scene(
             idx=i,
             heading=s.get("heading", f"Scene {i+1}"),
@@ -317,6 +342,7 @@ def generate_topic_script(
             visual_prompt=s.get("visual_prompt", ""),
             infographic_data=infographic,
             video_query=(s.get("video_query") or "").strip() or None,
+            screenshot_url=screenshot_url,
             short_narration=(s.get("short_narration") or "").strip() or None,
             source_quote=(s.get("source_quote") or "").strip() or None,
             quote_attribution=(s.get("quote_attribution") or "").strip() or None,
@@ -327,9 +353,10 @@ def generate_topic_script(
 
     word_count = sum(len(sc.narration.split()) for sc in scenes)
     shorts_count = sum(1 for sc in scenes if sc.short_narration)
+    screenshot_count = sum(1 for sc in scenes if sc.screenshot_url)
     logger.info(
         f"Topic script ready: {word_count} words, {len(scenes)} scenes, "
-        f"{shorts_count} shorts narrations"
+        f"{shorts_count} shorts, {screenshot_count} live screenshots"
     )
 
     return VideoScript(
