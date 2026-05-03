@@ -13,7 +13,7 @@ from pathlib import Path as _Path
 import sys
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 from config import settings
-from src.types import ContentStrategy
+from src.shared_types import ContentStrategy
 
 
 class DecisionEngine:

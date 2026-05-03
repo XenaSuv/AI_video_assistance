@@ -17,7 +17,7 @@ import sys
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 from config import settings
 from src.hook_optimizer import HookOptimizer
-from src.types import InsertedHook, MicroHookResult
+from src.shared_types import InsertedHook, MicroHookResult
 
 
 class MicroHookAgent:

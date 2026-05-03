@@ -20,7 +20,7 @@ from config import settings
 from src.scraper import NewsItem
 from src.feedback_analyzer import FeedbackAnalyzer
 from src.decision_engine import DecisionEngine
-from src.types import ContentStrategy
+from src.shared_types import ContentStrategy
 
 ANGLE_CANDIDATES = [
     {

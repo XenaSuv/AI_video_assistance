@@ -19,7 +19,7 @@ sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 from config import settings
 from src.youtube_analytics import get_video_metrics, get_retention_curve
 from src.tiktok_analytics import get_video_metrics as get_tiktok_video_metrics
-from src.types import PerformanceStats
+from src.shared_types import PerformanceStats
 from src.performance_tracker import get_unanalyzed, mark_analyzed
 
 

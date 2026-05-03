@@ -1,7 +1,7 @@
 """Tests for DecisionEngine — pure logic, no external dependencies."""
 import pytest
 from src.decision_engine import DecisionEngine
-from src.types import ContentStrategy
+from src.shared_types import ContentStrategy
 
 
 @pytest.fixture
