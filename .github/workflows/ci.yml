@@ -1,0 +1,36 @@
+name: Tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # feedparser must be installed via apt: the pip package (feedparser)
+      # pulls in sgmllib3k which fails to build on Python 3.12.
+      - name: Install system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq python3-feedparser
+
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        env:
+          # Dummy values — conftest.py also sets these, but explicit is safer
+          OPENAI_API_KEY: test-key-openai
+          ELEVENLABS_API_KEY: test-key-elevenlabs
+        run: python -m pytest tests/ -v --tb=short

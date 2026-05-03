@@ -335,6 +335,10 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         script_cache = run_dir / "script.json"
         if not cp.is_done("script"):
             feedback_analyzer = FeedbackAnalyzer()
+            # Collect deferred metrics from prior runs (YouTube Analytics
+            # data is only reliable after ~24 h, so we analyze yesterday's
+            # video at the start of today's run).
+            feedback_analyzer.collect_deferred_feedback(min_age_hours=24.0)
             feedback_history = feedback_analyzer.load_feedback_history()
 
             decision_engine = DecisionEngine()
@@ -538,7 +542,13 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
                 if video_id := ids.get("video_id"):
                     record_usage(script.hook, video_id, settings.data_dir, "daily")
                     record_thumbnail_usage(thumbnail, video_id, settings.data_dir, "daily")
-                    save_result(video_id, script.hook, script.title, script.description)
+                    _ep = summary.get("editorial_plan", {}).get("editorial_plan") or [{}]
+                    save_result(
+                        video_id, script.hook, script.title, script.description,
+                        angle=_ep[0].get("angle", ""),
+                        format=_ep[0].get("format", ""),
+                        platform="youtube",
+                    )
                 cp.mark_done("upload_en", {k: v for k, v in ids.items()})
         else:
             logger.info("Step 7 (upload_en) already done")
