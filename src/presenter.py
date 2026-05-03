@@ -17,14 +17,12 @@ Settings required:
 from __future__ import annotations
 
 import base64
+import sys
 import time
 from pathlib import Path
 
-import requests
 from loguru import logger
 
-import sys
-from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.retry_utils import http_get, http_post
 

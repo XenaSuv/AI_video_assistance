@@ -517,10 +517,12 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         if not cp.is_done("video") or _needs_video_rebuild(long_video):
             build_video(script, run_dir,
                         intro_path=_en_intro if _en_intro.exists() else None,
-                        outro_path=_en_outro)
+                        outro_path=_en_outro,
+                        use_presenter=settings.presenter_enabled)
             seen.mark_featured(news)
-            cp.mark_done("video")
-            observer.step_done("video", file=long_video.name)
+            cp.mark_done("video", {"presenter": settings.presenter_enabled})
+            observer.step_done("video", file=long_video.name,
+                               presenter=settings.presenter_enabled)
         else:
             logger.info(f"Step 5 (video) already done — reusing {long_video.name}")
             observer.step_skip("video")
