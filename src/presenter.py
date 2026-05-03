@@ -23,6 +23,11 @@ from pathlib import Path
 import requests
 from loguru import logger
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from src.retry_utils import http_get, http_post
+
 _DID_API       = "https://api.d-id.com"
 _POLL_INTERVAL = 3    # seconds between status polls
 _POLL_TIMEOUT  = 180  # give up after 3 minutes
@@ -86,13 +91,12 @@ def generate_presenter_clip(
         }
 
         # ── Create talk ────────────────────────────────────────────────────────
-        resp = requests.post(
+        resp = http_post(
             f"{_DID_API}/talks",
             json=payload,
             headers=headers,
             timeout=60,
         )
-        resp.raise_for_status()
         talk_id = resp.json()["id"]
         logger.info(f"Presenter: D-ID talk created — id={talk_id}")
 
@@ -101,12 +105,11 @@ def generate_presenter_clip(
         result_url: str | None = None
         while time.monotonic() < deadline:
             time.sleep(_POLL_INTERVAL)
-            poll = requests.get(
+            poll = http_get(
                 f"{_DID_API}/talks/{talk_id}",
                 headers=headers,
                 timeout=15,
             )
-            poll.raise_for_status()
             data   = poll.json()
             status = data.get("status")
             if status == "done":
@@ -120,8 +123,7 @@ def generate_presenter_clip(
             raise TimeoutError(f"D-ID talk {talk_id} timed out after {_POLL_TIMEOUT}s")
 
         # ── Download result ────────────────────────────────────────────────────
-        dl = requests.get(result_url, timeout=120, stream=True)
-        dl.raise_for_status()
+        dl = http_get(result_url, timeout=120, stream=True)
         with open(out_path, "wb") as f:
             for chunk in dl.iter_content(chunk_size=65_536):
                 if chunk:

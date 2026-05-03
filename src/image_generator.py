@@ -26,6 +26,7 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.cost_tracker import get_ledger
+from src.retry_utils import http_get, http_post
 from src.script_generator import Scene
 import src.ffmpeg_utils as ffmpeg_utils
 import src.image_cache as image_cache
@@ -65,8 +66,7 @@ def _call_dalle(client: OpenAI, prompt: str) -> bytes:
         n=1,
     )
     url = response.data[0].url
-    dl  = requests.get(url, timeout=60)
-    dl.raise_for_status()
+    dl  = http_get(url, timeout=60)
     return dl.content
 
 
@@ -131,7 +131,7 @@ def generate_sd_image(prompt: str, out_path: Path) -> Path:
         raise RuntimeError("STABILITY_API_KEY not configured")
 
     logger.info(f"Stable Diffusion (breaking): {prompt[:80]}…")
-    resp = requests.post(
+    resp = http_post(
         "https://api.stability.ai/v2beta/stable-image/generate/core",
         headers={"authorization": f"Bearer {key}", "accept": "image/*"},
         files={
@@ -142,8 +142,6 @@ def generate_sd_image(prompt: str, out_path: Path) -> Path:
         },
         timeout=90,
     )
-    if resp.status_code != 200:
-        raise RuntimeError(f"Stability AI {resp.status_code}: {resp.text[:200]}")
 
     out_path.write_bytes(resp.content)
     logger.info(f"  → {out_path.name} (SD, {len(resp.content)//1024} KB)")
@@ -204,20 +202,18 @@ def _unsplash_photo(query: str, out_path: Path) -> Path | None:
     if not key:
         return None
     try:
-        r = requests.get(
+        r = http_get(
             _UNSPLASH_PHOTO_URL,
             headers={"Authorization": f"Client-ID {key}"},
             params={"query": query, "orientation": "landscape", "per_page": 5},
             timeout=15,
         )
-        r.raise_for_status()
         results = r.json().get("results", [])
         if not results:
             return None
         photo = results[0]
         img_url = photo["urls"].get("regular") or photo["urls"]["full"]
-        img_r = requests.get(img_url, timeout=60)
-        img_r.raise_for_status()
+        img_r = http_get(img_url, timeout=60)
         out_path.write_bytes(img_r.content)
         user = photo.get("user", {}).get("name", "Unknown")
         logger.info(f"  Stock photo (Unsplash): '{query}' by {user} → {out_path.name}")
@@ -232,13 +228,12 @@ def _pexels_photo(query: str, out_path: Path) -> Path | None:
     if not key:
         return None
     try:
-        r = requests.get(
+        r = http_get(
             _PEXELS_PHOTO_URL,
             headers={"Authorization": key},
             params={"query": query, "orientation": "landscape", "size": "medium", "per_page": 5},
             timeout=15,
         )
-        r.raise_for_status()
         photos = r.json().get("photos", [])
         if not photos:
             return None
@@ -246,8 +241,7 @@ def _pexels_photo(query: str, out_path: Path) -> Path | None:
         img_url = src.get("large2x") or src.get("large") or src.get("original")
         if not img_url:
             return None
-        img_r = requests.get(img_url, timeout=60)
-        img_r.raise_for_status()
+        img_r = http_get(img_url, timeout=60)
         out_path.write_bytes(img_r.content)
         photographer = photos[0].get("photographer", "Unknown")
         logger.info(f"  Stock photo (Pexels): '{query}' by {photographer} → {out_path.name}")
