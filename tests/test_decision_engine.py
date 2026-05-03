@@ -1,5 +1,7 @@
 """Tests for DecisionEngine — pure logic, no external dependencies."""
+import math
 import pytest
+from datetime import datetime, timedelta, timezone
 from src.decision_engine import DecisionEngine
 from src.shared_types import ContentStrategy
 
@@ -216,3 +218,117 @@ class TestAdjustForMode:
         weights = {"hot_take_format": 0.95}
         adjusted = engine._adjust_for_mode(weights, growth_boost=0.5)
         assert adjusted["hot_take_format"] <= 1.0
+
+
+# ── _decay_weight() ───────────────────────────────────────────────────────────
+
+def _ts(days_ago: float) -> str:
+    """Return an ISO timestamp N days in the past."""
+    return (datetime.now(timezone.utc) - timedelta(days=days_ago)).isoformat()
+
+
+class TestDecayWeight:
+    def test_fresh_item_weight_near_one(self, engine):
+        now = datetime.now(timezone.utc)
+        w = engine._decay_weight({"timestamp": _ts(0)}, now)
+        assert abs(w - 1.0) < 0.01
+
+    def test_half_life_item_weight_near_half(self, engine):
+        now = datetime.now(timezone.utc)
+        w = engine._decay_weight({"timestamp": _ts(engine.decay_half_life_days)}, now)
+        assert abs(w - 0.5) < 0.02
+
+    def test_double_half_life_item_weight_near_quarter(self, engine):
+        now = datetime.now(timezone.utc)
+        w = engine._decay_weight({"timestamp": _ts(engine.decay_half_life_days * 2)}, now)
+        assert abs(w - 0.25) < 0.02
+
+    def test_no_timestamp_returns_one(self, engine):
+        assert engine._decay_weight({}, datetime.now(timezone.utc)) == 1.0
+
+    def test_invalid_timestamp_returns_one(self, engine):
+        assert engine._decay_weight({"timestamp": "not-a-date"}, datetime.now(timezone.utc)) == 1.0
+
+    def test_older_item_has_lower_weight_than_newer(self, engine):
+        now = datetime.now(timezone.utc)
+        w_new = engine._decay_weight({"timestamp": _ts(1)}, now)
+        w_old = engine._decay_weight({"timestamp": _ts(30)}, now)
+        assert w_new > w_old
+
+
+# ── decay integration: weights favour recent data ─────────────────────────────
+
+class TestDecayIntegration:
+    def test_recent_good_data_outweighs_old_bad_data(self):
+        """With short half-life, recent high scores dominate old low scores."""
+        engine = DecisionEngine(config={"min_samples": 2, "decay_half_life_days": 7})
+
+        old_bad = [
+            {"angle": "x", "hook_score": 0.2, "timestamp": _ts(60)},
+            {"angle": "x", "hook_score": 0.2, "timestamp": _ts(60)},
+            {"angle": "x", "hook_score": 0.2, "timestamp": _ts(60)},
+            {"angle": "x", "hook_score": 0.2, "timestamp": _ts(60)},
+            {"angle": "x", "hook_score": 0.2, "timestamp": _ts(60)},
+        ]
+        recent_good = [
+            {"angle": "x", "hook_score": 0.9, "timestamp": _ts(1)},
+            {"angle": "x", "hook_score": 0.9, "timestamp": _ts(1)},
+            {"angle": "x", "hook_score": 0.9, "timestamp": _ts(1)},
+            {"angle": "x", "hook_score": 0.9, "timestamp": _ts(1)},
+            {"angle": "x", "hook_score": 0.9, "timestamp": _ts(1)},
+        ]
+        # Simple average of all would be ~0.55; decay should push it toward 0.9
+        weights_with_decay = engine._compute_weights(old_bad + recent_good, "angle")
+        plain_avg = 0.55  # naive equal-weight average
+        assert weights_with_decay["x"] > plain_avg
+
+    def test_old_good_data_outweighed_by_recent_bad(self):
+        """Decay makes recent bad data dominate old good data."""
+        engine = DecisionEngine(config={"min_samples": 2, "decay_half_life_days": 7})
+
+        old_good = [
+            {"angle": "y", "hook_score": 0.9, "timestamp": _ts(60)},
+            {"angle": "y", "hook_score": 0.9, "timestamp": _ts(60)},
+            {"angle": "y", "hook_score": 0.9, "timestamp": _ts(60)},
+            {"angle": "y", "hook_score": 0.9, "timestamp": _ts(60)},
+            {"angle": "y", "hook_score": 0.9, "timestamp": _ts(60)},
+        ]
+        recent_bad = [
+            {"angle": "y", "hook_score": 0.2, "timestamp": _ts(1)},
+            {"angle": "y", "hook_score": 0.2, "timestamp": _ts(1)},
+            {"angle": "y", "hook_score": 0.2, "timestamp": _ts(1)},
+            {"angle": "y", "hook_score": 0.2, "timestamp": _ts(1)},
+            {"angle": "y", "hook_score": 0.2, "timestamp": _ts(1)},
+        ]
+        plain_avg = 0.55
+        weights_with_decay = engine._compute_weights(old_good + recent_bad, "angle")
+        assert weights_with_decay["y"] < plain_avg
+
+    def test_no_timestamps_behaves_like_plain_average(self):
+        """Items without timestamps get weight=1.0 → identical to original behaviour."""
+        engine = DecisionEngine(config={"min_samples": 2})
+        feedback = [
+            {"angle": "z", "hook_score": 0.6},
+            {"angle": "z", "hook_score": 0.8},
+            {"angle": "z", "hook_score": 0.6},
+            {"angle": "z", "hook_score": 0.8},
+            {"angle": "z", "hook_score": 0.7},
+        ]
+        weights = engine._compute_weights(feedback, "angle")
+        assert abs(weights["z"] - 0.7) < 0.01
+
+    def test_mode_reflects_recent_retention_not_old(self):
+        """Mode selection uses decay — recent low retention wins over old high."""
+        engine = DecisionEngine(config={"decay_half_life_days": 7})
+        old_high = [{"avg_view_percentage": 0.9, "timestamp": _ts(60)}] * 5
+        recent_low = [{"avg_view_percentage": 0.3, "timestamp": _ts(1)}] * 5
+        mode = engine._select_mode(old_high + recent_low)
+        assert mode == "growth"
+
+    def test_exploration_reflects_recent_hooks_not_old(self):
+        """Exploration rate uses decay — recent low hooks win over old high."""
+        engine = DecisionEngine(config={"decay_half_life_days": 7})
+        old_great = [{"hook_score": 0.95, "timestamp": _ts(60)}] * 5
+        recent_poor = [{"hook_score": 0.3, "timestamp": _ts(1)}] * 5
+        rate = engine._compute_exploration(old_great + recent_poor)
+        assert rate > engine.base_exploration
