@@ -125,21 +125,49 @@ class SceneStrategyEngine:
     def __init__(self, data_dir: Path | None = None) -> None:
         self._data_dir = data_dir or settings.data_dir
         self._scores: dict[str, float] = self._load_scores()
+        self._session_boosts: dict[str, float] = {}   # set by apply_strategy()
 
     # ── Public API ─────────────────────────────────────────────────────────────
+
+    def apply_strategy(self, strategy_config: Any) -> None:
+        """Translate a StrategyConfig.scene_mix into session-level score boosts.
+
+        Higher desired frequency relative to equal-share baseline → positive boost
+        (engine favours that type).  Lower → negative boost.  Called once per run
+        before build_strategy().
+
+        Example: scene_mix={"text_overlay": 0.25, "image": 0.20, ...}  with 5 types,
+        baseline = 0.20.  text_overlay gets +0.025, image gets 0.0 (at baseline).
+        """
+        scene_mix: dict[str, float] = getattr(strategy_config, "scene_mix", {})
+        if not scene_mix:
+            self._session_boosts = {}
+            return
+        baseline = 1.0 / max(len(scene_mix), 1)
+        self._session_boosts = {
+            t: round((freq - baseline) * 0.5, 4)
+            for t, freq in scene_mix.items()
+        }
+        logger.debug(f"SceneStrategy session boosts: {self._session_boosts}")
 
     def build_strategy(
         self,
         scenes: list[Any],                      # list[Scene]
         performance_data: dict[str, Any] | None = None,
         editorial_plan: Any | None = None,
+        strategy_config: Any | None = None,
     ) -> SceneStrategy:
         """Assign an intent (and optional weight boost) to every scene.
 
         *performance_data* shapes decisions at retention drop-points and lifts
         proven scene types.  All keys are optional; omit the dict entirely for
         a content-only strategy.
+        *strategy_config* (StrategyConfig) is applied via apply_strategy() when
+        provided, so callers don't need to call it separately.
         """
+        if strategy_config is not None:
+            self.apply_strategy(strategy_config)
+
         performance_data = performance_data or {}
         plan_angle = self._extract_angle(editorial_plan)
 
@@ -157,16 +185,17 @@ class SceneStrategyEngine:
     def pick_best(self, intent: str, weight_boost: float = 0.0) -> str:
         """Return the highest-scoring scene type for *intent*.
 
-        *weight_boost* is added to every candidate **except** ``"image"`` so
-        that a positive boost nudges selection toward more dynamic types when
-        channel retention is low.  ``"image"`` is the universal safe fallback
-        and is never boosted.
+        Score = base (from scene_performance.json)
+              + session_boost (from apply_strategy scene_mix)
+              + weight_boost (from per-scene feedback, NOT applied to "image")
         """
         options = INTENT_TO_SCENE.get(intent, ["image"])
 
         def _score(t: str) -> float:
-            base = self._scores.get(t, 0.5)
-            return base + (weight_boost if t != "image" else 0.0)
+            base    = self._scores.get(t, 0.5)
+            session = self._session_boosts.get(t, 0.0)
+            item_b  = weight_boost if t != "image" else 0.0
+            return base + session + item_b
 
         return max(options, key=_score)
 

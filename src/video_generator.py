@@ -269,13 +269,16 @@ def build_video(
     is_breaking: bool = False,
     use_presenter: bool = False,
     editorial_plan: object | None = None,
+    strategy_config: object | None = None,
 ) -> Path:
     """End-to-end video creation.
 
-    *tool*          – pass claude/chatgpt/gemini for weekly tutorials (enables
-                      real-screenshot capture); None → DALL-E / B-roll / infographic.
-    *is_breaking*   – activates Stable Diffusion as the image generator.
-    *use_presenter* – generate a D-ID talking-head hook clip (weekly only).
+    *tool*            – pass claude/chatgpt/gemini for weekly tutorials.
+    *is_breaking*     – activates Stable Diffusion as the image generator.
+    *use_presenter*   – generate a D-ID talking-head hook clip (weekly only).
+    *editorial_plan*  – EditorialPlan for angle/format-aware scene type selection.
+    *strategy_config* – StrategyConfig from DecisionEngineV2.decide(); biases
+                        scene type selection via scene_mix proportions.
     *intro_path / outro_path* – prepended / appended when the file exists.
     """
     clip_dir = out_dir / "clips"
@@ -284,7 +287,9 @@ def build_video(
     # v2 pipeline: strategy (intent + feedback) → score-weighted scene_type
     _strat_engine = SceneStrategyEngine()
     _strategy = _strat_engine.build_strategy(
-        script.scenes, editorial_plan=editorial_plan
+        script.scenes,
+        editorial_plan=editorial_plan,
+        strategy_config=strategy_config,    # applies scene_mix boosts
     )
     SceneVarietyEngineV2(_strat_engine).assign(script.scenes, _strategy)
 
