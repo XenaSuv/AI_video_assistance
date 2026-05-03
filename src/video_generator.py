@@ -16,7 +16,8 @@ from src.script_generator import Scene, VideoScript
 from src.image_generator import generate_scene_clip
 from src.quote_card import render_quote_card_png
 from src.presenter import generate_presenter_clip
-from src.scene_variety_engine import SceneVarietyEngine
+from src.scene_strategy_engine import SceneStrategyEngine
+from src.scene_variety_engine import SceneVarietyEngineV2
 from src.voice_generator import synthesize_hook
 import src.ffmpeg_utils as ffmpeg_utils
 
@@ -280,8 +281,12 @@ def build_video(
     clip_dir = out_dir / "clips"
     clip_dir.mkdir(parents=True, exist_ok=True)
 
-    # Assign scene types for visual variety (mutates script.scenes in-place)
-    SceneVarietyEngine().assign_scene_types(script.scenes, editorial_plan=editorial_plan)
+    # v2 pipeline: strategy (intent + feedback) → score-weighted scene_type
+    _strat_engine = SceneStrategyEngine()
+    _strategy = _strat_engine.build_strategy(
+        script.scenes, editorial_plan=editorial_plan
+    )
+    SceneVarietyEngineV2(_strat_engine).assign(script.scenes, _strategy)
 
     clip_paths_by_scene = {
         s.idx: generate_clips_for_scene(s, clip_dir, tool=tool, run_dir=out_dir, is_breaking=is_breaking)

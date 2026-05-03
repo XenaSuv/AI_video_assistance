@@ -1,9 +1,21 @@
 """Scene Variety Engine — assigns visual type and intent to each scene.
 
-Prevents viewer fatigue caused by repetitive image+Ken-Burns loops by:
-1. Rule-based type selection (content keywords + scene position)
-2. Editorial-plan hints (format and angle → preferred types)
-3. Pattern-interrupt enforcement (no same type on consecutive scenes)
+v1 (SceneVarietyEngine)   — rule-based: text keywords + position → scene_type
+v2 (SceneVarietyEngineV2) — strategy-driven: SceneStrategy (from SceneStrategyEngine)
+                            → pick_best(intent) using historical scores → scene_type
+
+Both engines share:
+- SCENE_TYPES / SCENE_INTENTS constants
+- _enforce_variety() pattern-interrupt logic
+
+Typical v2 usage::
+
+    from src.scene_strategy_engine import SceneStrategyEngine
+    from src.scene_variety_engine  import SceneVarietyEngineV2
+
+    engine   = SceneStrategyEngine()
+    strategy = engine.build_strategy(scenes, performance_data, editorial_plan)
+    SceneVarietyEngineV2(engine).assign(scenes, strategy)
 
 Scene types:
     image        – standard DALL-E + Ken Burns (default)
@@ -12,24 +24,29 @@ Scene types:
     cutaway      – standard image with alternate Ken Burns variant (pattern break)
     diagram      – DALL-E prompted toward whiteboard/explainer style
 
-Scene intents (downstream hint for future editors/renderers):
-    explain   – educational, step-by-step
-    shock     – provocative, surprise reveal
-    data      – numeric, statistical
-    reaction  – emotional, personal takeaway
+Scene intents:
+    hook       – opening grab (scene 0)
+    explain    – educational, step-by-step
+    shock      – provocative, surprise reveal
+    data       – numeric, statistical
+    reaction   – emotional, personal takeaway
+    transition – pacing break between dense segments
 """
 from __future__ import annotations
 
 import re
 import textwrap
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from loguru import logger
 
 from src.script_generator import Scene
 
-SCENE_TYPES  = ("image", "text_overlay", "infographic", "cutaway", "diagram")
-SCENE_INTENTS = ("explain", "shock", "data", "reaction")
+if TYPE_CHECKING:
+    from src.scene_strategy_engine import SceneStrategy, SceneStrategyEngine
+
+SCENE_TYPES   = ("image", "text_overlay", "infographic", "cutaway", "diagram")
+SCENE_INTENTS = ("hook", "explain", "shock", "data", "reaction", "transition")
 
 _DATA_RE = re.compile(
     r"\b\d[\d,\.]*\s*(?:%|percent|million|billion|trillion|x faster|x more|times)"
@@ -167,3 +184,64 @@ class SceneVarietyEngine:
         except Exception:
             pass
         return ""
+
+
+# ── v2: Strategy-driven engine ─────────────────────────────────────────────────
+
+class SceneVarietyEngineV2:
+    """Assign scene_type + scene_intent using a pre-built SceneStrategy.
+
+    The strategy engine detects intent per scene (content + position + feedback).
+    This engine maps intent → scene_type via performance-weighted selection, then
+    enforces variety constraints (no same type on consecutive scenes).
+    """
+
+    def __init__(self, strategy_engine: "SceneStrategyEngine | None" = None) -> None:
+        if strategy_engine is None:
+            from src.scene_strategy_engine import SceneStrategyEngine
+            strategy_engine = SceneStrategyEngine()
+        self._engine = strategy_engine
+
+    def assign(self, scenes: list[Scene], strategy: "SceneStrategy") -> list[Scene]:
+        """Mutate ``scene.scene_type`` and ``scene.scene_intent`` from *strategy*.
+
+        Returns the same list for chaining.
+        """
+        from src.scene_strategy_engine import INTENT_TO_SCENE
+
+        for scene in scenes:
+            item = strategy.get(scene.idx)
+            if item is None:
+                scene.scene_type   = "image"
+                scene.scene_intent = "explain"
+                continue
+
+            scene.scene_intent = item.intent
+            scene.scene_type   = self._engine.pick_best(item.intent, item.weight_boost)
+
+            # Honour infographic_data regardless of strategy (already rendered)
+            if scene.infographic_data and scene.scene_type != "infographic":
+                scene.scene_type = "infographic"
+
+        self._enforce_variety(scenes)
+
+        if scenes:
+            summary = ", ".join(
+                f"[{s.idx}]{s.scene_intent}→{s.scene_type}" for s in scenes
+            )
+            logger.info(f"SceneVarietyEngineV2 assigned: {summary}")
+
+        return scenes
+
+    def _enforce_variety(self, scenes: list[Scene]) -> None:
+        """No same scene_type on consecutive scenes — break with 'cutaway'."""
+        for i in range(1, len(scenes)):
+            if (
+                scenes[i].scene_type == scenes[i - 1].scene_type
+                and scenes[i].scene_type != "cutaway"
+            ):
+                scenes[i].scene_type = "cutaway"
+                logger.debug(
+                    f"SceneVarietyEngineV2: scene {scenes[i].idx} → cutaway "
+                    f"(pattern interrupt after {scenes[i-1].scene_type})"
+                )
