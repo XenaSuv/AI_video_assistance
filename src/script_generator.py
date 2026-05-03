@@ -38,6 +38,8 @@ class Scene:
     video_query: str | None = None       # stock B-roll search term; beats DALL-E, loses to infographic
     source_quote: str | None = None      # verbatim quote (≤30 words) from a named source
     quote_attribution: str | None = None # "Name, Role · Org · domain.com"
+    scene_type: str = "image"            # assigned by SceneVarietyEngine
+    scene_intent: str = "explain"        # explain | shock | data | reaction
 
 
 @dataclass
