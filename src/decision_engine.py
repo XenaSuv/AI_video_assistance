@@ -1,8 +1,10 @@
 """Decision engine for strategic content generation based on performance feedback."""
 from __future__ import annotations
 
+import math
 import random
 from collections import defaultdict
+from datetime import datetime, timezone
 from typing import Any
 
 from loguru import logger
@@ -29,6 +31,8 @@ class DecisionEngine:
         self.safe_threshold = self.config.get("safe_threshold", 0.65)
         self.hook_success_threshold = self.config.get("hook_success_threshold", 0.6)
         self.hook_excellent_threshold = self.config.get("hook_excellent_threshold", 0.75)
+        # Exponential decay: data older than half_life_days has half the influence.
+        self.decay_half_life_days = self.config.get("decay_half_life_days", 14)
 
     def decide(self, feedback_history: list[dict[str, Any]]) -> ContentStrategy:
         """Make strategic decisions based on feedback history."""
@@ -53,71 +57,97 @@ class DecisionEngine:
         logger.info(f"Decision: mode={mode}, exploration={exploration_rate:.2f}, {len(angle_weights)} angle weights")
         return strategy
 
-    def _compute_weights(self, feedback: list[dict[str, Any]], key: str) -> dict[str, float]:
-        """Compute performance weights for angles or formats.
+    def _decay_weight(self, item: dict[str, Any], now: datetime) -> float:
+        """Return exponential decay weight for a feedback item based on its age.
 
-        Args:
-            feedback: Feedback history
-            key: Key to analyze ("angle" or "format")
-
-        Returns:
-            Dictionary mapping keys to performance weights
+        Items without a timestamp get weight 1.0 (backward compatible).
+        Half-life is controlled by self.decay_half_life_days.
         """
-        scores = defaultdict(list)
+        ts_str = item.get("timestamp") or item.get("published_at")
+        if not ts_str:
+            return 1.0
+        try:
+            ts = datetime.fromisoformat(str(ts_str).replace("Z", "+00:00"))
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            age_days = (now - ts).total_seconds() / 86400.0
+            return math.exp(-math.log(2) * age_days / self.decay_half_life_days)
+        except Exception:
+            return 1.0
 
-        # Collect scores for each category
+    def _decay_weighted_mean(
+        self,
+        feedback: list[dict[str, Any]],
+        value_key: str,
+        now: datetime,
+    ) -> float | None:
+        """Return the decay-weighted mean of value_key across feedback items.
+
+        Returns None when no items have the field populated.
+        """
+        total_w = 0.0
+        total_v = 0.0
+        for item in feedback:
+            v = item.get(value_key)
+            if v is None:
+                continue
+            w = self._decay_weight(item, now)
+            total_v += v * w
+            total_w += w
+        return total_v / total_w if total_w > 0 else None
+
+    def _compute_weights(self, feedback: list[dict[str, Any]], key: str) -> dict[str, float]:
+        """Compute decay-weighted performance weights for angles or formats."""
+        now = datetime.now(timezone.utc)
+
+        # Collect (hook_score, decay_weight) pairs per category
+        scores: defaultdict[str, list[tuple[float, float]]] = defaultdict(list)
         for item in feedback:
             if key in item and "hook_score" in item and item["hook_score"] is not None:
-                category = item[key]
-                score = item["hook_score"]
-                scores[category].append(score)
+                scores[item[key]].append((item["hook_score"], self._decay_weight(item, now)))
 
         weights = {}
+        for category, pairs in scores.items():
+            if len(pairs) < self.min_samples:
+                continue
 
-        for category, vals in scores.items():
-            if len(vals) >= self.min_samples:
-                # Use hook score as primary metric, but also consider retention
-                avg_hook = sum(vals) / len(vals)
+            total_w = sum(w for _, w in pairs)
+            avg_hook = sum(s * w for s, w in pairs) / total_w
 
-                # Bonus for high retention videos
-                retention_bonus = 0
-                for item in feedback:
-                    if item.get(key) == category and "avg_view_percentage" in item:
-                        if item["avg_view_percentage"] > 0.7:
-                            retention_bonus += 0.1
+            # Retention bonus: decay-weighted fraction of high-retention videos × 0.2
+            w_high = sum(
+                self._decay_weight(item, now)
+                for item in feedback
+                if item.get(key) == category
+                and item.get("avg_view_percentage", 0) > 0.7
+            )
+            w_all_ret = sum(
+                self._decay_weight(item, now)
+                for item in feedback
+                if item.get(key) == category and "avg_view_percentage" in item
+            )
+            retention_bonus = (w_high / w_all_ret * 0.2) if w_all_ret > 0 else 0
 
-                weight = round(avg_hook + min(retention_bonus, 0.2), 2)
-                weights[category] = max(0.1, min(1.0, weight))  # Clamp between 0.1-1.0
+            weight = round(avg_hook + retention_bonus, 2)
+            weights[category] = max(0.1, min(1.0, weight))
 
         logger.debug(f"Computed {key} weights: {weights}")
         return weights
 
     def _compute_exploration(self, feedback: list[dict[str, Any]]) -> float:
-        """Compute adaptive exploration rate based on recent performance.
-
-        Returns:
-            Exploration rate between 0.1 and 0.4
-        """
-        recent = feedback[-10:]  # Last 10 videos
-
-        if not recent:
+        """Compute adaptive exploration rate based on decay-weighted recent performance."""
+        if not feedback:
             return self.base_exploration
 
-        # Calculate average hook performance
-        hook_scores = [x.get("hook_score", 0) for x in recent if x.get("hook_score") is not None]
-        if not hook_scores:
+        now = datetime.now(timezone.utc)
+        avg_hook = self._decay_weighted_mean(feedback[-10:], "hook_score", now)
+        if avg_hook is None:
             return self.base_exploration
-
-        avg_hook = sum(hook_scores) / len(hook_scores)
 
         exploration = self.base_exploration
-
-        # If hooks are underperforming, increase exploration
         if avg_hook < self.hook_success_threshold:
             exploration = min(0.4, exploration + 0.1)
             logger.info(f"Low hook performance ({avg_hook:.2f}) - increasing exploration to {exploration}")
-
-        # If hooks are excellent, reduce exploration to exploit winners
         elif avg_hook > self.hook_excellent_threshold:
             exploration = max(0.1, exploration - 0.1)
             logger.info(f"Excellent hook performance ({avg_hook:.2f}) - reducing exploration to {exploration}")
@@ -125,22 +155,15 @@ class DecisionEngine:
         return round(exploration, 2)
 
     def _select_mode(self, feedback: list[dict[str, Any]]) -> str:
-        """Select operational mode based on overall performance.
-
-        Returns:
-            "growth", "safe", or "balanced"
-        """
+        """Select operational mode based on decay-weighted average retention."""
         recent = feedback[-10:]
-
         if not recent:
             return "balanced"
 
-        # Calculate average retention
-        retentions = [x.get("avg_view_percentage", 0) for x in recent if x.get("avg_view_percentage") is not None]
-        if not retentions:
+        now = datetime.now(timezone.utc)
+        avg_retention = self._decay_weighted_mean(recent, "avg_view_percentage", now)
+        if avg_retention is None:
             return "balanced"
-
-        avg_retention = sum(retentions) / len(retentions)
 
         if avg_retention < self.growth_threshold:
             mode = "growth"
