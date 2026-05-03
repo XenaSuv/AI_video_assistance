@@ -55,6 +55,7 @@ from src.topic_segment_generator import (
     pick_next_topic,
     _load_ideas,
 )
+from src.open_loop_agent import apply_open_loops
 
 
 def run_topic_pipeline(
@@ -90,6 +91,19 @@ def run_topic_pipeline(
         script = _load_cached_script(script_cache)
         if script is None:
             script = generate_topic_script(idea)
+
+            # 2a. Open-loop pass — rewrites intro + adds payoff closings
+            ol_result = apply_open_loops(script)
+            script = ol_result.script
+            if ol_result.modified:
+                loops_info = [
+                    {"teaser": l.teaser, "closing": l.closing, "target_scene": l.target_scene_idx}
+                    for l in ol_result.loops
+                ]
+                (run_dir / "open_loops.json").write_text(
+                    json.dumps(loops_info, indent=2)
+                )
+
             script.save(script_cache)
             logger.info(f"Script saved → {script_cache}")
         else:
