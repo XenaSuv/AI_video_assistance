@@ -32,6 +32,7 @@ from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.retry_utils import http_post
 
 _AUTH_URL   = "https://www.tiktok.com/v2/auth/authorize/"
 _TOKEN_URL  = "https://open.tiktokapis.com/v2/oauth/token/"
@@ -52,7 +53,7 @@ def _save_tokens(token_file: Path, tokens: dict) -> None:
 
 
 def _do_refresh(client_key: str, client_secret: str, refresh_token: str) -> dict:
-    resp = requests.post(
+    resp = http_post(
         _TOKEN_URL,
         data={
             "client_key":    client_key,
@@ -62,7 +63,6 @@ def _do_refresh(client_key: str, client_secret: str, refresh_token: str) -> dict
         },
         timeout=30,
     )
-    resp.raise_for_status()
     return resp.json()
 
 
@@ -126,7 +126,7 @@ def run_auth_flow(client_key: str, client_secret: str, token_file: Path) -> None
     while "code" not in code_holder:
         time.sleep(0.2)
 
-    resp = requests.post(
+    resp = http_post(
         _TOKEN_URL,
         data={
             "client_key":    client_key,
@@ -138,7 +138,6 @@ def run_auth_flow(client_key: str, client_secret: str, token_file: Path) -> None
         },
         timeout=30,
     )
-    resp.raise_for_status()
     tokens = resp.json()
     tokens["expires_at"] = time.time() + tokens.get("expires_in", 86400)
 
@@ -157,7 +156,7 @@ def _init_upload(
 ) -> tuple[str, str]:
     """Start a TikTok direct-post upload. Returns (publish_id, upload_url)."""
     total_chunks = math.ceil(video_size / _CHUNK_SIZE)
-    resp = requests.post(
+    resp = http_post(
         _UPLOAD_URL,
         headers={
             "Authorization": f"Bearer {access_token}",
@@ -181,7 +180,6 @@ def _init_upload(
         },
         timeout=30,
     )
-    resp.raise_for_status()
     data = resp.json().get("data", {})
     return data["publish_id"], data["upload_url"]
 

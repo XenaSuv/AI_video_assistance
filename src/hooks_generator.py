@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from openai import OpenAI
+from src.retry_utils import make_openai_client
 from loguru import logger
 
 from config import settings
@@ -23,7 +24,7 @@ def generate_hooks(news_text: str, n: int = 3) -> list[str]:
     Output as JSON array.
     """
 
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = make_openai_client()
     response = client.chat.completions.create(
         model=settings.openai_model,
         messages=[{"role": "user", "content": prompt}],

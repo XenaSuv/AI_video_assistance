@@ -109,7 +109,7 @@ def generate_dalle_image(prompt: str, out_path: Path) -> Path:
     if out_path.exists():
         logger.info(f"Reusing cached image: {out_path.name}")
         return out_path
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = make_openai_client()
     logger.info(f"DALL-E 3 HD: {prompt[:80]}…")
     data = _call_dalle(client, prompt)
     out_path.write_bytes(data)

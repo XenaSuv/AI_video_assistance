@@ -20,6 +20,7 @@ from pathlib import Path
 
 import requests
 from loguru import logger
+from src.retry_utils import http_post
 
 _VIDEO_LIST_URL   = "https://open.tiktokapis.com/v2/video/list/"
 _STATUS_URL       = "https://open.tiktokapis.com/v2/post/publish/status/fetch/"
@@ -54,7 +55,7 @@ def resolve_publish_id(publish_id: str, token_file: Path) -> str | None:
     deadline = time.time() + 60
     while time.time() < deadline:
         try:
-            resp = requests.post(
+            resp = http_post(
                 _STATUS_URL,
                 headers={
                     "Authorization": f"Bearer {access_token}",
@@ -63,7 +64,6 @@ def resolve_publish_id(publish_id: str, token_file: Path) -> str | None:
                 json={"publish_id": publish_id},
                 timeout=15,
             )
-            resp.raise_for_status()
             data = resp.json().get("data", {})
             status = data.get("status", "")
             if status == "PUBLISH_COMPLETE":
@@ -99,7 +99,7 @@ def get_video_metrics(video_id: str, token_file: Path) -> dict | None:
     cursor = 0
     for page in range(_MAX_PAGES):
         try:
-            resp = requests.post(
+            resp = http_post(
                 _VIDEO_LIST_URL,
                 headers={
                     "Authorization": f"Bearer {access_token}",
@@ -112,7 +112,6 @@ def get_video_metrics(video_id: str, token_file: Path) -> dict | None:
                 },
                 timeout=30,
             )
-            resp.raise_for_status()
             payload = resp.json()
             data = payload.get("data", {})
 

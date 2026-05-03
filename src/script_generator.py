@@ -13,6 +13,7 @@ from typing import Any
 
 from loguru import logger
 from openai import OpenAI
+from src.retry_utils import make_openai_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
@@ -331,7 +332,7 @@ def generate_script(
     if not items:
         raise ValueError("No news items provided")
 
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = make_openai_client()
     target_minutes = max(1, round(settings.script_target_words / 150))
     user_prompt = USER_PROMPT_TMPL.format(
         target_words=settings.script_target_words,
@@ -445,7 +446,7 @@ def generate_short_script(news_item, hook: str) -> str:
         content = news_item.get("summary", "")
     content = str(content or "")
 
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = make_openai_client()
     angle = random.choice(["shock", "useful", "money", "lazy"])
     prompt = f"""
     You are creating a viral YouTube Shorts script.

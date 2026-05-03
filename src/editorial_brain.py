@@ -9,6 +9,7 @@ from typing import Any
 
 from loguru import logger
 from openai import OpenAI
+from src.retry_utils import make_openai_client
 
 sys_path_insert = __import__("sys").path.insert
 from pathlib import Path
@@ -106,7 +107,7 @@ class EditorialPlan:
 
 class EditorialBrain:
     def __init__(self, llm: OpenAI | None = None, config: dict[str, Any] | None = None):
-        self.llm = llm or OpenAI(api_key=settings.openai_api_key)
+        self.llm = llm or make_openai_client()
         self.config = config or {}
         self.feedback_analyzer = FeedbackAnalyzer()
         self.angle_performance_cache = {}

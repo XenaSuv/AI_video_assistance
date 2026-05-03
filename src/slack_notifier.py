@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.retry_utils import http_post as _http_post
 
 
 _PIPELINE_EMOJI = {
@@ -30,9 +31,7 @@ def _post(payload: dict) -> None:
     if not url:
         return
     try:
-        resp = requests.post(url, json=payload, timeout=10)
-        if resp.status_code != 200:
-            logger.warning(f"Slack webhook {resp.status_code}: {resp.text[:200]}")
+        _http_post(url, json=payload, timeout=10)
     except Exception as exc:
         logger.warning(f"Slack notification failed (non-fatal): {exc}")
 

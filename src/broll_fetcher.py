@@ -36,6 +36,7 @@ from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.retry_utils import http_get
 from src.script_generator import Scene
 import src.ffmpeg_utils as ffmpeg_utils
 
@@ -51,7 +52,7 @@ def _pexels_search(query: str, per_page: int = 5) -> list[dict]:
     key = settings.pexels_api_key
     if not key:
         return []
-    r = requests.get(
+    r = http_get(
         _PEXELS_VIDEO_URL,
         headers={"Authorization": key},
         params={
@@ -62,7 +63,6 @@ def _pexels_search(query: str, per_page: int = 5) -> list[dict]:
         },
         timeout=15,
     )
-    r.raise_for_status()
     return r.json().get("videos", [])
 
 
@@ -81,7 +81,7 @@ def _pixabay_search(query: str, per_page: int = 5) -> list[dict]:
     key = settings.pixabay_api_key
     if not key:
         return []
-    r = requests.get(
+    r = http_get(
         _PIXABAY_VIDEO_URL,
         params={
             "key":         key,
@@ -91,7 +91,6 @@ def _pixabay_search(query: str, per_page: int = 5) -> list[dict]:
         },
         timeout=15,
     )
-    r.raise_for_status()
     return r.json().get("hits", [])
 
 
@@ -108,8 +107,7 @@ def _pixabay_best_url(video: dict) -> str | None:
 # ─────────────────── download + process ───────────────────
 
 def _download(url: str, out_path: Path) -> Path:
-    r = requests.get(url, timeout=120, stream=True)
-    r.raise_for_status()
+    r = http_get(url, timeout=120, stream=True)
     with open(out_path, "wb") as f:
         for chunk in r.iter_content(chunk_size=64 * 1024):
             if chunk:

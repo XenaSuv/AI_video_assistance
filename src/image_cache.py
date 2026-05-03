@@ -21,6 +21,7 @@ from pathlib import Path
 import numpy as np
 from loguru import logger
 from openai import OpenAI
+from src.retry_utils import make_openai_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
@@ -72,7 +73,7 @@ def _save(data_dir: Path, entries: list[dict], matrix: np.ndarray) -> None:
 # ── embedding ─────────────────────────────────────────────────────────────────
 
 def _embed(text: str) -> np.ndarray:
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = make_openai_client()
     resp   = client.embeddings.create(model="text-embedding-3-small", input=text[:2048])
     return np.array(resp.data[0].embedding, dtype=np.float32)
 

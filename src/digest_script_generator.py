@@ -18,6 +18,7 @@ from pathlib import Path
 
 from loguru import logger
 from openai import OpenAI
+from src.retry_utils import make_openai_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
@@ -181,7 +182,7 @@ def generate_digest_script(
     if not week_blocks:
         raise ValueError("No daily scripts found for the week — cannot generate digest")
 
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = make_openai_client()
     week_block = "\n\n".join(week_blocks)
 
     user_prompt = _USER_TEMPLATE.format(

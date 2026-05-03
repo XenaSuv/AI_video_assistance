@@ -4,6 +4,7 @@ import re
 from typing import Iterable
 
 from openai import OpenAI
+from src.retry_utils import make_openai_client
 from loguru import logger
 
 from config import settings
@@ -55,7 +56,7 @@ def gpt_score(item: NewsItem) -> int:
     Return only a number.
     """
 
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = make_openai_client()
     try:
         res = client.chat.completions.create(
             model=settings.openai_model,

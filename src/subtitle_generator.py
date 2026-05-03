@@ -11,6 +11,7 @@ from pathlib import Path
 
 from loguru import logger
 from openai import OpenAI
+from src.retry_utils import make_openai_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
@@ -58,7 +59,7 @@ def generate_subtitles(
         logger.info(f"Reusing cached subtitles: {out_path.name}")
         return out_path
 
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = make_openai_client()
     entries: list[tuple[float, float, str]] = []
     offset = intro_duration
 
