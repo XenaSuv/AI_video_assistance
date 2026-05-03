@@ -62,93 +62,289 @@ class TopicIdea:
 
 _FORMAT_PROMPTS: dict[str, str] = {
     "honest_review": """\
-You are writing a YouTube script for an "honest tool review" episode.
-Style: first-person, tried it yourself, candid about both wins and frustrations.
-Structure: 1 hook → 2 what is it / who it's for → 3 real walkthrough of key features →
-4 where it shines → 5 where it falls short → 6 verdict + who should pay for it.
-Speak directly to the viewer: "If you're a freelancer you'll love X. If you need Y, skip it."
-Include at least ONE unexpected finding that wasn't in the marketing copy.
-Never be purely positive — real reviews have friction.""",
+You are writing a YouTube script for an honest tool review.
+
+GOAL:
+Make the viewer feel like you actually used the tool and formed a real opinion.
+
+STYLE:
+- First-person, conversational, direct
+- Specific > general
+- Show experience, not just conclusions
+
+STRUCTURE:
+1. Hook — strong opinion or surprising outcome (not generic)
+2. What it is / who it's for (clear positioning, no fluff)
+3. Real walkthrough — describe actual usage:
+   - what you tried
+   - what worked
+   - what confused or slowed you down
+4. Where it shines — concrete benefits (who exactly benefits and why)
+5. Where it falls short — real friction, trade-offs, limitations
+6. Verdict — clear recommendation:
+   - who should pay
+   - who should avoid it
+   - what you'd personally do
+
+REQUIREMENTS:
+- Include at least ONE unexpected finding:
+  (e.g. hidden limitation, surprising strength, misleading feature)
+- Include at least 2 concrete micro-details:
+  (time saved, clicks needed, pricing friction, UX issue, etc.)
+- Include at least one moment of friction or mild frustration
+- Avoid generic praise (“it’s great”, “very powerful”)
+
+TONE:
+- Honest, slightly opinionated, but fair
+- No hype, no corporate tone
+
+AVOID:
+- Vague claims
+- Purely positive framing
+- “It depends” conclusions without a clear stance
+
+OPTIONAL (STRONG):
+- Brief comparison to a known alternative if relevant
+
+OUTPUT:
+Write the full script in natural spoken format (no bullet points).""",
 
     "hidden_gems": """\
-You are writing a YouTube script for a "hidden gems" list episode about underrated AI tools.
-Style: enthusiastic curator who digs past the hype. Not ChatGPT, not Midjourney.
-Structure: 1 hook (why the mainstream tools miss something) → one scene per tool (5 tools):
-  - tool name + what it does in one sentence
-  - the one thing it does better than anything else
-  - real-world use case in 2–3 sentences
-  - pricing / availability
-→ final scene: quick recap + which to try first.
-Each tool scene is self-contained so viewers who jump around still get value.""",
+You are writing a YouTube script for a "hidden gems" episode about underrated AI tools.
+
+GOAL:
+Make viewers feel like they just discovered tools they *should have known earlier*.
+
+STYLE:
+- Enthusiastic but credible
+- Curious, slightly contrarian (“people are sleeping on this”)
+- Specific, no generic hype
+
+HOOK:
+- Start with a clear angle:
+  (e.g. mainstream tools are overpriced, limited, or overhyped)
+- Create curiosity: “these tools solve things the popular ones don’t”
+
+STRUCTURE:
+1. Hook
+2–6. One scene per tool (5 tools total)
+7. Final recap
+
+FOR EACH TOOL:
+- Tool name + what it does (1 sentence, clear)
+- Why it’s underrated (what people are missing)
+- Its unfair advantage:
+  → one specific thing it does noticeably better than alternatives
+- Real-world use case (2–3 sentences, concrete scenario)
+- One moment of surprise:
+  → something unexpected, clever, or unusually powerful
+- Pricing / availability (brief, practical)
+
+IMPORTANT:
+- Each tool must feel distinct (avoid overlap in use cases)
+- No generic tools (avoid obvious picks)
+- Avoid repeating the same benefit structure
+
+FINAL SCENE:
+- Rapid recap (1 line per tool max)
+- Strong recommendation:
+  → “Start with X if you want [specific outcome]”
+
+TONE:
+- “I can’t believe more people aren’t using this”
+- Direct, energetic, but grounded
+
+AVOID:
+- Generic praise (“super useful”, “very powerful”)
+- Tools everyone already knows
+- Vague descriptions
+
+OUTPUT:
+Write the full script in natural spoken format.""",
 
     "ai_project_build": """\
 You are writing a YouTube script for a "I built X using only AI" episode.
-Style: documentary-style personal journey. Show the messy reality, not a polished ad.
-Structure: 1 hook (show the finished result first) → 2 the challenge / zero prior skills →
-3 picking the right AI tools → 4 what worked on first try →
-5 what broke and how you fixed it (with AI) → 6 final result + honest time/cost breakdown.
-Be specific: actual tool names, prompts used, where it got stuck.
-The viewer should feel they could replicate this tomorrow.""",
+
+GOAL:
+Make the viewer feel: “I could try this tomorrow — and avoid your mistakes.”
+
+STYLE:
+- First-person, documentary-style
+- Honest, slightly messy, not overproduced
+- Show the process, not just results
+
+STRUCTURE:
+1. Hook — show the final result immediately + quick tease of how hard it was
+2. The challenge:
+   - what you're building
+   - constraints (time, budget, no prior skills)
+3. Tool selection:
+   - which AI tools you chose and why (brief, practical)
+4. What worked immediately:
+   - early wins that gave momentum
+5. What broke:
+   - specific failures, confusion, bad outputs
+   - what you tried that didn’t work
+   - how you fixed it using AI
+6. Final result:
+   - honest evaluation (not just success)
+   - time spent, cost, effort
+   - would you do it again?
+
+REQUIREMENTS:
+- Include at least 2 real prompts (short, but specific)
+- Include at least 2 moments of friction or failure
+- Include at least 1 “I didn’t expect this” moment
+- Mention actual tools by name
+- Show at least one iteration (bad → improved result)
+
+REPLICABILITY:
+- Avoid unnecessary steps
+- Highlight shortcuts or “do this instead” insights
+- Make the process feel achievable, not expert-only
+
+TONE:
+- Curious, honest, slightly self-critical
+- No hype, no “AI magic” language
+
+AVOID:
+- Polished success story
+- Vague descriptions of the process
+- Skipping over failures
+
+OUTPUT:
+Write the full script in natural spoken format.""",
 
     "news_with_opinion": """\
-You are writing a YouTube script for a "AI news + my take" episode.
-Style: informed commentator with a clear point of view. Not a press release reader.
-Structure: 1 hook (the headline + why it's bigger than it looks) →
-2 what actually happened (facts, numbers, quotes) → 3 what the company/researchers claim →
-4 your honest opinion: what's real, what's spin, what's missing →
-5 concrete implication for the average person watching →
-6 close with an open question that makes viewers think.
-Every scene must include at least one opinionated statement. Avoid neutral tone.""",
+You are writing a YouTube script for an "AI news + my take" episode.
+
+GOAL:
+Turn a news story into a clear, opinionated perspective that viewers will agree or disagree with.
+
+CORE RULE:
+This is not neutral reporting. You must take a stance.
+
+STRUCTURE:
+1. Hook:
+   - State the headline
+   - Immediately explain why this is bigger than it looks
+   - Include a strong opinion or framing
+
+2. What actually happened:
+   - Concrete facts (numbers, timelines, specific claims)
+   - Avoid vague language
+   - Include at least one grounded interpretation (not just facts)
+
+3. What they claim:
+   - Summarize the company/research narrative
+   - Then challenge or question it
+
+4. Your take:
+   - What’s real vs what’s hype/spin
+   - What’s missing or not being said
+   - Be specific and slightly provocative
+
+5. Why it matters:
+   - Concrete implication for the viewer
+   - “This means that if you…, then…”
+
+6. Close:
+   - A sharp, discussion-driving question
+   - Should invite disagreement or personal stance
+
+REQUIREMENTS:
+- Every scene must include at least one clear opinion
+- At least one opinion should be debatable (not universally agreeable)
+- Prefer specificity over generalization (numbers, examples > vague claims)
+
+TONE:
+- Confident, sharp, informed
+- Slightly contrarian where appropriate
+- No corporate neutrality
+
+AVOID:
+- Fence-sitting (“it depends” without a stance)
+- Generic observations
+- Repeating the same point across scenes
+
+OUTPUT:
+Write the full script in natural spoken format.""",
 }
 
 # Shared constraints appended to every format prompt
 _SHARED_RULES = """
-=== SHARED SCRIPT RULES ===
-- Conversational contractions everywhere ("it's", "you'll", "here's")
-- Vary sentence length: punchy short ones for impact, longer for explanation
-- No "welcome back to the channel" filler
-- No generic AI hype phrases ("revolutionary", "game-changing", "the future of")
-- Include concrete specifics: real tool names, prices, benchmark numbers where relevant
-- Fill "short_narration" for 2-3 middle scenes (~120 words, self-contained,
-  end with "Subscribe for daily AI news.")
-- Fill "video_query" for 2-3 scenes with physical/real-world stock footage potential
-- Fill "infographic_data" when a scene has concrete numbers to compare (bar_chart,
-  stat_card, comparison, timeline — same JSON schema as the daily news script)
+=== CORE PRIORITY ===
+1. Clear, engaging narration
+2. Logical scene structure
+3. Useful visual + data enhancements (only when relevant)
 
-=== REALISTIC SCREENSHOTS ===
-For scenes that demo a specific AI tool UI, set "screenshot_url" to the tool's
-real public page so a live browser screenshot replaces the DALL-E illustration.
+If trade-offs occur, prioritize narration quality over extras.
 
-Rules for screenshot_url:
-- Only use real, publicly accessible URLs that require NO login (marketing pages,
-  docs pages, pricing pages, landing pages)
-- Prefer the most visually rich page for the scene (e.g. feature page > homepage)
-- Set null for any scene that is abstract, opinionated, or doesn't show a UI
-- Maximum 3 screenshot_url scenes per script — the rest use DALL-E / stock video
-- Leave visual_prompt filled even when screenshot_url is set (used as fallback)
+=== STYLE RULES ===
+- Use conversational contractions ("it's", "you'll", "here's")
+- Vary sentence length (short for impact, longer for explanation)
+- No filler intros
+- No generic AI hype phrases
+- Use concrete specifics (tools, prices, benchmarks)
 
-Good screenshot_url examples:
-  "https://www.perplexity.ai"
-  "https://www.runway.ml"
-  "https://elevenlabs.io"
-  "https://www.midjourney.com"
-  "https://gamma.app"
-  "https://www.notion.so/product/ai"
-  "https://cursor.sh"
-  "https://www.heygen.com"
+=== OPTIONAL ENHANCEMENTS (USE SELECTIVELY) ===
+
+short_narration:
+- Use for 2–3 middle scenes ONLY if they benefit from a standalone cut
+- Must be a tighter, punchier version (not a duplicate)
+- End with: "Subscribe for daily AI news."
+
+video_query:
+- Only include if a clear real-world visual exists
+- Must describe a specific shot:
+  (e.g. "freelancer editing video on laptop in dim room, timeline visible")
+
+infographic_data:
+- Only include when comparing numbers
+- Use ONE of these formats:
+  {
+    "type": "bar_chart",
+    "labels": [...],
+    "values": [...]
+  }
+  or
+  {
+    "type": "stat_card",
+    "label": "...",
+    "value": "..."
+  }
+  or
+  {
+    "type": "comparison",
+    "items": [
+      {"label": "...", "value": "..."}
+    ]
+  }
+
+=== SCREENSHOT RULES ===
+- Use only real, known public URLs
+- Max 3 scenes
+- Only for tools with visual UI relevance
+- If unsure → set null
+
+=== VISUAL PROMPTS ===
+- Always include (fallback)
+- Must describe a specific, realistic scene
+- Avoid abstract "AI concept" visuals
 
 === OUTPUT FORMAT ===
-Return a single valid JSON object, no markdown fences:
+Return a single valid JSON object:
+
 {
   "title": "...",
-  "description": "200-400 word YouTube description. End with '(TIMESTAMPS_AUTOFILL)'",
-  "tags": ["tag1", ...],
-  "hook_variants": ["fact hook", "question hook", "bold statement hook"],
+  "description": "... (200–400 words, end with TIMESTAMPS_AUTOFILL)",
+  "tags": [...],
+  "hook_variants": [...],
   "scenes": [
     {
-      "heading": "max 8 words",
-      "narration": "spoken text",
-      "visual_prompt": "DALL-E 3 photorealistic description — always required as fallback",
+      "heading": "...",
+      "narration": "...",
+      "visual_prompt": "...",
       "screenshot_url": null,
       "video_query": null,
       "infographic_data": null,

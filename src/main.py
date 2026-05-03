@@ -137,8 +137,8 @@ def _needs_video_rebuild(video_path: Path) -> bool:
             cached.unlink(missing_ok=True)
         return True
     try:
-        if ffmpeg_utils.has_audio_stream(video_path):
-            return False
+                ids = publish_episode(
+                    script, long_video, short_video,
     except Exception as exc:
         logger.warning(f"Cached video probe failed for {video_path.name}: {exc}")
 
@@ -514,7 +514,8 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         # 5. Video
         long_video = run_dir / "final_video.mp4"
         observer.step_start("video")
-        if not cp.is_done("video") or _needs_video_rebuild(long_video):
+        rebuild_video = not cp.is_done("video") or _needs_video_rebuild(long_video)
+        if rebuild_video:
             build_video(script, run_dir,
                         intro_path=_en_intro if _en_intro.exists() else None,
                         outro_path=_en_outro,
@@ -526,6 +527,15 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         else:
             logger.info(f"Step 5 (video) already done — reusing {long_video.name}")
             observer.step_skip("video")
+
+        short_video = run_dir / "shorts.mp4"
+        if rebuild_video and short_video.exists():
+            short_video.unlink(missing_ok=True)
+        if not short_video.exists():
+            from src.shorts_generator import build_short
+            build_short(script, long_video, run_dir)
+        else:
+            logger.info(f"Reusing cached {short_video.name}")
 
         from src.broll_fetcher import get_pexels_credits
         credits = get_pexels_credits(run_dir)
@@ -568,7 +578,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
                 observer.step_done("upload_en", skipped=True)
             else:
                 ids = publish_episode(
-                    script, long_video, None,
+                    script, long_video, short_video,
                     thumbnail=thumbnail,
                     subtitle_path=subtitle_path,
                 )
@@ -614,7 +624,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
                 skip_upload    = skip_upload,
                 intro_path     = _ru_intro if _ru_intro.exists() else None,
                 outro_path     = _get_shared_outro(),
-                include_short  = False,
+                include_short  = True,
             )
             summary["ru"] = ru
             cp.mark_done("upload_ru", ru)

@@ -43,33 +43,38 @@ class CommentMagnetResult:
 # ── Prompt ────────────────────────────────────────────────────────────────────
 
 _SYSTEM = """\
-You are a YouTube engagement specialist. Your job is to write ONE comment-magnet
-question for a video script — a question that makes viewers feel they MUST respond.
+You are a YouTube engagement specialist focused on maximizing comments.
 
-What makes a great comment magnet:
-- Tied to a specific, debatable claim or finding from the video (not generic)
-- Slightly polarizing: people who agree AND people who disagree both want to reply
-- Personal: asks about the viewer's own experience or preference
-- Short: one sentence, max 20 words
-- Ends with "?" and can optionally include a concrete choice to react to
-  e.g. "Am I wrong about this?" / "Which one would you actually pay for?"
+Your task: generate ONE high-performing "comment magnet" question based on the video script.
 
-What to avoid:
-- "Let me know what you think!" (too generic, gets ignored)
-- Multiple questions (one is enough)
-- Questions with obvious or boring answers
-- Anything that sounds like a survey
+PROCESS:
+1. Identify the most debatable, opinion-triggering claim in the script
+2. Choose a conflict angle (e.g. price, usefulness, trust, effort, hype vs reality)
+3. Turn it into a personal, slightly provocative question
 
-Examples of good comment magnets:
-  "Honestly — is paying $20/month for Notion AI worth it when Obsidian is free?"
-  "I think Midjourney is losing ground fast. Fight me in the comments."
-  "Would you actually trust AI to write your whole business plan, or is that a step too far?"
-  "Hot take: half these 'free' AI tools aren't actually free. Am I wrong?"
+REQUIREMENTS:
+- One sentence only (max 18 words)
+- Must be specific to the script (no generic phrasing)
+- Must invite disagreement or strong opinions
+- Must feel personal ("you", "would you", "do you")
+- Can include a forced choice, tradeoff, or challenge
+- Ends with "?"
 
-Return JSON:
+TONE:
+- Natural, conversational, slightly provocative
+- Optional light attitude (e.g. "be honest", "seriously", "am I wrong")
+
+AVOID:
+- Generic prompts ("what do you think?")
+- Safe or obvious questions
+- Multiple questions
+- Survey-like wording
+- Vague or abstract phrasing
+
+OUTPUT FORMAT:
 {
-  "question": "the single comment-magnet question",
-  "reasoning": "one sentence: which claim from the script makes this question land"
+  "question": "...",
+  "reasoning": "Which exact claim or tension from the script this question exploits"
 }"""
 
 _USER_TMPL = """\
