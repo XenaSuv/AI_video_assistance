@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 import shutil
 import sys
+import textwrap
 from pathlib import Path
 
 import requests
@@ -322,6 +323,70 @@ def _try_real_screenshot(scene: Scene, tool: str | None, img_path: Path) -> bool
         return False
 
 
+# ── Text overlay renderer ─────────────────────────────────────────────────────
+
+_TO_BG     = (13, 17, 23)
+_TO_ACCENT = (56, 189, 248)
+_TO_WHITE  = (255, 255, 255)
+_TO_DIM    = (139, 156, 178)
+_FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+_FONT_REG  = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+
+
+def _render_text_overlay_clip(scene: "Scene", clip_path: Path) -> Path:
+    """Render a bold-text card (heading + pull-quote) as a Ken Burns clip.
+
+    Costs nothing — pure PIL, no image API call.
+    """
+    from PIL import Image, ImageDraw, ImageFont  # lazy import — PIL may be absent in tests
+
+    img_dir = clip_path.parent.parent / "images"
+    img_dir.mkdir(parents=True, exist_ok=True)
+    img_path = img_dir / f"scene_{scene.idx:02d}_text.png"
+
+    if not img_path.exists():
+        img  = Image.new("RGB", (OUT_W, OUT_H), color=_TO_BG)
+        draw = ImageDraw.Draw(img)
+
+        # Subtle top fade (lighter navy gradient)
+        for y in range(220):
+            t = 1 - y / 220
+            draw.line([(0, y), (OUT_W, y)], fill=(
+                int(_TO_BG[0] + 12 * t),
+                int(_TO_BG[1] + 12 * t),
+                int(_TO_BG[2] + 22 * t),
+            ))
+
+        # Left accent bar
+        draw.rectangle([(60, 180), (67, 545)], fill=_TO_ACCENT)
+
+        try:
+            font_h = ImageFont.truetype(_FONT_BOLD, 68)
+            font_q = ImageFont.truetype(_FONT_REG,  32)
+        except OSError:
+            font_h = ImageFont.load_default()
+            font_q = font_h
+
+        # Heading — ALL CAPS, wrapped at ~22 chars, max 4 lines
+        lines = textwrap.wrap(scene.heading.upper(), width=22)[:4]
+        y_h = 200
+        for line in lines:
+            draw.text((95, y_h), line, font=font_h, fill=_TO_WHITE)
+            y_h += 80
+
+        # Pull-quote: first sentence of narration, max 120 chars, 2 lines
+        pull  = scene.narration.split(".")[0].strip()[:120]
+        plines = textwrap.wrap(pull, width=62)[:2]
+        y_q = OUT_H - 55 - len(plines) * 40
+        for line in plines:
+            draw.text((95, y_q), line, font=font_q, fill=_TO_DIM)
+            y_q += 40
+
+        img.save(img_path)
+
+    return _ken_burns_clip(img_path, float(scene.duration_sec), clip_path)
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def generate_scene_clip(
@@ -365,6 +430,10 @@ def generate_scene_clip(
     data_dir = settings.data_dir
 
     try:
+        # 0. scene_type override — text overlay rendered entirely in PIL
+        if getattr(scene, "scene_type", None) == "text_overlay":
+            return _render_text_overlay_clip(scene, clip_path)
+
         # 1. Infographic — fully animated
         if scene.infographic_data:
             from src.infographic_generator import generate_infographic_clip
@@ -414,7 +483,10 @@ def generate_scene_clip(
 
                     # 7. DALL-E 3 HD — universal fallback
                     if not generated:
-                        generate_dalle_image(scene.visual_prompt, img_path)
+                        prompt = scene.visual_prompt
+                        if getattr(scene, "scene_type", None) == "diagram":
+                            prompt = f"clean whiteboard-style diagram explaining: {prompt}"
+                        generate_dalle_image(prompt, img_path)
 
                     # Persist in cross-run cache (skip cache-hit copies)
                     if img_path.exists():
