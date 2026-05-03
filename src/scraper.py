@@ -19,6 +19,7 @@ import xml.etree.ElementTree as ET
 import arxiv
 import requests
 from bs4 import BeautifulSoup
+from src.retry_utils import http_get
 from loguru import logger
 
 
@@ -98,8 +99,7 @@ HF_DAILY_URL = "https://huggingface.co/api/daily_papers"
 
 def scrape_huggingface(max_results: int = 15) -> list[NewsItem]:
     try:
-        resp = requests.get(HF_DAILY_URL, timeout=20)
-        resp.raise_for_status()
+        resp = http_get(HF_DAILY_URL, timeout=20)
         data = resp.json()
     except Exception as e:
         logger.warning(f"HF Daily API failed: {e}")
@@ -123,7 +123,7 @@ def scrape_huggingface(max_results: int = 15) -> list[NewsItem]:
 
 
 def _scrape_huggingface_html(max_results: int) -> list[NewsItem]:
-    resp = requests.get("https://huggingface.co/papers", timeout=20)
+    resp = http_get("https://huggingface.co/papers", timeout=20)
     soup = BeautifulSoup(resp.text, "html.parser")
     items = []
     for art in soup.select("article")[:max_results]:
@@ -158,8 +158,7 @@ def scrape_hackernews(max_results: int = 10, hours_back: int = 24) -> list[NewsI
         "hitsPerPage":   max_results,
     }
     try:
-        resp = requests.get(HN_SEARCH, params=params, timeout=20)
-        resp.raise_for_status()
+        resp = http_get(HN_SEARCH, params=params, timeout=20)
         hits = resp.json().get("hits", [])
     except Exception as e:
         logger.warning(f"HN scrape failed: {e}")
@@ -207,8 +206,7 @@ def _scrape_rss(name: str, feed_url: str, score: float,
     """Parse an RSS 2.0 or Atom feed using stdlib XML — no feedparser needed."""
     cutoff = dt.date.today() - dt.timedelta(days=_OFFICIAL_DAYS_BACK)
     try:
-        resp = requests.get(feed_url, timeout=20, headers=_UA)
-        resp.raise_for_status()
+        resp = http_get(feed_url, timeout=20, headers=_UA)
         root = ET.fromstring(resp.content)
     except Exception as e:
         logger.warning(f"{name} RSS failed: {e}")
@@ -357,8 +355,7 @@ def _scrape_blog(name: str, url: str, score: float) -> list[NewsItem]:
     """Scrape a company blog page. Tries Next.js data first, then HTML."""
     cutoff = dt.date.today() - dt.timedelta(days=_OFFICIAL_DAYS_BACK)
     try:
-        resp = requests.get(url, timeout=20, headers=_UA)
-        resp.raise_for_status()
+        resp = http_get(url, timeout=20, headers=_UA)
     except Exception as e:
         logger.warning(f"{name} fetch failed: {e}")
         return []

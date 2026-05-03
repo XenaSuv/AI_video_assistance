@@ -8,6 +8,7 @@ from typing import Any
 
 from loguru import logger
 from openai import OpenAI
+from src.retry_utils import make_openai_client
 
 sys_path_insert = __import__("sys").path.insert
 from pathlib import Path
@@ -57,7 +58,7 @@ class MicroHookAgent:
     }
 
     def __init__(self, llm: OpenAI | None = None, hook_frequency: int = 3):
-        self.llm = llm or OpenAI(api_key=settings.openai_api_key)
+        self.llm = llm or make_openai_client()
         self.hook_frequency = hook_frequency  # Insert hook every N paragraphs
         self.hook_optimizer = HookOptimizer()
 

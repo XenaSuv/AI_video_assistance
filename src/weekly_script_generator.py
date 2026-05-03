@@ -18,6 +18,7 @@ from pathlib import Path
 
 from loguru import logger
 from openai import OpenAI
+from src.retry_utils import make_openai_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
@@ -451,7 +452,7 @@ def generate_tutorial_script(
 ) -> VideoScript:
     """Call GPT to write a full tutorial script for *topic* about *tool_key*."""
     tool   = get_tool(tool_key)
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = make_openai_client()
     logger.info(f"Generating {tool.name} tutorial script for: {topic}")
 
     user_prompt = _USER_TEMPLATE.format(

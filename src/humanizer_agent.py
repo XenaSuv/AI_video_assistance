@@ -7,6 +7,7 @@ from typing import Any
 
 from loguru import logger
 from openai import OpenAI
+from src.retry_utils import make_openai_client
 
 sys_path_insert = __import__("sys").path.insert
 from pathlib import Path
@@ -29,7 +30,7 @@ class HumanizerAgent:
         chaos_level: float = 0.4,
         emotion_level: float = 0.6,
     ):
-        self.llm = llm or OpenAI(api_key=settings.openai_api_key)
+        self.llm = llm or make_openai_client()
         self.humanization_level = humanization_level
         self.chaos_level = chaos_level
         self.emotion_level = emotion_level

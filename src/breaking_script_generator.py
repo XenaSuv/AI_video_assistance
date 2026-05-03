@@ -16,6 +16,7 @@ from pathlib import Path
 
 from loguru import logger
 from openai import OpenAI
+from src.retry_utils import make_openai_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
@@ -233,7 +234,7 @@ def _log_usage(usage, label: str = "") -> None:
 
 def generate_breaking_script(item: NewsItem) -> VideoScript:
     """Call GPT to produce an urgent breaking-news VideoScript for *item*."""
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = make_openai_client()
     logger.info(f"Generating breaking script: [{item.source}] {item.title}")
 
     resp = client.chat.completions.create(
@@ -282,7 +283,7 @@ def generate_breaking_script(item: NewsItem) -> VideoScript:
 
 def generate_breaking_short_script(item: NewsItem) -> VideoScript:
     """Produce a dedicated breaking-news Shorts script for the given news item."""
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = make_openai_client()
     logger.info(f"Generating breaking Shorts script: [{item.source}] {item.title}")
 
     resp = client.chat.completions.create(
