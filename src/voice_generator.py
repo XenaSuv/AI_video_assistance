@@ -146,6 +146,8 @@ def synthesize_hook(
 
     logger.info(f"TTS hook ({len(hook_text.split())} words): {hook_text[:60]!r}...")
     audio_bytes = _tts_convert(client, hook_text, v_id, m_id)
+    get_ledger().record_tts("tts-hook", len(hook_text), m_id)
+
     with open(hook_path, "wb") as f:
         for chunk in audio_bytes:
             if chunk:

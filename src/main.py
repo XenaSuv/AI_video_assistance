@@ -48,6 +48,7 @@ from src.slack_notifier import notify_success, notify_failure
 from src.checkpoint import PipelineCheckpoint
 from src.quality_gate import run_gate, QualityGateError
 from src.cost_tracker import reset_ledger
+from src.pipeline_observer import PipelineObserver
 
 
 def _setup_logging(run_dir: Path) -> None:
@@ -277,8 +278,9 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
     logger.info(f"=== AI News Pipeline: {date_str} ===")
 
     summary = {"date": date_str, "run_dir": str(run_dir)}
-    ledger = reset_ledger()
-    cp = PipelineCheckpoint(run_dir)
+    ledger   = reset_ledger()
+    cp       = PipelineCheckpoint(run_dir)
+    observer = PipelineObserver(run_dir, pipeline="daily")
     seen = SeenStories(
         settings.data_dir / "seen_stories.db",
         ttl_days=settings.dedup_ttl_days,
@@ -286,6 +288,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
 
     try:
         # 1. Scrape, deduplicate, and select stories
+        observer.step_start("scrape")
         if not cp.is_done("scrape"):
             news = scrape_all()
             dedup_stats = seen.stats()
@@ -311,6 +314,9 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
                 # Persist news titles so we can restore on resume
                 "news_titles": [n.title for n in news],
             })
+            observer.step_done("scrape",
+                               scraped_items=len(news),
+                               num_viral_news=len(viral_news) if viral_news else 0)
         else:
             logger.info("Step 1 (scrape) already done — reusing cached news list")
             # Restore lightweight state from checkpoint; real objects are
@@ -322,6 +328,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
             raw_news = seen.filter_new(raw_news)
             viral_news = pick_viral_news(raw_news, top_n=6)
             news = viral_news if viral_news else raw_news
+            observer.step_skip("scrape")
 
         meta = cp.metadata("scrape")
         summary["scraped_items"]  = meta.get("scraped_items", len(news))
@@ -341,6 +348,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         feedback_history = feedback_analyzer.load_feedback_history()
 
         script_cache = run_dir / "script.json"
+        observer.step_start("script")
         if not cp.is_done("script"):
             decision_engine = DecisionEngine()
             strategy = decision_engine.decide(feedback_history)
@@ -448,18 +456,21 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
 
             save_for_digest(settings.data_dir, dt.date.today(), script_cache)
             cp.mark_done("script", {"title": script.title, "num_scenes": len(script.scenes)})
+            observer.step_done("script", title=script.title, num_scenes=len(script.scenes))
         else:
             logger.info("Step 2 (script) already done — loading cached script.json")
             script = _load_cached_script(script_cache)
             if script is None:
                 raise RuntimeError("Checkpoint says script is done but script.json is missing")
             save_for_digest(settings.data_dir, dt.date.today(), script_cache)
+            observer.step_skip("script", title=script.title, num_scenes=len(script.scenes))
 
         summary["title"]      = script.title
         summary["num_scenes"] = len(script.scenes)
 
         # 3. Voice
         audio_dir = run_dir / "audio"
+        observer.step_start("voice")
         if not cp.is_done("voice"):
             if not audio_dir.exists() or len(list(audio_dir.glob("*.mp3"))) < len(script.scenes):
                 synthesize_script(script, run_dir)
@@ -467,10 +478,13 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
             else:
                 logger.info("Reusing cached audio; measuring durations")
                 _load_audio_durations(script, audio_dir)
-            cp.mark_done("voice", {"total_duration_sec": sum(s.duration_sec for s in script.scenes)})
+            total_dur = sum(s.duration_sec for s in script.scenes)
+            cp.mark_done("voice", {"total_duration_sec": total_dur})
+            observer.step_done("voice", total_duration_sec=total_dur)
         else:
             logger.info("Step 3 (voice) already done — measuring cached audio durations")
             _load_audio_durations(script, audio_dir)
+            observer.step_skip("voice", total_duration_sec=sum(s.duration_sec for s in script.scenes))
 
         summary["total_duration_sec"] = sum(s.duration_sec for s in script.scenes)
 
@@ -479,6 +493,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         _en_outro = _get_shared_outro()
         subtitle_path: Path | None = run_dir / "subtitles.srt"
         subtitle_path = subtitle_path if subtitle_path.exists() else None
+        observer.step_start("subtitles")
         if not cp.is_done("subtitles"):
             try:
                 subtitle_path = generate_subtitles(
@@ -488,21 +503,29 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
                     intro_duration=_get_intro_duration(_en_intro if _en_intro.exists() else None),
                 )
                 cp.mark_done("subtitles")
+                observer.step_done("subtitles")
             except Exception as exc:
                 logger.warning(f"Subtitle generation failed (non-fatal): {exc}")
+                observer.step_fail("subtitles", exc)
         else:
             logger.info("Step 4 (subtitles) already done")
+            observer.step_skip("subtitles")
 
         # 5. Video
         long_video = run_dir / "final_video.mp4"
+        observer.step_start("video")
         if not cp.is_done("video") or _needs_video_rebuild(long_video):
             build_video(script, run_dir,
                         intro_path=_en_intro if _en_intro.exists() else None,
-                        outro_path=_en_outro)
+                        outro_path=_en_outro,
+                        use_presenter=settings.presenter_enabled)
             seen.mark_featured(news)
-            cp.mark_done("video")
+            cp.mark_done("video", {"presenter": settings.presenter_enabled})
+            observer.step_done("video", file=long_video.name,
+                               presenter=settings.presenter_enabled)
         else:
             logger.info(f"Step 5 (video) already done — reusing {long_video.name}")
+            observer.step_skip("video")
 
         from src.broll_fetcher import get_pexels_credits
         credits = get_pexels_credits(run_dir)
@@ -510,10 +533,13 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
             script.description += "\n\nVideo clips provided by Pexels:\n" + "\n".join(credits)
 
         # 6. Thumbnail A/B
+        observer.step_start("thumbnail")
         if not cp.is_done("thumbnail"):
             thumb_variants = generate_thumbnail_variants(long_video, script.title, run_dir)
             thumbnail      = pick_thumbnail(thumb_variants, settings.data_dir, "daily")
-            cp.mark_done("thumbnail", {"style": thumbnail.stem.removeprefix("thumbnail_")})
+            _style = thumbnail.stem.removeprefix("thumbnail_")
+            cp.mark_done("thumbnail", {"style": _style})
+            observer.step_done("thumbnail", style=_style, variants=len(thumb_variants))
         else:
             logger.info("Step 6 (thumbnail) already done")
             _style = cp.metadata("thumbnail").get("style", "default")
@@ -522,6 +548,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
                 # Re-generate if file was deleted
                 thumb_variants = generate_thumbnail_variants(long_video, script.title, run_dir)
                 thumbnail      = pick_thumbnail(thumb_variants, settings.data_dir, "daily")
+            observer.step_skip("thumbnail", style=_style)
 
         summary["thumbnail_style"] = thumbnail.stem.removeprefix("thumbnail_")
 
@@ -532,11 +559,13 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
             summary["quality_warnings"] = quality_report.warnings
 
         # 7. Upload (English)
+        observer.step_start("upload_en")
         if not cp.is_done("upload_en"):
             if skip_upload:
                 logger.info("--skip-upload specified; leaving files on disk")
                 summary["status"] = "built_not_uploaded"
                 cp.mark_done("upload_en", {"skipped": True})
+                observer.step_done("upload_en", skipped=True)
             else:
                 ids = publish_episode(
                     script, long_video, None,
@@ -557,6 +586,8 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
                         platform="youtube",
                     )
                 cp.mark_done("upload_en", {k: v for k, v in ids.items()})
+                observer.step_done("upload_en", **{k: v for k, v in ids.items()
+                                                   if isinstance(v, (str, int, float, bool))})
         else:
             logger.info("Step 7 (upload_en) already done")
             meta = cp.metadata("upload_en")
@@ -565,8 +596,10 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
             else:
                 summary.update(meta)
                 summary["status"] = "published"
+            observer.step_skip("upload_en")
 
         # 8. Russian variant (optional)
+        observer.step_start("upload_ru")
         if settings.ru_enabled and not cp.is_done("upload_ru"):
             _ru_intro = settings.source_dir / "ai-novosti-intro.mp4"
             ru = _run_language_variant(
@@ -585,14 +618,19 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
             )
             summary["ru"] = ru
             cp.mark_done("upload_ru", ru)
+            observer.step_done("upload_ru", status=ru.get("status"))
         elif settings.ru_enabled:
             logger.info("Step 8 (upload_ru) already done")
             summary["ru"] = cp.metadata("upload_ru")
+            observer.step_skip("upload_ru")
+        else:
+            observer.step_skip("upload_ru")
 
         cost_report = ledger.save(run_dir / "cost_report.json")
         ledger.log_summary()
         summary["cost_usd"] = cost_report["total_usd"]
 
+        observer.finish(status="success", cost_usd=cost_report["total_usd"])
         notify_success(summary, "daily")
         logger.info(f"=== DONE ===  {json.dumps(summary, indent=2)}")
 
@@ -600,6 +638,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         logger.error(f"Quality gate blocked publish: {e}")
         summary["status"] = "quality_gate_failed"
         summary["error"]  = str(e)
+        observer.finish(status="quality_gate_failed", error=str(e))
         notify_failure(e, "daily", summary, str(e))
         raise
 
@@ -608,6 +647,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         logger.error(traceback.format_exc())
         summary["status"] = "failed"
         summary["error"]  = str(e)
+        observer.finish(status="failed", error=str(e))
         notify_failure(e, "daily", summary, traceback.format_exc())
         raise
 
