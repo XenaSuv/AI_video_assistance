@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.script_generator import VideoScript
 from src.ffmpeg_utils import duration as ff_duration
+from src.cost_tracker import get_ledger
 
 
 def annotated_to_ssml(text: str) -> str:
@@ -98,6 +99,7 @@ def synthesize_script(
             logger.info(f"  Using SSML for scene {scene.idx}")
 
         audio_bytes = _tts_convert(client, narration, v_id, m_id, use_ssml)
+        get_ledger().record_tts(f"tts-scene-{scene.idx:02d}", len(narration), m_id)
 
         with open(path, "wb") as f:
             for chunk in audio_bytes:

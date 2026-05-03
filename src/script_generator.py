@@ -16,6 +16,7 @@ from openai import OpenAI
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.cost_tracker import get_ledger
 from src.analytics import get_proven_hooks, get_proven_titles, top_keywords
 from src.scraper import NewsItem
 from src.editorial_brain import editorial_plan_to_prompt, EditorialPlan
@@ -218,8 +219,8 @@ Scenes to fill:
 """
 
 
-def _log_usage(usage, label: str = "") -> None:
-    """Log OpenAI token usage including prompt-cache savings."""
+def _log_usage(usage, label: str = "", model: str = "") -> None:
+    """Log OpenAI token usage and record in the cost ledger."""
     if not usage:
         return
     details = usage.prompt_tokens_details
@@ -229,6 +230,13 @@ def _log_usage(usage, label: str = "") -> None:
     logger.debug(
         f"{tag}OpenAI tokens — prompt: {usage.prompt_tokens} "
         f"({cached} cached, {pct}% hit) | completion: {usage.completion_tokens}"
+    )
+    get_ledger().record_llm(
+        tag=label or "llm",
+        model=model or settings.openai_model,
+        prompt_tokens=usage.prompt_tokens or 0,
+        completion_tokens=usage.completion_tokens or 0,
+        cached_tokens=cached,
     )
 
 

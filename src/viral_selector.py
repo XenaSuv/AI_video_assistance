@@ -7,6 +7,7 @@ from openai import OpenAI
 from loguru import logger
 
 from config import settings
+from src.cost_tracker import get_ledger
 from src.scraper import NewsItem
 
 HIGH_IMPACT_KEYWORDS = [
@@ -62,6 +63,8 @@ def gpt_score(item: NewsItem) -> int:
             temperature=0.0,
         )
         text = (res.choices[0].message.content or "").strip()
+        if res.usage:
+            get_ledger().record_llm("viral-score", settings.openai_model, res.usage.prompt_tokens or 0, res.usage.completion_tokens or 0)
         match = re.search(r"(\d+)", text)
         if match:
             return max(1, min(10, int(match.group(1))))

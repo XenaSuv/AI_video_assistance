@@ -47,6 +47,7 @@ from src.youtube_uploader import publish_episode
 from src.slack_notifier import notify_success, notify_failure
 from src.checkpoint import PipelineCheckpoint
 from src.quality_gate import run_gate, QualityGateError
+from src.cost_tracker import reset_ledger
 
 
 def _setup_logging(run_dir: Path) -> None:
@@ -276,6 +277,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
     logger.info(f"=== AI News Pipeline: {date_str} ===")
 
     summary = {"date": date_str, "run_dir": str(run_dir)}
+    ledger = reset_ledger()
     cp = PipelineCheckpoint(run_dir)
     seen = SeenStories(
         settings.data_dir / "seen_stories.db",
@@ -586,6 +588,10 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         elif settings.ru_enabled:
             logger.info("Step 8 (upload_ru) already done")
             summary["ru"] = cp.metadata("upload_ru")
+
+        cost_report = ledger.save(run_dir / "cost_report.json")
+        ledger.log_summary()
+        summary["cost_usd"] = cost_report["total_usd"]
 
         notify_success(summary, "daily")
         logger.info(f"=== DONE ===  {json.dumps(summary, indent=2)}")
