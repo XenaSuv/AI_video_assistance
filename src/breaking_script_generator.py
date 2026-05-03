@@ -19,6 +19,7 @@ from openai import OpenAI
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.cost_tracker import get_ledger
 from src.scraper import NewsItem
 from src.script_generator import Scene, VideoScript
 
@@ -220,6 +221,13 @@ def _log_usage(usage, label: str = "") -> None:
     logger.debug(
         f"{tag}OpenAI tokens — prompt: {usage.prompt_tokens} "
         f"({cached} cached, {pct}% hit) | completion: {usage.completion_tokens}"
+    )
+    get_ledger().record_llm(
+        tag=label or "llm",
+        model=settings.openai_model,
+        prompt_tokens=usage.prompt_tokens or 0,
+        completion_tokens=usage.completion_tokens or 0,
+        cached_tokens=cached,
     )
 
 

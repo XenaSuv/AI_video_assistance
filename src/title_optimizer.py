@@ -6,6 +6,7 @@ from openai import OpenAI
 from loguru import logger
 
 from config import settings
+from src.cost_tracker import get_ledger
 
 
 client = OpenAI(api_key=settings.openai_api_key)
@@ -39,6 +40,8 @@ def generate_titles(news_item, n: int = 5) -> list[str]:
     )
 
     text = (res.choices[0].message.content or "").strip()
+    if res.usage:
+        get_ledger().record_llm("title-generate", settings.openai_model, res.usage.prompt_tokens or 0, res.usage.completion_tokens or 0)
     text = re.sub(r"^```json\s*", "", text, flags=re.IGNORECASE).strip()
     text = re.sub(r"```$", "", text).strip()
     try:
@@ -73,6 +76,8 @@ def pick_best_title(titles: list[str]) -> str:
         messages=[{"role": "user", "content": prompt}],
     )
     result = (res.choices[0].message.content or "").strip()
+    if res.usage:
+        get_ledger().record_llm("title-select", settings.openai_model, res.usage.prompt_tokens or 0, res.usage.completion_tokens or 0)
     if result:
         return result
     return titles[0] if titles else "AI NEWS"

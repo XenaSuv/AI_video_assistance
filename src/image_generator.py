@@ -25,6 +25,7 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.cost_tracker import get_ledger
 from src.script_generator import Scene
 import src.ffmpeg_utils as ffmpeg_utils
 import src.image_cache as image_cache
@@ -112,6 +113,7 @@ def generate_dalle_image(prompt: str, out_path: Path) -> Path:
     logger.info(f"DALL-E 3 HD: {prompt[:80]}…")
     data = _call_dalle(client, prompt)
     out_path.write_bytes(data)
+    get_ledger().record_image(f"image-{out_path.stem}", "dall-e-3")
     logger.info(f"  → {out_path.name} ({len(data)//1024} KB)")
     return out_path
 
