@@ -32,6 +32,7 @@ class Scene:
     visual_prompt: str          # DALL-E 3 prompt; used as fallback when no screenshot
     duration_sec: int = 0       # filled after TTS timing is known
     screenshot_key: str | None = None    # weekly tutorials: real screenshot from curated library
+    screenshot_url: str | None = None    # topic segments: capture any public URL on the fly
     short_narration: str | None = None   # ~120 words written for a standalone Shorts cut
     infographic_data: dict | None = None # animated chart/stat; skips DALL-E when set
     video_query: str | None = None       # stock B-roll search term; beats DALL-E, loses to infographic
