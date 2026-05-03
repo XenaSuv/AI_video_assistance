@@ -20,6 +20,7 @@ from config import settings
 from src.youtube_analytics import get_video_metrics, get_retention_curve
 from src.tiktok_analytics import get_video_metrics as get_tiktok_video_metrics
 from src.types import PerformanceStats
+from src.performance_tracker import get_unanalyzed, mark_analyzed
 
 
 @dataclass
@@ -250,6 +251,41 @@ class FeedbackAnalyzer:
             logger.info(f"Feedback saved for {result['video_id']}")
         except Exception as exc:
             logger.warning(f"Failed to save feedback: {exc}")
+
+    def collect_deferred_feedback(self, min_age_hours: float = 24.0) -> int:
+        """Fetch metrics for published videos that haven't been analyzed yet.
+
+        Called at the start of each pipeline run so that yesterday's video
+        has had time to accumulate real YouTube/TikTok Analytics data.
+        Returns the number of videos successfully analyzed.
+        """
+        pending = get_unanalyzed(min_age_hours)
+        if not pending:
+            logger.info("No pending videos for deferred feedback collection")
+            return 0
+
+        logger.info(f"Collecting deferred feedback for {len(pending)} video(s)")
+        collected = 0
+        for record in pending:
+            video_id = record["video_id"]
+            platform = record.get("platform", "youtube")
+            editorial_plan = {
+                "angle": record.get("angle", "unknown"),
+                "format": record.get("format", "unknown"),
+            }
+            result = self.analyze(video_id, platform, editorial_plan)
+            if result:
+                mark_analyzed(video_id)
+                collected += 1
+                logger.info(
+                    f"Deferred feedback collected: {video_id} "
+                    f"hook={result.get('hook_score')} "
+                    f"retention={result.get('avg_view_percentage')}"
+                )
+            else:
+                logger.warning(f"Deferred feedback failed for {video_id} — will retry next run")
+
+        return collected
 
     def load_feedback_history(self) -> list[dict[str, Any]]:
         """Load saved feedback history from storage."""
