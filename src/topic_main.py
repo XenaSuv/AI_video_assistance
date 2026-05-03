@@ -56,6 +56,7 @@ from src.topic_segment_generator import (
     _load_ideas,
 )
 from src.open_loop_agent import apply_open_loops
+from src.comment_magnet_agent import apply_comment_magnet
 
 
 def run_topic_pipeline(
@@ -102,6 +103,19 @@ def run_topic_pipeline(
                 ]
                 (run_dir / "open_loops.json").write_text(
                     json.dumps(loops_info, indent=2)
+                )
+
+            # 2b. Comment-magnet pass — adds one polarizing question before sign-off
+            cm_result = apply_comment_magnet(
+                script, subject=idea.subject, format_name=idea.format
+            )
+            script = cm_result.script
+            if cm_result.modified:
+                (run_dir / "comment_magnet.json").write_text(
+                    json.dumps({
+                        "question": cm_result.question,
+                        "inserted_at_scene": cm_result.inserted_at_scene,
+                    }, indent=2)
                 )
 
             script.save(script_cache)
