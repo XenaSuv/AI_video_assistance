@@ -235,23 +235,23 @@ def assemble_video(
         body_path = assembled_dir / "body_with_outro.mp4"
         body_path = ffmpeg_utils.concat(body_parts, body_path)
 
-    # Mix background music under content and outro so it reaches the true end.
-    music_path = _resolve_music_path()
-    if music_path:
-        body_music = assembled_dir / "body_with_music.mp4"
-        body_path = ffmpeg_utils.mix_music(
-            body_path,
-            music_path,
-            body_music,
-            volume=settings.background_music_volume,
-        )
-
     if has_intro:
         final_path = ffmpeg_utils.concat([intro_path, body_path], output_path)
     else:
         import shutil
         shutil.copy2(str(body_path), str(output_path))
         final_path = output_path
+
+    # Mix background music under the entire final video
+    music_path = _resolve_music_path()
+    if music_path:
+        final_with_music = assembled_dir / "final_with_music.mp4"
+        final_path = ffmpeg_utils.mix_music(
+            final_path,
+            music_path,
+            final_with_music,
+            volume=settings.background_music_volume,
+        )
 
     logger.info(f"Final video written: {final_path}")
     return final_path
