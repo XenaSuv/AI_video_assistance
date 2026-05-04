@@ -285,13 +285,21 @@ def build_video(
     clip_dir.mkdir(parents=True, exist_ok=True)
 
     # v2 pipeline: strategy (intent + feedback) → score-weighted scene_type
-    _strat_engine = SceneStrategyEngine()
-    _strategy = _strat_engine.build_strategy(
-        script.scenes,
-        editorial_plan=editorial_plan,
-        strategy_config=strategy_config,    # applies scene_mix boosts
-    )
-    SceneVarietyEngineV2(_strat_engine).assign(script.scenes, _strategy)
+    _strat_engine   = SceneStrategyEngine()
+    _variety_engine = SceneVarietyEngineV2(_strat_engine)
+    if strategy_config is not None:
+        # Full contract path: DecisionEngineV2 config drives everything
+        _variety_engine.assign_from_config(
+            script.scenes,
+            strategy_config,
+            editorial_plan=editorial_plan,
+        )
+    else:
+        _strategy = _strat_engine.build_strategy(
+            script.scenes,
+            editorial_plan=editorial_plan,
+        )
+        _variety_engine.assign(script.scenes, _strategy)
 
     clip_paths_by_scene = {
         s.idx: generate_clips_for_scene(s, clip_dir, tool=tool, run_dir=out_dir, is_breaking=is_breaking)

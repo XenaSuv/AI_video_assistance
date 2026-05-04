@@ -53,17 +53,73 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 
 
-# ── StrategyConfig ─────────────────────────────────────────────────────────────
+# ── Contract types ────────────────────────────────────────────────────────────
 
 _VALID_MODES        = frozenset({"growth", "safe", "experimental"})
 _VALID_LENGTHS      = frozenset({"short", "medium", "long"})
 _VALID_PACES        = frozenset({"fast", "normal", "slow"})
-_VALID_SCENE_TYPES  = frozenset({"image", "text_overlay", "infographic", "diagram", "cutaway"})
+_VALID_SCENE_TYPES  = frozenset({"image", "text_overlay", "infographic", "diagram", "cutaway", "avatar"})
+
+
+@dataclass
+class ScenePolicy:
+    """Scene-level execution policy carried inside StrategyConfig.
+
+    This is the contract surface between Decision Engine and Scene Variety Engine:
+    Decision Engine writes it; SceneVarietyEngineV2.assign_from_config() reads it.
+
+    Fields
+    ------
+    mix
+        Weighted distribution of scene types.  ``SceneVarietyEngineV2`` draws from
+        this when assigning types, filtered by each scene's intent.  Normalised to
+        sum 1.0 in __post_init__.
+    pattern_interrupt_frequency
+        Insert a ``"cutaway"`` every *N* scenes (1-indexed, scene 0 excluded).
+        Set to 0 to disable.
+    priority_intents
+        Scenes whose intent appears here always get the best-scoring type for that
+        intent (via ``pick_best``), bypassing the random weighted draw.
+    avoid_repetition
+        When True, ``_enforce_variety`` prevents consecutive identical types.
+    """
+
+    mix: dict[str, float]      = field(default_factory=dict)
+    pattern_interrupt_frequency: int  = 3
+    priority_intents: list[str]       = field(default_factory=lambda: ["hook"])
+    avoid_repetition: bool            = True
+
+    def __post_init__(self) -> None:
+        if self.mix:
+            total = sum(self.mix.values())
+            if total > 0 and abs(total - 1.0) > 0.01:
+                self.mix = {k: v / total for k, v in self.mix.items()}
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "mix":                          self.mix,
+            "pattern_interrupt_frequency":  self.pattern_interrupt_frequency,
+            "priority_intents":             self.priority_intents,
+            "avoid_repetition":             self.avoid_repetition,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ScenePolicy":
+        return cls(
+            mix                          = d.get("mix",                          {}),
+            pattern_interrupt_frequency  = int(d.get("pattern_interrupt_frequency", 3)),
+            priority_intents             = d.get("priority_intents",             ["hook"]),
+            avoid_repetition             = bool(d.get("avoid_repetition",         True)),
+        )
 
 
 @dataclass
 class StrategyConfig:
-    """System-wide generation strategy returned by DecisionEngineV2.decide()."""
+    """System-wide generation strategy returned by DecisionEngineV2.decide().
+
+    ``scene_policy`` is the unified contract passed to SceneVarietyEngineV2.
+    ``scene_mix`` is kept as a convenience alias synced with ``scene_policy.mix``.
+    """
 
     mode: str                         = "growth"
     video_length: str                 = "medium"
@@ -71,6 +127,7 @@ class StrategyConfig:
     hook_aggressiveness: float        = 0.7
     scene_mix: dict[str, float]       = field(default_factory=dict)
     pace: str                         = "normal"
+    scene_policy: ScenePolicy         = field(default_factory=ScenePolicy)
 
     def __post_init__(self) -> None:
         if self.mode not in _VALID_MODES:
@@ -84,8 +141,16 @@ class StrategyConfig:
         if not 0.0 <= self.hook_aggressiveness <= 1.0:
             raise ValueError(f"hook_aggressiveness must be 0.0–1.0, got {self.hook_aggressiveness}")
 
-        # Normalise scene_mix so it always sums to 1.0
-        if self.scene_mix:
+        # Sync scene_mix ↔ scene_policy.mix (caller may set either)
+        if self.scene_policy.mix and not self.scene_mix:
+            self.scene_mix = dict(self.scene_policy.mix)
+        elif self.scene_mix and not self.scene_policy.mix:
+            total = sum(self.scene_mix.values())
+            if total > 0 and abs(total - 1.0) > 0.01:
+                self.scene_mix = {k: v / total for k, v in self.scene_mix.items()}
+            self.scene_policy.mix = dict(self.scene_mix)
+        elif self.scene_mix:
+            # Both set: normalise scene_mix, let scene_policy.mix stand as-is
             total = sum(self.scene_mix.values())
             if total > 0 and abs(total - 1.0) > 0.01:
                 self.scene_mix = {k: v / total for k, v in self.scene_mix.items()}
@@ -98,10 +163,12 @@ class StrategyConfig:
             "hook_aggressiveness": self.hook_aggressiveness,
             "scene_mix":           self.scene_mix,
             "pace":                self.pace,
+            "scene_policy":        self.scene_policy.to_dict(),
         }
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "StrategyConfig":
+        sp_raw = d.get("scene_policy", {})
         return cls(
             mode                = d.get("mode",                "growth"),
             video_length        = d.get("video_length",        "medium"),
@@ -109,6 +176,7 @@ class StrategyConfig:
             hook_aggressiveness = float(d.get("hook_aggressiveness", 0.7)),
             scene_mix           = d.get("scene_mix",           {}),
             pace                = d.get("pace",                "normal"),
+            scene_policy        = ScenePolicy.from_dict(sp_raw) if sp_raw else ScenePolicy(),
         )
 
 
@@ -276,47 +344,68 @@ class DecisionEngineV2:
 
     def _growth_strategy(self, metrics: dict[str, Any]) -> StrategyConfig:
         """Aggressive retention: short, fast, high-energy hooks, dynamic scenes."""
+        mix = {
+            "text_overlay": 0.25,
+            "image":        0.20,
+            "infographic":  0.20,
+            "diagram":      0.20,
+            "cutaway":      0.15,
+        }
         return StrategyConfig(
             mode                = "growth",
             video_length        = "short",
             avatar_frequency    = 0.30,
             hook_aggressiveness = 0.90,
-            scene_mix = {
-                "text_overlay": 0.25,
-                "image":        0.20,
-                "infographic":  0.20,
-                "diagram":      0.20,
-                "cutaway":      0.15,
-            },
-            pace = "fast",
+            scene_mix           = mix,
+            pace                = "fast",
+            scene_policy        = ScenePolicy(
+                mix                         = mix,
+                pattern_interrupt_frequency = 2,
+                priority_intents            = ["hook", "shock"],
+                avoid_repetition            = True,
+            ),
         )
 
     def _safe_strategy(self, metrics: dict[str, Any]) -> StrategyConfig:
         """Stabilise: longer, calmer, image-heavy, proven format."""
+        mix = {
+            "image":        0.40,
+            "diagram":      0.20,
+            "infographic":  0.20,
+            "cutaway":      0.10,
+            "text_overlay": 0.10,
+        }
         return StrategyConfig(
             mode                = "safe",
             video_length        = "long",
             avatar_frequency    = 0.15,
             hook_aggressiveness = 0.50,
-            scene_mix = {
-                "image":        0.40,
-                "diagram":      0.20,
-                "infographic":  0.20,
-                "cutaway":      0.10,
-                "text_overlay": 0.10,
-            },
-            pace = "normal",
+            scene_mix           = mix,
+            pace                = "normal",
+            scene_policy        = ScenePolicy(
+                mix                         = mix,
+                pattern_interrupt_frequency = 4,
+                priority_intents            = ["hook"],
+                avoid_repetition            = True,
+            ),
         )
 
     def _experimental_strategy(self, metrics: dict[str, Any]) -> StrategyConfig:
         """Randomised exploration: vary length, hooks, and scene composition."""
+        mix = self._random_scene_mix()
         return StrategyConfig(
             mode                = "experimental",
             video_length        = random.choice(["short", "medium"]),
             avatar_frequency    = round(random.uniform(0.10, 0.40), 2),
             hook_aggressiveness = round(random.uniform(0.50, 1.00), 2),
-            scene_mix           = self._random_scene_mix(),
+            scene_mix           = mix,
             pace                = random.choice(["fast", "normal"]),
+            scene_policy        = ScenePolicy(
+                mix                         = mix,
+                pattern_interrupt_frequency = random.choice([2, 3]),
+                priority_intents            = ["hook"],
+                avoid_repetition            = True,
+            ),
         )
 
     def _random_scene_mix(self) -> dict[str, float]:
@@ -325,3 +414,18 @@ class DecisionEngineV2:
         weights = [random.random() for _ in types]
         total   = sum(weights)
         return {t: round(w / total, 4) for t, w in zip(types, weights)}
+
+    def update_scene_mix_from_feedback(self, strat_engine: Any) -> dict[str, float]:
+        """Derive a normalised scene_mix from SceneStrategyEngine's EMA scores.
+
+        Returns the mix dict (caller may log or pass it to record()).
+        Typical call: after a video run, pass the SceneStrategyEngine used so its
+        updated scores shape the next decide() call's scene policy.
+        """
+        scores = strat_engine.get_scores()
+        total  = sum(scores.values())
+        if total <= 0:
+            return {}
+        mix = {t: round(s / total, 4) for t, s in scores.items()}
+        logger.info(f"DecisionEngineV2.update_scene_mix_from_feedback: {mix}")
+        return mix
