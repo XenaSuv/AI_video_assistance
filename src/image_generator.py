@@ -307,6 +307,20 @@ def _valid_video_clip(path: Path) -> bool:
 # ── Screenshot helper ─────────────────────────────────────────────────────────
 
 def _try_real_screenshot(scene: Scene, tool: str | None, img_path: Path) -> bool:
+    # Dynamic URL screenshot (topic segments)
+    if scene.screenshot_url:
+        try:
+            from src.screenshot_capturer import capture_url
+            capture_url(scene.screenshot_url, img_path)
+            return img_path.exists()
+        except Exception as e:
+            logger.warning(
+                f"Scene {scene.idx} dynamic screenshot failed ({scene.screenshot_url}): {e} "
+                "— falling back to image generation"
+            )
+            return False
+
+    # Curated library screenshot (weekly tutorials)
     if not tool or not scene.screenshot_key:
         return False
     try:

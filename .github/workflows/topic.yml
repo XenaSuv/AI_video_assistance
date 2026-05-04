@@ -1,14 +1,22 @@
-name: Sunday Weekly Digest
+name: Topic Deep-Dive Video
 
 on:
   schedule:
-    - cron: "0 10 * * 0"   # Sunday 10:00 UTC (2h after the daily run)
+    - cron: "0 10 * * 2"   # Tuesday  10:00 UTC
+    - cron: "0 10 * * 4"   # Thursday 10:00 UTC
   workflow_dispatch:
     inputs:
-      date:
-        description: "Sunday date to digest (YYYY-MM-DD, leave blank for today)"
+      format:
+        description: "Topic format (leave blank for automatic pick)"
         required: false
         default: ""
+        type: choice
+        options:
+          - ""
+          - honest_review
+          - hidden_gems
+          - ai_project_build
+          - news_with_opinion
       skip_upload:
         description: "Build video but skip YouTube upload"
         required: false
@@ -24,7 +32,8 @@ jobs:
       - name: Install system deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-dejavu libjpeg-dev zlib1g-dev libfreetype6-dev liblcms2-dev libwebp-dev
+          sudo apt-get install -y ffmpeg fonts-dejavu libjpeg-dev zlib1g-dev \
+            libfreetype6-dev liblcms2-dev libwebp-dev
 
       - uses: actions/setup-python@v5
         with:
@@ -33,12 +42,17 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Restore digest scripts cache (Mon-Sat daily scripts)
+      - name: Install Playwright Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Restore topic idea queue
         uses: actions/cache@v4
         with:
-          path: data/digest_scripts/
-          key: digest-scripts-${{ github.run_id }}
-          restore-keys: digest-scripts-
+          path: |
+            data/topic_ideas.json
+            data/topic_ideas_used.json
+          key: topic-ideas-${{ github.run_id }}
+          restore-keys: topic-ideas-
 
       - name: Restore YouTube OAuth credentials
         run: |
@@ -69,21 +83,21 @@ jobs:
                   loader(p)
                   print(f"  {label}: OK ({p.stat().st_size} bytes)")
               except Exception as e:
-                  print(f"  {label}: INVALID - {e}", file=sys.stderr)
+                  print(f"  {label}: INVALID — {e}", file=sys.stderr)
                   sys.exit(1)
 
           print("English channel:")
-          check("token.pickle",       "config/token.pickle",       lambda p: pickle.load(p.open("rb")))
-          check("client_secrets.json","config/client_secrets.json",lambda p: json.load(p.open()))
+          check("token.pickle",        "config/token.pickle",        lambda p: pickle.load(p.open("rb")))
+          check("client_secrets.json", "config/client_secrets.json", lambda p: json.load(p.open()))
 
           print("Russian channel:")
-          check("token_ru.pickle",        "config/token_ru.pickle",        lambda p: pickle.load(p.open("rb")))
-          check("client_secrets_ru.json", "config/client_secrets_ru.json", lambda p: json.load(p.open()))
+          check("token_ru.pickle",         "config/token_ru.pickle",         lambda p: pickle.load(p.open("rb")))
+          check("client_secrets_ru.json",  "config/client_secrets_ru.json",  lambda p: json.load(p.open()))
           EOF
 
-      - name: Run digest pipeline
+      - name: Run topic pipeline
         env:
-          SLACK_WEBHOOK_URL: ${{ vars.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_URL:      ${{ vars.SLACK_WEBHOOK_URL }}
           OPENAI_API_KEY:         ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL:           gpt-4o-mini
           ELEVENLABS_API_KEY:     ${{ secrets.ELEVENLABS_API_KEY }}
@@ -93,16 +107,15 @@ jobs:
           PIXABAY_API_KEY:        ${{ secrets.PIXABAY_API_KEY }}
           YOUTUBE_CLIENT_SECRETS: config/client_secrets.json
           YOUTUBE_TOKEN_FILE:     config/token.pickle
-          YOUTUBE_CATEGORY_ID:    "28"   # Science & Technology
+          YOUTUBE_CATEGORY_ID:    "28"
           YOUTUBE_PRIVACY:        unlisted
-          SCRIPT_TARGET_WORDS:    "950"
+          SCRIPT_TARGET_WORDS:    "2200"
           OUTPUT_DIR:             output
           LOG_DIR:                logs
           DATA_DIR:               data
           BACKGROUND_MUSIC_PATH:  ${{ vars.BACKGROUND_MUSIC_PATH || 'background_music.mp3' }}
           BACKGROUND_MUSIC_VOLUME: ${{ vars.BACKGROUND_MUSIC_VOLUME || '0.10' }}
           SHORTS_MUSIC_VOLUME:    ${{ vars.SHORTS_MUSIC_VOLUME || '0.13' }}
-          # Russian variant
           RU_ENABLED:             ${{ vars.RU_ENABLED || 'false' }}
           RU_ELEVENLABS_VOICE_ID: ${{ secrets.RU_ELEVENLABS_VOICE_ID }}
           RU_ELEVENLABS_MODEL:    eleven_multilingual_v2
@@ -110,24 +123,26 @@ jobs:
           RU_YOUTUBE_TOKEN_FILE:  config/token_ru.pickle
         run: |
           ARGS=""
-          if [ -n "${{ github.event.inputs.date }}" ]; then
-            ARGS="$ARGS --date ${{ github.event.inputs.date }}"
+          if [ -n "${{ github.event.inputs.format }}" ]; then
+            ARGS="$ARGS --format ${{ github.event.inputs.format }}"
           fi
           if [ "${{ github.event.inputs.skip_upload }}" = "true" ]; then
             ARGS="$ARGS --skip-upload"
           fi
-          python src/digest_main.py $ARGS
+          python src/topic_main.py $ARGS
 
       - name: Archive logs and artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: digest-${{ github.run_id }}
+          name: topic-${{ github.run_id }}
           path: |
             logs/
-            output/digest/*/run.log
-            output/digest/*/script.json
-            output/digest/*/script_ru.json
-            output/digest/*/thumbnail.jpg
-            output/digest/*/thumbnail_ru.jpg
+            output/topic/*/*/run.log
+            output/topic/*/*/script.json
+            output/topic/*/*/idea.json
+            output/topic/*/*/open_loops.json
+            output/topic/*/*/comment_magnet.json
+            output/topic/*/*/pacing_audit.json
+            output/topic/*/*/thumbnail.jpg
           retention-days: 30
