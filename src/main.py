@@ -137,8 +137,8 @@ def _needs_video_rebuild(video_path: Path) -> bool:
             cached.unlink(missing_ok=True)
         return True
     try:
-                ids = publish_episode(
-                    script, long_video, short_video,
+        if ffmpeg_utils.has_audio_stream(video_path):
+            return False
     except Exception as exc:
         logger.warning(f"Cached video probe failed for {video_path.name}: {exc}")
 
