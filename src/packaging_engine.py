@@ -178,7 +178,63 @@ class PackagingEngine:
         self._log_result(result)
         return result
 
-    # ── Core idea ──────────────────────────────────────────────────────────────
+    def generate_variants(
+        self,
+        editorial_plan: Any,
+        strategy_config: Any,
+    ) -> list:
+        """Generate three packaging variants for A/B testing.
+
+        Each variant tests a different emotional angle (curiosity / conflict /
+        simple) derived from the same core idea, so the test measures *style*
+        not just text.
+
+        Returns a list of :class:`~src.ab_testing_engine.ABTestVariant`.
+        """
+        from src.ab_testing_engine import ABTestVariant
+
+        plan_entry = self._extract_plan_entry(editorial_plan)
+        idea       = self._extract_core_idea(plan_entry)
+
+        return [
+            self._variant_curiosity(idea, strategy_config, ABTestVariant),
+            self._variant_conflict(idea,  strategy_config, ABTestVariant),
+            self._variant_simple(idea,    strategy_config, ABTestVariant),
+        ]
+
+    # ── Variant builders ───────────────────────────────────────────────────────
+
+    def _variant_curiosity(self, idea: str, strategy_config: Any, cls: type) -> Any:
+        """Open-loop curiosity variant — builds anticipation, withholds the answer."""
+        return cls(
+            id        = "A",
+            type      = "curiosity",
+            title     = "This changes everything...",
+            thumbnail = {"text": "WAIT WHAT?", "style": "clean", "emotion": "curiosity"},
+            hook      = f"Wait — {idea}... and nobody saw this coming",
+        )
+
+    def _variant_conflict(self, idea: str, strategy_config: Any, cls: type) -> Any:
+        """Explicit conflict variant — names the problem, maximises urgency."""
+        return cls(
+            id        = "B",
+            type      = "conflict",
+            title     = "The problem nobody talks about",
+            thumbnail = {"text": "THE PROBLEM", "style": "high_contrast", "emotion": "shock"},
+            hook      = f"{idea}... but here's what nobody tells you",
+        )
+
+    def _variant_simple(self, idea: str, strategy_config: Any, cls: type) -> Any:
+        """Clean explainer variant — clarity over urgency, lower bounce risk."""
+        return cls(
+            id        = "C",
+            type      = "simple",
+            title     = "What you need to know",
+            thumbnail = {"text": "EXPLAINED", "style": "neutral", "emotion": "curiosity"},
+            hook      = f"Let's break this down clearly: {idea.lower()}",
+        )
+
+
 
     def _extract_core_idea(self, plan_entry: dict[str, Any]) -> str:
         """Derive a single conflict-rooted sentence from the editorial plan entry.
