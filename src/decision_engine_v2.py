@@ -286,17 +286,35 @@ class DecisionEngineV2:
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
-    def decide(self, metrics: dict[str, Any] | None = None) -> StrategyConfig:
+    def decide(
+        self,
+        metrics:      dict[str, Any] | None = None,
+        scene_bandit: Any | None            = None,
+    ) -> StrategyConfig:
         """Produce a StrategyConfig from channel metrics.
 
-        *metrics* can be injected directly (e.g. from YouTube Analytics);
-        when None, the store's aggregated metrics are used.
+        *metrics*      — injected directly (e.g. from YouTube Analytics);
+                         when None, the store's aggregated metrics are used.
+        *scene_bandit* — SceneBandit instance; when provided its Thompson
+                         Sampling selection overwrites the strategy's scene_mix,
+                         replacing the hard-coded mix chosen by the mode builder.
         """
         if metrics is None:
             metrics = self._load_metrics()
 
         mode   = self._select_mode(metrics)
         config = self._build_strategy(mode, metrics)
+
+        if scene_bandit is not None:
+            policy = scene_bandit.select_policy()
+            if policy is not None:
+                new_mix = dict(policy.scene_mix)
+                config.scene_policy.mix = new_mix
+                config.scene_mix        = new_mix
+                logger.info(
+                    f"DecisionEngineV2: scene_mix overridden by SceneBandit "
+                    f"→ {policy.id!r} ({policy.label})"
+                )
 
         logger.info(
             f"DecisionEngineV2: mode={config.mode}, pace={config.pace}, "
