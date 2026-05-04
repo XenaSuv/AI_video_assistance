@@ -330,19 +330,26 @@ class TrainingDataset:
         if not curve:
             return 0
 
-        # Build set of scene_idxs with a drop
-        drop_scene_idxs: set[int] = set()
+        # Build drop set and covered set from scene_map
+        drop_scene_idxs:    set[int] = set()
+        covered_scene_idxs: set[int] = set()   # scenes we have timestamp data for
         for i in range(1, len(curve)):
+            info = scene_map.get(i)
+            if info is None:
+                continue
+            scene_idx = info.get("scene_idx", i)
+            covered_scene_idxs.add(scene_idx)
             delta = curve[i - 1] - curve[i]
             if delta > DROP_LABEL_THRESHOLD:
-                info = scene_map.get(i)
-                if info:
-                    drop_scene_idxs.add(info.get("scene_idx", i))
+                drop_scene_idxs.add(scene_idx)
 
         added = 0
         for pos, scene in enumerate(scenes):
             scene_idx = getattr(scene, "idx", pos)
-            label     = 1 if scene_idx in drop_scene_idxs else 0
+            if scene_idx not in covered_scene_idxs:
+                # No timestamp data for this scene → skip rather than mislabel
+                continue
+            label = 1 if scene_idx in drop_scene_idxs else 0
             self.add_example(enc.from_scene(scene, position=pos), label)
             added += 1
 

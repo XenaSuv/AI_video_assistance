@@ -48,7 +48,6 @@ from __future__ import annotations
 import json
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
@@ -57,6 +56,7 @@ from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.constants import VARIANT_TYPE_DELTAS, RateLimitMixin
 
 if TYPE_CHECKING:
     from src.ab_testing_engine import ABTestVariant
@@ -171,7 +171,7 @@ class ThompsonStore:
 
 # ── ThompsonBandit ────────────────────────────────────────────────────────────
 
-class ThompsonBandit:
+class ThompsonBandit(RateLimitMixin):
     """Thompson Sampling bandit — Beta-posterior exploration/exploitation.
 
     Typical lifecycle per video::
@@ -199,6 +199,7 @@ class ThompsonBandit:
         self._state           = self._store.load()
         self.min_switch_hours = min_switch_hours
         self._rng             = _stdlib_random.Random(seed)   # reproducible when seed set
+        self._label           = "ThompsonBandit"
 
     # ── Arm management ─────────────────────────────────────────────────────────
 
@@ -298,32 +299,7 @@ class ThompsonBandit:
             f"mean={arm.mean:.4f}  imp={arm.impressions}"
         )
 
-    # ── Rate limiting ──────────────────────────────────────────────────────────
-
-    def can_switch(self) -> bool:
-        """True if enough time has elapsed since the last variant switch."""
-        if self._state.last_switch_at is None:
-            return True
-        last    = datetime.fromisoformat(self._state.last_switch_at)
-        elapsed = (datetime.now(timezone.utc) - last).total_seconds() / 3600
-        ok      = elapsed >= self.min_switch_hours
-        if not ok:
-            remaining = self.min_switch_hours - elapsed
-            logger.debug(f"ThompsonBandit: rate-limited — {remaining:.1f} h remaining")
-        return ok
-
-    def record_switch(self) -> None:
-        """Mark now as the last switch time (call after applying a variant)."""
-        self._state.last_switch_at = datetime.now(timezone.utc).isoformat()
-        self._store.save(self._state)
-
-    def time_until_switch(self) -> float:
-        """Hours remaining until can_switch() returns True (0.0 if ready)."""
-        if self._state.last_switch_at is None:
-            return 0.0
-        last    = datetime.fromisoformat(self._state.last_switch_at)
-        elapsed = (datetime.now(timezone.utc) - last).total_seconds() / 3600
-        return max(0.0, self.min_switch_hours - elapsed)
+    # ── Rate limiting — provided by RateLimitMixin ────────────────────────────
 
     # ── Decision Engine feedback ───────────────────────────────────────────────
 
@@ -342,7 +318,7 @@ class ThompsonBandit:
             return {}
 
         best  = max(arms_with_data, key=lambda a: a.mean)
-        delta = {"conflict": +0.10, "curiosity": +0.05, "simple": -0.05}.get(best.type, 0.0)
+        delta = VARIANT_TYPE_DELTAS.get(best.type, 0.0)
 
         adjustments = {
             "preferred_variant_type":    best.type,

@@ -45,7 +45,6 @@ import json
 import math
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
@@ -53,6 +52,7 @@ from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.constants import VARIANT_TYPE_DELTAS, RateLimitMixin
 
 if TYPE_CHECKING:
     from src.ab_testing_engine import ABTestVariant
@@ -161,7 +161,7 @@ class BanditStore:
 
 # ── BanditEngine ──────────────────────────────────────────────────────────────
 
-class BanditEngine:
+class BanditEngine(RateLimitMixin):
     """UCB1 multi-armed bandit for continuous packaging variant optimisation.
 
     Typical lifecycle per video::
@@ -187,6 +187,7 @@ class BanditEngine:
         self._store            = BanditStore(data_dir)
         self._state            = self._store.load()
         self.min_switch_hours  = min_switch_hours
+        self._label            = "BanditEngine"
 
     # ── Arm management ─────────────────────────────────────────────────────────
 
@@ -294,35 +295,7 @@ class BanditEngine:
             f"reward={arm.reward:.4f}"
         )
 
-    # ── Rate limiting ──────────────────────────────────────────────────────────
-
-    def can_switch(self) -> bool:
-        """True if enough time has elapsed since the last variant switch.
-
-        YouTube penalises very frequent metadata changes; default minimum is 2 h.
-        """
-        if self._state.last_switch_at is None:
-            return True
-        last    = datetime.fromisoformat(self._state.last_switch_at)
-        elapsed = (datetime.now(timezone.utc) - last).total_seconds() / 3600
-        ok      = elapsed >= self.min_switch_hours
-        if not ok:
-            remaining = self.min_switch_hours - elapsed
-            logger.debug(f"BanditEngine: rate-limited — {remaining:.1f} h until next switch")
-        return ok
-
-    def record_switch(self) -> None:
-        """Call after applying a variant to YouTube to reset the rate-limit timer."""
-        self._state.last_switch_at = datetime.now(timezone.utc).isoformat()
-        self._store.save(self._state)
-
-    def time_until_switch(self) -> float:
-        """Return hours remaining until can_switch() will be True (0.0 if ready)."""
-        if self._state.last_switch_at is None:
-            return 0.0
-        last    = datetime.fromisoformat(self._state.last_switch_at)
-        elapsed = (datetime.now(timezone.utc) - last).total_seconds() / 3600
-        return max(0.0, self.min_switch_hours - elapsed)
+    # ── Rate limiting — provided by RateLimitMixin ────────────────────────────
 
     # ── Decision Engine feedback ───────────────────────────────────────────────
 
@@ -342,7 +315,7 @@ class BanditEngine:
             return {}
 
         best = max(arms_with_data, key=lambda a: a.reward)
-        delta = {"conflict": +0.10, "curiosity": +0.05, "simple": -0.05}.get(best.type, 0.0)
+        delta = VARIANT_TYPE_DELTAS.get(best.type, 0.0)
 
         adjustments = {
             "preferred_variant_type":    best.type,

@@ -49,7 +49,6 @@ import json
 import random as _stdlib_random
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +56,7 @@ from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.constants import RateLimitMixin
 
 
 # ── Built-in scene policies ───────────────────────────────────────────────────
@@ -182,7 +182,7 @@ class SceneBanditStore:
 
 # ── SceneBandit ───────────────────────────────────────────────────────────────
 
-class SceneBandit:
+class SceneBandit(RateLimitMixin):
     """Thompson Sampling bandit over scene policies.
 
     Typical lifecycle::
@@ -212,6 +212,7 @@ class SceneBandit:
         self._state           = self._store.load()
         self.min_switch_hours = min_switch_hours
         self._rng             = _stdlib_random.Random(seed)
+        self._label           = "SceneBandit"
         self._ensure_builtins()
 
     # ── Policy management ──────────────────────────────────────────────────────
@@ -344,32 +345,7 @@ class SceneBandit:
             f"retention={retention:.3f} < {self.LOW_RETENTION_THRESH})"
         )
 
-    # ── Rate limiting ──────────────────────────────────────────────────────────
-
-    def can_switch(self) -> bool:
-        """True if enough time has elapsed since the last policy switch."""
-        if self._state.last_switch_at is None:
-            return True
-        last    = datetime.fromisoformat(self._state.last_switch_at)
-        elapsed = (datetime.now(timezone.utc) - last).total_seconds() / 3600
-        ok      = elapsed >= self.min_switch_hours
-        if not ok:
-            remaining = self.min_switch_hours - elapsed
-            logger.debug(f"SceneBandit: rate-limited — {remaining:.1f} h remaining")
-        return ok
-
-    def record_switch(self) -> None:
-        """Mark now as the last switch time (call after applying a policy)."""
-        self._state.last_switch_at = datetime.now(timezone.utc).isoformat()
-        self._store.save(self._state)
-
-    def time_until_switch(self) -> float:
-        """Hours remaining until can_switch() returns True (0.0 if ready)."""
-        if self._state.last_switch_at is None:
-            return 0.0
-        last    = datetime.fromisoformat(self._state.last_switch_at)
-        elapsed = (datetime.now(timezone.utc) - last).total_seconds() / 3600
-        return max(0.0, self.min_switch_hours - elapsed)
+    # ── Rate limiting — provided by RateLimitMixin ────────────────────────────
 
     # ── Introspection ──────────────────────────────────────────────────────────
 

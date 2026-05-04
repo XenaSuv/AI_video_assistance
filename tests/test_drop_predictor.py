@@ -389,27 +389,40 @@ class TestTrainingDataset:
     def test_build_from_video_labels_drop_scenes(self):
         scenes = [_Scene(idx=0), _Scene(idx=1), _Scene(idx=2)]
         curve  = [0.9, 0.60, 0.58]   # drop at index 1: delta=0.30 > 0.15
+        # Only scene 1 is covered; scenes 0 and 2 are NOT in scene_map → skipped
         scene_map = {1: {"scene_idx": 1, "scene_type": "image", "intent": "explain"}}
         ds = TrainingDataset(data_dir=_tmp())
         added = ds.build_from_video(scenes, {"curve": curve}, scene_map)
-        assert added == 3
+        assert added == 1   # only covered scene added
         _, y = ds.get_xy()
-        assert y[1] == 1   # scene 1 has a drop → label 1
-        assert y[0] == 0   # no drop at scene 0
-        assert y[2] == 0
+        assert y[0] == 1   # scene 1 had a drop → label 1
+
+    def test_build_from_video_all_covered_no_drop(self):
+        """All scenes covered and no drop → all labeled 0."""
+        scenes = [_Scene(idx=1), _Scene(idx=2)]
+        curve  = [0.9, 0.88, 0.87]
+        scene_map = {
+            1: {"scene_idx": 1, "scene_type": "image", "intent": "explain"},
+            2: {"scene_idx": 2, "scene_type": "diagram", "intent": "data"},
+        }
+        ds = TrainingDataset(data_dir=_tmp())
+        added = ds.build_from_video(scenes, {"curve": curve}, scene_map)
+        assert added == 2
+        _, y = ds.get_xy()
+        assert all(label == 0 for label in y)
 
     def test_build_from_video_empty_curve(self):
         ds = TrainingDataset(data_dir=_tmp())
         added = ds.build_from_video([_Scene(idx=0)], {"curve": []}, {})
         assert added == 0
 
-    def test_build_from_video_no_drops_all_zero(self):
+    def test_build_from_video_uncovered_scenes_skipped(self):
+        """Scenes with no scene_map entry are excluded from training data."""
         scenes = [_Scene(idx=i) for i in range(3)]
-        curve  = [0.9, 0.88, 0.87]   # no drops
+        curve  = [0.9, 0.88, 0.87]
         ds = TrainingDataset(data_dir=_tmp())
-        ds.build_from_video(scenes, {"curve": curve}, {})
-        _, y = ds.get_xy()
-        assert all(label == 0 for label in y)
+        ds.build_from_video(scenes, {"curve": curve}, {})   # empty map
+        assert len(ds) == 0   # nothing added — no coverage data
 
 
 # ── DropPredictor ──────────────────────────────────────────────────────────────
@@ -618,13 +631,14 @@ class TestFullPipeline:
         predictor = _predictor()
         scenes    = [_Scene(idx=i) for i in range(3)]
         curve     = [0.9, 0.60, 0.58]
+        # Only scene 1 is covered — scenes 0 and 2 are excluded (no false labels)
         scene_map = {1: {"scene_idx": 1, "scene_type": "image", "intent": "explain"}}
         added = predictor.dataset.build_from_video(
             scenes, {"curve": curve}, scene_map
         )
-        assert added == 3
+        assert added == 1   # only the covered scene
         _, y = predictor.dataset.get_xy()
-        assert y[1] == 1   # drop detected at scene 1
+        assert y[0] == 1   # scene 1 had a drop → label 1
 
     def test_train_fails_gracefully_without_sklearn(self):
         predictor = _predictor()
