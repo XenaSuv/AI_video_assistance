@@ -27,7 +27,7 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.cost_tracker import get_ledger
-from src.retry_utils import http_get, http_post
+from src.retry_utils import http_get, http_post, make_openai_client
 from src.script_generator import Scene
 import src.ffmpeg_utils as ffmpeg_utils
 import src.image_cache as image_cache
