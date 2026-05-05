@@ -100,7 +100,7 @@ class MicroHookAgent:
             if (i + 1) % self.hook_frequency == 0 and i < len(paragraphs) - 1:
                 hook = self._generate_hook(hook_types, para, scene_plan, recommended_patterns, avoid_patterns)
                 if hook:
-                    enhanced_paragraphs.append(hook)
+                    enhanced_paragraphs.append(hook["text"])
                     inserted_hooks.append(InsertedHook(
                         position=len("\n\n".join(enhanced_paragraphs)),
                         type=hook["type"],
@@ -194,3 +194,8 @@ def add_micro_hooks(
 ) -> dict[str, Any]:
     """Convenience function for adding micro-hooks."""
     agent = MicroHookAgent(hook_frequency=hook_frequency)
+    result = agent.run(script=script, scene_plan=scene_plan, persona=persona)
+    return {
+        "final_script": result.final_script,
+        "hooks_inserted": len(result.inserted_hooks),
+    }

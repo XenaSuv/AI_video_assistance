@@ -27,7 +27,7 @@ from loguru import logger
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.hook_selector import record_usage
-from src.main import (
+from src.pipeline_orchestrator import (
     _get_shared_outro,
     _load_audio_durations,
     _load_cached_script,
@@ -212,10 +212,10 @@ def run_topic_pipeline(
         logger.info(f"=== Topic pipeline done: {summary.get('status', 'ok')} ===")
         notify_success(summary, "topic")
 
-    except Exception as e:
+    except Exception as exc:
         tb = traceback.format_exc()
         logger.error(f"Topic pipeline failed:\n{tb}")
-        notify_failure(e, "topic", summary, tb)
+        notify_failure(exc, "topic", summary, tb)
         summary["status"] = "failed"
 
     return summary

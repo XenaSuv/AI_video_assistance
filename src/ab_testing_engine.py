@@ -266,7 +266,7 @@ class ABTestingEngine:
         if not perf:
             return {}
 
-        best_type = max(perf, key=perf.get)
+        best_type = max(perf, key=lambda k: perf[k])
         delta     = {
             "conflict":  +0.10,
             "curiosity": +0.05,

@@ -26,7 +26,7 @@ from loguru import logger
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.hook_selector import record_usage
-from src.main import _get_shared_outro, _load_audio_durations, _load_cached_script, _needs_video_rebuild, _run_language_variant, _setup_logging
+from src.pipeline_orchestrator import _get_shared_outro, _load_audio_durations, _load_cached_script, _needs_video_rebuild, _run_language_variant, _setup_logging
 from src.subtitle_generator import generate_subtitles
 from src.script_generator import VideoScript
 from src.shorts_generator import build_short

@@ -35,6 +35,7 @@ def _transcribe_scene(client: OpenAI, audio_path: Path) -> list[dict]:
             response_format="verbose_json",
             timestamp_granularities=["segment"],
         )
+    assert resp.segments is not None
     return [
         {"start": seg.start, "end": seg.end, "text": seg.text.strip()}
         for seg in resp.segments

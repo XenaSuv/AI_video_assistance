@@ -219,7 +219,7 @@ class DecisionEngine:
         if not available_weights or random.random() < strategy.exploration_rate:
             return random.choice(available_angles)
 
-        return max(available_weights, key=available_weights.get)
+        return max(available_weights, key=lambda k: available_weights[k])
 
     def get_recommended_format(self, strategy: ContentStrategy, available_formats: list[str]) -> str:
         """Get recommended format based on strategy and exploration."""
@@ -235,7 +235,7 @@ class DecisionEngine:
         if not available_weights or random.random() < strategy.exploration_rate:
             return random.choice(available_formats)
 
-        return max(available_weights, key=available_weights.get)
+        return max(available_weights, key=lambda k: available_weights[k])
 
     def _adjust_for_mode(self, weights: dict[str, float], growth_boost: float = 0.0, safe_boost: float = 0.0) -> dict[str, float]:
         """Adjust weights based on operational mode."""

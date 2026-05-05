@@ -363,32 +363,32 @@ class EditorialBrain:
         if angle == "technical_breakthrough":
             texts = [
                 f"Everyone is excited about {base}, but the real leap is the hidden tradeoff",
-                f"This breakthrough sounds huge — until you see the data behind it",
-                f"No one is talking about the one detail that changes everything",
+                "This breakthrough sounds huge — until you see the data behind it",
+                "No one is talking about the one detail that changes everything",
             ]
         elif angle == "industry_impact":
             texts = [
-                f"This move could reshape the AI industry faster than anyone predicted",
+                "This move could reshape the AI industry faster than anyone predicted",
                 f"How {base} changes the tools developers will use every day",
-                f"The biggest industry shift in AI this month is hiding in plain sight",
+                "The biggest industry shift in AI this month is hiding in plain sight",
             ]
         elif angle == "threat_to_jobs":
             texts = [
-                f"This tech might replace your job sooner than you think",
-                f"One announcement could make entire teams obsolete",
-                f"If you're building AI tools, this is the one signal you can't ignore",
+                "This tech might replace your job sooner than you think",
+                "One announcement could make entire teams obsolete",
+                "If you're building AI tools, this is the one signal you can't ignore",
             ]
         elif angle == "overhyped_vs_reality":
             texts = [
-                f"Everyone is hyping this, but something about it feels off",
-                f"This looks like a breakthrough — until you test the fine print",
-                f"No one is talking about the one weak point in this story",
+                "Everyone is hyping this, but something about it feels off",
+                "This looks like a breakthrough — until you test the fine print",
+                "No one is talking about the one weak point in this story",
             ]
         else:
             texts = [
                 f"Here's what {base} really means for your work tomorrow",
                 f"The one practical lesson from {base} every AI team should know",
-                f"What this announcement means for your next project",
+                "What this announcement means for your next project",
             ]
 
         variants = [self._normalize_hook(t) for t in texts]

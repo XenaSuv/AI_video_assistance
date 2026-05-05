@@ -5,6 +5,8 @@ B-roll generation is handled by image_generator.generate_scene_clip().
 """
 from __future__ import annotations
 
+import asyncio
+import functools
 import sys
 from pathlib import Path
 
@@ -55,6 +57,30 @@ def generate_clips_for_scene(
     *is_breaking* — activates Stable Diffusion instead of DALL-E.
     """
     return [generate_scene_clip(scene, out_dir, tool=tool, run_dir=run_dir, is_breaking=is_breaking)]
+
+
+async def _async_build_clips(
+    script: VideoScript,
+    clip_dir: Path,
+    *,
+    tool: str | None,
+    run_dir: Path,
+    is_breaking: bool,
+) -> dict[int, list[Path]]:
+    """Generate all scene clips concurrently; each clip runs in a thread pool."""
+    loop = asyncio.get_running_loop()
+    tasks = [
+        loop.run_in_executor(
+            None,
+            functools.partial(
+                generate_clips_for_scene, s, clip_dir,
+                tool=tool, run_dir=run_dir, is_breaking=is_breaking,
+            ),
+        )
+        for s in script.scenes
+    ]
+    results = await asyncio.gather(*tasks)
+    return {s.idx: clips for s, clips in zip(script.scenes, results)}
 
 
 # --------------------- Assembly ---------------------
@@ -196,10 +222,8 @@ def assemble_video(
     content_path = ffmpeg_utils.concat(ordered_segments, content_path)
 
     # Wrap with intro / outro
-    has_intro = intro_path and intro_path.exists()
-    has_outro = outro_path and outro_path.exists()
-
-    if has_intro:
+    # Use direct Path checks so mypy can narrow Path | None → Path inside each block.
+    if intro_path and intro_path.exists():
         intro_w, intro_h = ffmpeg_utils.video_size(intro_path)
         if (intro_w, intro_h) != (VIDEO_W, VIDEO_H):
             logger.info(
@@ -213,7 +237,7 @@ def assemble_video(
         intro_path = ffmpeg_utils.ensure_audio_stream(intro_path, intro_audio)
         logger.info(f"Intro: {intro_path.name}")
 
-    if has_outro:
+    if outro_path and outro_path.exists():
         outro_w, outro_h = ffmpeg_utils.video_size(outro_path)
         if (outro_w, outro_h) != (VIDEO_W, VIDEO_H):
             logger.info(
@@ -228,7 +252,7 @@ def assemble_video(
         logger.info(f"Outro: {outro_path.name}")
 
     body_parts = [content_path]
-    if has_outro:
+    if outro_path and outro_path.exists():
         body_parts.append(outro_path)
 
     if len(body_parts) == 1:
@@ -237,7 +261,7 @@ def assemble_video(
         body_path = assembled_dir / "body_with_outro.mp4"
         body_path = ffmpeg_utils.concat(body_parts, body_path)
 
-    if has_intro:
+    if intro_path and intro_path.exists():
         final_path = ffmpeg_utils.concat([intro_path, body_path], output_path)
     else:
         import shutil
@@ -301,10 +325,9 @@ def build_video(
         )
         _variety_engine.assign(script.scenes, _strategy)
 
-    clip_paths_by_scene = {
-        s.idx: generate_clips_for_scene(s, clip_dir, tool=tool, run_dir=out_dir, is_breaking=is_breaking)
-        for s in script.scenes
-    }
+    clip_paths_by_scene = asyncio.run(
+        _async_build_clips(script, clip_dir, tool=tool, run_dir=out_dir, is_breaking=is_breaking)
+    )
     audio_paths_by_scene = {
         s.idx: out_dir / "audio" / f"scene_{s.idx:02d}.mp3" for s in script.scenes
     }

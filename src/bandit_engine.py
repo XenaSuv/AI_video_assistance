@@ -256,6 +256,7 @@ class BanditEngine(RateLimitMixin):
                 best_score = ucb
                 best_arm   = arm
 
+        assert best_arm is not None
         logger.debug(
             f"BanditEngine: selected {best_arm.variant_id!r} ({best_arm.type}) "
             f"ucb={best_score:.4f} reward={best_arm.reward:.4f}"

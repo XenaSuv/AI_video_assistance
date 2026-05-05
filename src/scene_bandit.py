@@ -281,6 +281,7 @@ class SceneBandit(RateLimitMixin):
                 best_sample = sample
                 best_arm    = arm
 
+        assert best_arm is not None
         logger.debug(
             f"SceneBandit: selected {best_arm.id!r} ({best_arm.label}) "
             f"sample={best_sample:.4f}  mean={best_arm.mean:.4f}"
