@@ -222,10 +222,8 @@ def assemble_video(
     content_path = ffmpeg_utils.concat(ordered_segments, content_path)
 
     # Wrap with intro / outro
-    has_intro = intro_path and intro_path.exists()
-    has_outro = outro_path and outro_path.exists()
-
-    if has_intro:
+    # Use direct Path checks so mypy can narrow Path | None → Path inside each block.
+    if intro_path and intro_path.exists():
         intro_w, intro_h = ffmpeg_utils.video_size(intro_path)
         if (intro_w, intro_h) != (VIDEO_W, VIDEO_H):
             logger.info(
@@ -239,7 +237,7 @@ def assemble_video(
         intro_path = ffmpeg_utils.ensure_audio_stream(intro_path, intro_audio)
         logger.info(f"Intro: {intro_path.name}")
 
-    if has_outro:
+    if outro_path and outro_path.exists():
         outro_w, outro_h = ffmpeg_utils.video_size(outro_path)
         if (outro_w, outro_h) != (VIDEO_W, VIDEO_H):
             logger.info(
@@ -254,7 +252,7 @@ def assemble_video(
         logger.info(f"Outro: {outro_path.name}")
 
     body_parts = [content_path]
-    if has_outro:
+    if outro_path and outro_path.exists():
         body_parts.append(outro_path)
 
     if len(body_parts) == 1:
@@ -263,7 +261,7 @@ def assemble_video(
         body_path = assembled_dir / "body_with_outro.mp4"
         body_path = ffmpeg_utils.concat(body_parts, body_path)
 
-    if has_intro:
+    if intro_path and intro_path.exists():
         final_path = ffmpeg_utils.concat([intro_path, body_path], output_path)
     else:
         import shutil

@@ -212,10 +212,10 @@ def run_topic_pipeline(
         logger.info(f"=== Topic pipeline done: {summary.get('status', 'ok')} ===")
         notify_success(summary, "topic")
 
-    except Exception as e:
+    except Exception as exc:
         tb = traceback.format_exc()
         logger.error(f"Topic pipeline failed:\n{tb}")
-        notify_failure(e, "topic", summary, tb)
+        notify_failure(exc, "topic", summary, tb)
         summary["status"] = "failed"
 
     return summary

@@ -91,6 +91,7 @@ class CostLedger:
         cached_tokens: int = 0,
     ) -> None:
         prices = self._llm_prices.get(model) or self._llm_prices.get("gpt-4o-mini")
+        assert prices is not None, f"No price data for model {model!r}"
         usd = (
             (prompt_tokens - cached_tokens) * prices["input"] / 1_000_000
             + cached_tokens                * prices["cached"] / 1_000_000

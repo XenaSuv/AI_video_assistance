@@ -429,11 +429,11 @@ class PipelineOrchestrator:
                 f"exploration={strategy.exploration_rate:.2f}"
             )
             _top_angle = (
-                max(strategy.angle_weights, key=strategy.angle_weights.get)
+                max(strategy.angle_weights, key=lambda k: strategy.angle_weights[k])
                 if strategy.angle_weights else None
             )
             _top_format = (
-                max(strategy.format_weights, key=strategy.format_weights.get)
+                max(strategy.format_weights, key=lambda k: strategy.format_weights[k])
                 if strategy.format_weights else None
             )
             self._live.set_strategy({
@@ -452,12 +452,12 @@ class PipelineOrchestrator:
                 top_hooks,
                 context={
                     "angle": (
-                        max(strategy.angle_weights, key=strategy.angle_weights.get)
+                        max(strategy.angle_weights, key=lambda k: strategy.angle_weights[k])
                         if strategy.angle_weights else "unknown"
                     ),
                     "persona": {"style": settings.channel_name},
                     "format": (
-                        max(strategy.format_weights, key=strategy.format_weights.get)
+                        max(strategy.format_weights, key=lambda k: strategy.format_weights[k])
                         if strategy.format_weights else "unknown"
                     ),
                 },
@@ -515,6 +515,7 @@ class PipelineOrchestrator:
         self._summary["num_scenes"] = len(self._script.scenes)
 
     def _step_voice(self) -> None:
+        assert self._script is not None
         audio_dir = self._run_dir / "audio"
         self._observer.step_start("voice")
         if not self._cp.is_done("voice"):
@@ -539,6 +540,7 @@ class PipelineOrchestrator:
         self._summary["total_duration_sec"] = sum(s.duration_sec for s in self._script.scenes)
 
     def _step_subtitles(self) -> None:
+        assert self._script is not None
         en_intro = settings.source_dir / "ai-news-intro.mp4"
         self._en_intro = en_intro if en_intro.exists() else None
         self._en_outro = _get_shared_outro()
@@ -565,6 +567,7 @@ class PipelineOrchestrator:
             self._observer.step_skip("subtitles")
 
     def _step_video(self) -> None:
+        assert self._script is not None
         self._long_video = self._run_dir / "final_video.mp4"
         self._observer.step_start("video")
         rebuild_video = not self._cp.is_done("video") or _needs_video_rebuild(self._long_video)
@@ -604,6 +607,8 @@ class PipelineOrchestrator:
             )
 
     def _step_thumbnail(self) -> None:
+        assert self._script is not None
+        assert self._long_video is not None
         self._observer.step_start("thumbnail")
         if not self._cp.is_done("thumbnail"):
             thumb_variants = generate_thumbnail_variants(
@@ -627,6 +632,7 @@ class PipelineOrchestrator:
         self._summary["thumbnail_style"] = self._thumbnail.stem.removeprefix("thumbnail_")
 
     def _step_quality_gate(self) -> None:
+        assert self._script is not None
         quality_report = run_gate(
             self._script, self._run_dir / "audio", self._feedback_history
         )
@@ -635,6 +641,9 @@ class PipelineOrchestrator:
             self._summary["quality_warnings"] = quality_report.warnings
 
     def _step_upload_en(self) -> None:
+        assert self._script is not None
+        assert self._long_video is not None
+        assert self._thumbnail is not None
         self._observer.step_start("upload_en")
         if not self._cp.is_done("upload_en"):
             if self._skip_upload:
@@ -679,6 +688,7 @@ class PipelineOrchestrator:
             self._observer.step_skip("upload_en")
 
     def _step_upload_ru(self) -> None:
+        assert self._script is not None
         self._observer.step_start("upload_ru")
         if settings.ru_enabled and not self._cp.is_done("upload_ru"):
             ru_intro = settings.source_dir / "ai-novosti-intro.mp4"
