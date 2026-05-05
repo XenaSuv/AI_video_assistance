@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.digest_script_generator import collect_week_scripts, generate_digest_script
 from src.hook_selector import record_usage
-from src.main import (
+from src.pipeline_orchestrator import (
     _get_intro_duration,
     _get_shared_outro,
     _load_audio_durations,
