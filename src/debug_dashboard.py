@@ -182,6 +182,48 @@ with right:
     else:
         st.info("No scene data for this run.")
 
+# ── Cross-learning: top combinations ─────────────────────────────────────────
+
+st.divider()
+st.header("Top Performing Combinations")
+
+@st.cache_data(ttl=10)
+def load_top_combos(min_count: int = 3) -> list[dict]:
+    try:
+        sys.path.insert(0, str(ROOT))
+        from src.cross_learning_engine import CrossLearningEngine
+        engine = CrossLearningEngine(data_dir=ROOT / "data")
+        return engine.get_top_combinations(min_count=min_count)
+    except Exception:
+        return []
+
+min_obs = st.slider("Min observations per combo", 1, 10, 3)
+top_combos = load_top_combos(min_obs)
+
+if not top_combos:
+    st.info(
+        "Not enough cross-learning data yet. "
+        f"Need ≥ {min_obs} videos with the same combination before patterns emerge."
+    )
+else:
+    for i, c in enumerate(top_combos[:10]):
+        combo   = c["combo"]
+        avg_ret = c["avg_retention"]
+        avg_ctr = c["avg_ctr"]
+        count   = c["count"]
+
+        ret_color = "🟢" if avg_ret >= 0.6 else "🟡" if avg_ret >= 0.4 else "🔴"
+        label = (
+            f"{ret_color} **#{i+1}** | "
+            f"hook=`{combo.get('hook_type','?')}` "
+            f"scene=`{combo.get('scene_type','?')}` "
+            f"persona=`{combo.get('persona','?')}` "
+            f"pace=`{combo.get('pace','?')}` "
+            f"topic=`{combo.get('topic','?')}` "
+            f"| ret={avg_ret:.1%} ctr={avg_ctr:.1%} (n={count})"
+        )
+        st.write(label)
+
 # ── Footer ────────────────────────────────────────────────────────────────────
 
 st.divider()

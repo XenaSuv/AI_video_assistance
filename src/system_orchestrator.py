@@ -226,16 +226,18 @@ class SystemOrchestrator:
                                __import__("datetime").timezone.utc
                            ).isoformat(),
             "strategy": {
-                "mode": strategy.mode,
-                "pace": strategy.pace,
+                "mode":    strategy.mode,
+                "pace":    strategy.pace,
+                "persona": getattr(strategy, "persona", "balanced"),
             },
             "scene_policy": scene_policy_id,
             "packaging": {
-                "title":     getattr(packaging, "title",     ""),
+                "title":     getattr(packaging, "title",         ""),
                 "hook":      packaging.hook,
-                "thumbnail": getattr(packaging, "thumbnail", {}),
+                "hook_type": getattr(packaging, "title_pattern", "curiosity"),
+                "thumbnail": getattr(packaging, "thumbnail",     {}),
             },
-            "scenes": scene_rows,
+            "scenes":      scene_rows,
             "performance": None,
         }
         self._upsert_run_history(run_record)
