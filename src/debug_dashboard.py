@@ -198,6 +198,56 @@ with right:
     else:
         st.info("No scene data for this run.")
 
+# ── Sequence patterns ─────────────────────────────────────────────────────────
+
+st.divider()
+st.header("Best Scene Sequences")
+
+@st.cache_data(ttl=10)
+def load_sequence_patterns(min_count: int = 2, window: int = 3) -> tuple[list, list]:
+    try:
+        sys.path.insert(0, str(ROOT))
+        from src.sequence_learning_engine import SequenceLearningEngine
+        engine = SequenceLearningEngine(data_dir=ROOT / "data", min_count=min_count)
+        return (
+            engine.get_top_patterns(min_count=min_count, window=window),
+            engine.get_bad_patterns(min_count=min_count, window=window),
+        )
+    except Exception:
+        return [], []
+
+seq_col1, seq_col2 = st.columns([1, 1])
+
+with seq_col1:
+    seq_min  = st.slider("Min observations (sequence)", 1, 10, 2, key="seq_min")
+    seq_win  = st.slider("Window size", 2, 5, 3, key="seq_win")
+    top_pats, bad_pats = load_sequence_patterns(seq_min, seq_win)
+
+    if top_pats:
+        st.subheader("Top patterns")
+        for p in top_pats[:8]:
+            pat_str = " → ".join(p["pattern"])
+            ret     = p["avg_retention"]
+            icon    = "🟢" if ret >= 0.6 else "🟡"
+            st.write(f"{icon} `{pat_str}` — **{ret:.1%}** (n={p['count']})")
+    else:
+        st.info("No sequence patterns yet.")
+
+with seq_col2:
+    if bad_pats:
+        st.subheader("Bad patterns to avoid")
+        for p in bad_pats[:8]:
+            pat_str = " → ".join(p["pattern"])
+            ret     = p["avg_retention"]
+            st.write(f"🔴 `{pat_str}` — **{ret:.1%}** (n={p['count']})")
+    else:
+        st.info("No bad patterns identified yet.")
+
+# Current video sequence
+if scenes:
+    current_seq = [s.get("intent", "?") for s in scenes]
+    st.caption("Current video sequence: " + " → ".join(f"`{i}`" for i in current_seq))
+
 # ── Cross-learning: top combinations ─────────────────────────────────────────
 
 st.divider()
