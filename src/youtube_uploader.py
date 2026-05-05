@@ -63,9 +63,9 @@ def _get_creds(
             ) and not force_browser
             if headless:
                 raise RuntimeError(
-                    f"YouTube refresh token expired and cannot re-authorize in headless CI environment. "
-                    f"Please update the token manually by running 'python src/youtube_uploader.py --auth --force' locally, "
-                    f"then commit the updated config/token.pickle to the repository."
+                    "YouTube refresh token expired and cannot re-authorize in headless CI environment. "
+                    "Please update the token manually by running 'python src/youtube_uploader.py --auth --force' locally, "
+                    "then commit the updated config/token.pickle to the repository."
                 ) from exc
             logger.warning(
                 "Existing YouTube token refresh failed: {}. "
