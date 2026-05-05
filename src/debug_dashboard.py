@@ -80,6 +80,22 @@ with left:
 
     st.divider()
 
+    ctx_data = run.get("context")
+    if ctx_data:
+        st.header("Context")
+        ctype = ctx_data.get("content_type", "—")
+        ctype_icon = {"breaking": "🔴", "tutorial": "🟢", "news": "🔵",
+                      "review": "🟡", "opinion": "🟣"}.get(ctype, "⚪")
+        st.write(f"**Type:** {ctype_icon} {ctype}")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Novelty",    f"{ctx_data.get('novelty', 0):.0%}")
+        c2.metric("Complexity", f"{ctx_data.get('complexity', 0):.0%}")
+        c3.metric("Urgency",    f"{ctx_data.get('urgency', 0):.0%}")
+        sigs = {k: v for k, v in (ctx_data.get("topic_signals") or {}).items() if v}
+        if sigs:
+            st.caption("Signals: " + " · ".join(f"`{k}`" for k in sigs))
+        st.divider()
+
     perf = run.get("performance") or {}
     if perf:
         st.header("Performance")
@@ -181,6 +197,98 @@ with right:
             st.info("Insights available after analytics arrive.")
     else:
         st.info("No scene data for this run.")
+
+# ── Sequence patterns ─────────────────────────────────────────────────────────
+
+st.divider()
+st.header("Best Scene Sequences")
+
+@st.cache_data(ttl=10)
+def load_sequence_patterns(min_count: int = 2, window: int = 3) -> tuple[list, list]:
+    try:
+        sys.path.insert(0, str(ROOT))
+        from src.sequence_learning_engine import SequenceLearningEngine
+        engine = SequenceLearningEngine(data_dir=ROOT / "data", min_count=min_count)
+        return (
+            engine.get_top_patterns(min_count=min_count, window=window),
+            engine.get_bad_patterns(min_count=min_count, window=window),
+        )
+    except Exception:
+        return [], []
+
+seq_col1, seq_col2 = st.columns([1, 1])
+
+with seq_col1:
+    seq_min  = st.slider("Min observations (sequence)", 1, 10, 2, key="seq_min")
+    seq_win  = st.slider("Window size", 2, 5, 3, key="seq_win")
+    top_pats, bad_pats = load_sequence_patterns(seq_min, seq_win)
+
+    if top_pats:
+        st.subheader("Top patterns")
+        for p in top_pats[:8]:
+            pat_str = " → ".join(p["pattern"])
+            ret     = p["avg_retention"]
+            icon    = "🟢" if ret >= 0.6 else "🟡"
+            st.write(f"{icon} `{pat_str}` — **{ret:.1%}** (n={p['count']})")
+    else:
+        st.info("No sequence patterns yet.")
+
+with seq_col2:
+    if bad_pats:
+        st.subheader("Bad patterns to avoid")
+        for p in bad_pats[:8]:
+            pat_str = " → ".join(p["pattern"])
+            ret     = p["avg_retention"]
+            st.write(f"🔴 `{pat_str}` — **{ret:.1%}** (n={p['count']})")
+    else:
+        st.info("No bad patterns identified yet.")
+
+# Current video sequence
+if scenes:
+    current_seq = [s.get("intent", "?") for s in scenes]
+    st.caption("Current video sequence: " + " → ".join(f"`{i}`" for i in current_seq))
+
+# ── Cross-learning: top combinations ─────────────────────────────────────────
+
+st.divider()
+st.header("Top Performing Combinations")
+
+@st.cache_data(ttl=10)
+def load_top_combos(min_count: int = 3) -> list[dict]:
+    try:
+        sys.path.insert(0, str(ROOT))
+        from src.cross_learning_engine import CrossLearningEngine
+        engine = CrossLearningEngine(data_dir=ROOT / "data")
+        return engine.get_top_combinations(min_count=min_count)
+    except Exception:
+        return []
+
+min_obs = st.slider("Min observations per combo", 1, 10, 3)
+top_combos = load_top_combos(min_obs)
+
+if not top_combos:
+    st.info(
+        "Not enough cross-learning data yet. "
+        f"Need ≥ {min_obs} videos with the same combination before patterns emerge."
+    )
+else:
+    for i, c in enumerate(top_combos[:10]):
+        combo   = c["combo"]
+        avg_ret = c["avg_retention"]
+        avg_ctr = c["avg_ctr"]
+        count   = c["count"]
+
+        ret_color = "🟢" if avg_ret >= 0.6 else "🟡" if avg_ret >= 0.4 else "🔴"
+        label = (
+            f"{ret_color} **#{i+1}** | "
+            f"hook=`{combo.get('hook_type','?')}` "
+            f"scene=`{combo.get('scene_type','?')}` "
+            f"persona=`{combo.get('persona','?')}` "
+            f"pace=`{combo.get('pace','?')}` "
+            f"topic=`{combo.get('topic','?')}` "
+            f"| ret={avg_ret:.1%} ctr={avg_ctr:.1%} (n={count})"
+        )
+        st.write(label)
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 
