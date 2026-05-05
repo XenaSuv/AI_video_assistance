@@ -80,6 +80,22 @@ with left:
 
     st.divider()
 
+    ctx_data = run.get("context")
+    if ctx_data:
+        st.header("Context")
+        ctype = ctx_data.get("content_type", "—")
+        ctype_icon = {"breaking": "🔴", "tutorial": "🟢", "news": "🔵",
+                      "review": "🟡", "opinion": "🟣"}.get(ctype, "⚪")
+        st.write(f"**Type:** {ctype_icon} {ctype}")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Novelty",    f"{ctx_data.get('novelty', 0):.0%}")
+        c2.metric("Complexity", f"{ctx_data.get('complexity', 0):.0%}")
+        c3.metric("Urgency",    f"{ctx_data.get('urgency', 0):.0%}")
+        sigs = {k: v for k, v in (ctx_data.get("topic_signals") or {}).items() if v}
+        if sigs:
+            st.caption("Signals: " + " · ".join(f"`{k}`" for k in sigs))
+        st.divider()
+
     perf = run.get("performance") or {}
     if perf:
         st.header("Performance")

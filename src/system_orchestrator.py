@@ -108,7 +108,8 @@ class SystemOrchestrator:
         video_renderer,
         video_publisher,
         performance_store,
-        data_dir: Path | None = None,
+        data_dir:         Path | None = None,
+        context_analyzer              = None,
     ) -> None:
         self.decision_engine   = decision_engine
         self.packaging_engine  = packaging_engine
@@ -119,6 +120,7 @@ class SystemOrchestrator:
         self.video_renderer    = video_renderer
         self.video_publisher   = video_publisher
         self.performance_store = performance_store
+        self.context_analyzer  = context_analyzer
         self._data_dir          = data_dir or settings.data_dir
         self._cycle_log_path    = self._data_dir / "cycle_log.jsonl"
         self._run_history_path  = self._data_dir / "run_history.json"
@@ -159,16 +161,30 @@ class SystemOrchestrator:
         scene_policy     = self.scene_bandit.select_policy()
         scene_policy_id  = scene_policy.id if scene_policy else "none"
 
-        # ── 3. Packaging (hook / title / thumbnail) ────────────────────────
+        # ── 3. Context analysis (optional) — overrides strategy fields ────
+        content_ctx = None
+        if self.context_analyzer is not None:
+            content_ctx = self.context_analyzer.analyze(editorial_input)
+            overrides   = content_ctx.to_strategy_overrides()
+            for attr, val in overrides.items():
+                if hasattr(strategy, attr):
+                    try:
+                        setattr(strategy, attr, val)
+                    except Exception:
+                        pass   # validation rejects the value — keep original
+            if overrides:
+                logger.info(f"SystemOrchestrator: context overrides applied — {overrides}")
+
+        # ── 4. Packaging (hook / title / thumbnail) ────────────────────────
         packaging = self.packaging_engine.generate(editorial_input, strategy)
         logger.info(f"SystemOrchestrator: hook={packaging.hook!r}")
 
-        # ── 4. Scene type assignment ───────────────────────────────────────
+        # ── 5. Scene type assignment ───────────────────────────────────────
         self.scene_engine.assign_from_config(
             scenes, strategy, editorial_plan=editorial_plan
         )
 
-        # ── 5. Drop risk prediction + pre-emptive corrections ──────────────
+        # ── 6. Drop risk prediction + pre-emptive corrections ──────────────
         from src.drop_predictor import (
             apply_preemptive_corrections,
             suggest_strategy_adjustments as drop_adjustments,
@@ -183,7 +199,7 @@ class SystemOrchestrator:
         if drop_hints.get("force_avatar_intro") and scenes:
             scenes[0].scene_type = "avatar"
 
-        # ── 6. Render ──────────────────────────────────────────────────────
+        # ── 7. Render ──────────────────────────────────────────────────────
         video_path = self.video_renderer(
             scenes         = scenes,
             packaging      = packaging,
@@ -191,13 +207,13 @@ class SystemOrchestrator:
             editorial_input = editorial_input,
         )
 
-        # ── 7. Publish ─────────────────────────────────────────────────────
+        # ── 8. Publish ─────────────────────────────────────────────────────
         video_id = self.video_publisher(
             video_path = video_path,
             packaging  = packaging,
         ) if video_path is not None else None
 
-        # ── 8. Persist cycle record for deferred learning ──────────────────
+        # ── 9. Persist cycle record for deferred learning ──────────────────
         pred_map = {p.scene_idx: p.probability for p in predictions}
         scene_rows = [
             {
@@ -219,7 +235,7 @@ class SystemOrchestrator:
         }
         self._persist_cycle(cycle_record)
 
-        # ── 9. Write rich run-history record for dashboard ─────────────────
+        # ── 10. Write rich run-history record for dashboard ────────────────
         run_record = {
             "video_id":    video_id,
             "timestamp":   __import__("datetime").datetime.now(
@@ -238,6 +254,7 @@ class SystemOrchestrator:
                 "thumbnail": getattr(packaging, "thumbnail",     {}),
             },
             "scenes":      scene_rows,
+            "context":     content_ctx.to_dict() if content_ctx else None,
             "performance": None,
         }
         self._upsert_run_history(run_record)
