@@ -38,5 +38,12 @@ module = [
     "src.humanizer_agent",
     # DALL-E response Images type is complex to narrow
     "src.image_generator",
+    # PIL stubs flag LANCZOS constant path and FreeTypeFont|ImageFont union types
+    "src.thumbnail_mvp",
+    "src.thumbnail_generator",
+    "src.thumbnail_ab",
+    "src.infographic_generator",
+    "src.end_card",
+    "src.quote_card",
 ]
 ignore_errors = true

@@ -18,15 +18,17 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      # feedparser must be installed via apt: the pip package (feedparser)
-      # pulls in sgmllib3k which fails to build on Python 3.12.
-      - name: Install system deps
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq python3-feedparser
-
       - name: Install Python deps
-        run: pip install -r requirements.txt
+        run: |
+          # sgmllib3k (feedparser → arxiv transitive dep) has no wheel and
+          # fails to build from source on Python 3.12. Create a stub dist-info
+          # so pip considers the dependency satisfied without building anything.
+          SITE=$(python -c "import site; print(site.getsitepackages()[0])")
+          mkdir -p "$SITE/sgmllib3k-1.0.0.dist-info"
+          printf "Metadata-Version: 2.1\nName: sgmllib3k\nVersion: 1.0.0\n" \
+            > "$SITE/sgmllib3k-1.0.0.dist-info/METADATA"
+          touch "$SITE/sgmllib3k-1.0.0.dist-info/RECORD"
+          pip install -r requirements.txt
 
       - name: Lint (ruff)
         run: ruff check src/
