@@ -210,12 +210,12 @@ def run_topic_pipeline(
                 record_thumbnail_usage(thumbnail, video_id, settings.data_dir, idea.format)
 
         logger.info(f"=== Topic pipeline done: {summary.get('status', 'ok')} ===")
-        notify_success(summary)
+        notify_success(summary, "topic")
 
-    except Exception:
+    except Exception as e:
         tb = traceback.format_exc()
         logger.error(f"Topic pipeline failed:\n{tb}")
-        notify_failure({"error": tb, **summary})
+        notify_failure(e, "topic", summary, tb)
         summary["status"] = "failed"
 
     return summary
