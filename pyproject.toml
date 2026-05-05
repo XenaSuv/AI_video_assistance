@@ -1,0 +1,24 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# E9: syntax errors; F: pyflakes (undefined names, etc.)
+# Ignoring F401 (unused imports) and F841 (unused vars) — common in large pipelines
+select = ["E9", "F"]
+ignore = ["F401", "F841"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+# Don't require type annotations on all functions — codebase is untyped
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+warn_return_any = false
+warn_unused_ignores = false
+# Exclude heavy modules that have known stub issues or are optional integrations
+exclude = [
+    "src/presenter\\.py",
+    "src/dashboard\\.py",
+    "src/debug_dashboard\\.py",
+]
