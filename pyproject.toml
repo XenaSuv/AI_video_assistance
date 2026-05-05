@@ -32,5 +32,11 @@ module = [
     "src.hook_optimizer",
     "src.hook_mutation_engine",
     "src.youtube_uploader",
+    # BeautifulSoup returns AttributeValueList union types that are hard to narrow
+    "src.scraper",
+    # OpenAI SDK types content as str | None; 6 identical patterns across rewrites
+    "src.humanizer_agent",
+    # DALL-E response Images type is complex to narrow
+    "src.image_generator",
 ]
 ignore_errors = true

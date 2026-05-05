@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 from elevenlabs.client import ElevenLabs
@@ -51,7 +52,7 @@ def _log_retry(retry_state) -> None:
     before_sleep=_log_retry,
     reraise=True,
 )
-def _tts_convert(client: ElevenLabs, text: str, voice_id: str, model_id: str, use_ssml: bool = False) -> object:
+def _tts_convert(client: ElevenLabs, text: str, voice_id: str, model_id: str, use_ssml: bool = False) -> Iterator[bytes]:
     return client.text_to_speech.convert(
         voice_id=voice_id,
         model_id=model_id,
