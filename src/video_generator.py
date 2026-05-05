@@ -5,6 +5,8 @@ B-roll generation is handled by image_generator.generate_scene_clip().
 """
 from __future__ import annotations
 
+import asyncio
+import functools
 import sys
 from pathlib import Path
 
@@ -55,6 +57,30 @@ def generate_clips_for_scene(
     *is_breaking* — activates Stable Diffusion instead of DALL-E.
     """
     return [generate_scene_clip(scene, out_dir, tool=tool, run_dir=run_dir, is_breaking=is_breaking)]
+
+
+async def _async_build_clips(
+    script: VideoScript,
+    clip_dir: Path,
+    *,
+    tool: str | None,
+    run_dir: Path,
+    is_breaking: bool,
+) -> dict[int, list[Path]]:
+    """Generate all scene clips concurrently; each clip runs in a thread pool."""
+    loop = asyncio.get_running_loop()
+    tasks = [
+        loop.run_in_executor(
+            None,
+            functools.partial(
+                generate_clips_for_scene, s, clip_dir,
+                tool=tool, run_dir=run_dir, is_breaking=is_breaking,
+            ),
+        )
+        for s in script.scenes
+    ]
+    results = await asyncio.gather(*tasks)
+    return {s.idx: clips for s, clips in zip(script.scenes, results)}
 
 
 # --------------------- Assembly ---------------------
@@ -301,10 +327,9 @@ def build_video(
         )
         _variety_engine.assign(script.scenes, _strategy)
 
-    clip_paths_by_scene = {
-        s.idx: generate_clips_for_scene(s, clip_dir, tool=tool, run_dir=out_dir, is_breaking=is_breaking)
-        for s in script.scenes
-    }
+    clip_paths_by_scene = asyncio.run(
+        _async_build_clips(script, clip_dir, tool=tool, run_dir=out_dir, is_breaking=is_breaking)
+    )
     audio_paths_by_scene = {
         s.idx: out_dir / "audio" / f"scene_{s.idx:02d}.mp3" for s in script.scenes
     }
