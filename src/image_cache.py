@@ -46,7 +46,15 @@ def _load(data_dir: Path) -> tuple[list[dict], np.ndarray]:
     jp  = _json_path(data_dir)
     np_ = _npy_path(data_dir)
 
-    entries: list[dict] = json.loads(jp.read_text()) if jp.exists() else []
+    raw_entries = json.loads(jp.read_text()) if jp.exists() else []
+    entries: list[dict] = []
+    for e in raw_entries:
+        if not isinstance(e, dict):
+            continue
+        path = e.get("path")
+        if not isinstance(path, str):
+            continue
+        entries.append(e)
     matrix = np.load(str(np_)).astype(np.float32) if (np_.exists() and entries) \
              else np.zeros((0, _DIM), dtype=np.float32)
 

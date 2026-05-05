@@ -469,18 +469,26 @@ def generate_scene_clip(
         if not img_path.exists():
             embedding = None  # carry from cache lookup to add_entry
 
+            visual_prompt = (scene.visual_prompt or "").strip()
+            if not visual_prompt:
+                visual_prompt = (scene.heading or "").strip()
+            if not visual_prompt:
+                visual_prompt = (scene.narration or "").strip().split(".")[0]
+            if not visual_prompt:
+                visual_prompt = "A cinematic AI newsroom scene"
+
             if not _try_real_screenshot(scene, tool, img_path):
                 # 4. Cross-run similarity cache
                 cached, embedding = image_cache.find_similar(
-                    scene.visual_prompt, data_dir
+                    visual_prompt, data_dir
                 )
                 if cached:
                     shutil.copy2(str(cached), str(img_path))
                 else:
                     # 5. Stock photo for generic real-world scenes
                     generated = False
-                    if _is_generic_prompt(scene.visual_prompt):
-                        result = fetch_stock_photo(scene.visual_prompt, img_path)
+                    if _is_generic_prompt(visual_prompt):
+                        result = fetch_stock_photo(visual_prompt, img_path)
                         if result:
                             generated = True
                             logger.info(f"Scene {scene.idx}: stock photo used (saved ~$0.08)")
@@ -488,7 +496,7 @@ def generate_scene_clip(
                     # 6. Stable Diffusion for breaking-news clips
                     if not generated and is_breaking and settings.stability_api_key:
                         try:
-                            generate_sd_image(scene.visual_prompt, img_path)
+                            generate_sd_image(visual_prompt, img_path)
                             generated = True
                         except Exception as exc:
                             logger.warning(
@@ -497,7 +505,7 @@ def generate_scene_clip(
 
                     # 7. DALL-E 3 HD — universal fallback
                     if not generated:
-                        prompt = scene.visual_prompt
+                        prompt = visual_prompt
                         if getattr(scene, "scene_type", None) == "diagram":
                             prompt = f"clean whiteboard-style diagram explaining: {prompt}"
                         generate_dalle_image(prompt, img_path)
@@ -505,7 +513,7 @@ def generate_scene_clip(
                     # Persist in cross-run cache (skip cache-hit copies)
                     if img_path.exists():
                         image_cache.add_entry(
-                            scene.visual_prompt, img_path, data_dir,
+                            visual_prompt, img_path, data_dir,
                             embedding=embedding,
                         )
         else:

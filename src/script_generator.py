@@ -390,11 +390,17 @@ def generate_script(
         short_nar = (s.get("short_narration") or "").strip() or None
         src_quote = (s.get("source_quote") or "").strip() or None
         src_attr  = (s.get("quote_attribution") or "").strip() or None
+        visual_prompt = (s.get("visual_prompt") or "").strip()
+        if not visual_prompt:
+            visual_prompt = (s.get("heading") or "").strip()
+        if not visual_prompt:
+            visual_prompt = (s.get("narration") or "").strip().split(".")[0]
+        visual_prompt = visual_prompt or "A cinematic AI newsroom scene"
         scenes.append(Scene(
             idx=i,
             heading=s["heading"],
             narration=s["narration"],
-            visual_prompt=s["visual_prompt"],
+            visual_prompt=visual_prompt,
             infographic_data=infographic,
             video_query=video_q,
             short_narration=short_nar,
