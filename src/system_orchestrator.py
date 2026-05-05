@@ -119,8 +119,9 @@ class SystemOrchestrator:
         self.video_renderer    = video_renderer
         self.video_publisher   = video_publisher
         self.performance_store = performance_store
-        self._data_dir         = data_dir or settings.data_dir
-        self._cycle_log_path   = self._data_dir / "cycle_log.jsonl"
+        self._data_dir          = data_dir or settings.data_dir
+        self._cycle_log_path    = self._data_dir / "cycle_log.jsonl"
+        self._run_history_path  = self._data_dir / "run_history.json"
 
     # ── Main cycle ─────────────────────────────────────────────────────────────
 
@@ -197,15 +198,47 @@ class SystemOrchestrator:
         ) if video_path is not None else None
 
         # ── 8. Persist cycle record for deferred learning ──────────────────
+        pred_map = {p.scene_idx: p.probability for p in predictions}
+        scene_rows = [
+            {
+                "index":          getattr(s, "idx", i),
+                "type":           getattr(s, "scene_type",   "unknown"),
+                "intent":         getattr(s, "scene_intent", "unknown"),
+                "predicted_risk": round(pred_map.get(getattr(s, "idx", i), 0.0), 4),
+            }
+            for i, s in enumerate(scenes)
+        ]
         cycle_record = {
-            "video_id":       video_id,
-            "strategy_mode":  strategy.mode,
+            "video_id":        video_id,
+            "strategy_mode":   strategy.mode,
             "scene_policy_id": scene_policy_id,
-            "hook":           packaging.hook,
-            "high_risk":      high_risk,
-            "corrections":    len(applied),
+            "hook":            packaging.hook,
+            "high_risk":       high_risk,
+            "corrections":     len(applied),
+            "scenes_snapshot": scene_rows,
         }
         self._persist_cycle(cycle_record)
+
+        # ── 9. Write rich run-history record for dashboard ─────────────────
+        run_record = {
+            "video_id":    video_id,
+            "timestamp":   __import__("datetime").datetime.now(
+                               __import__("datetime").timezone.utc
+                           ).isoformat(),
+            "strategy": {
+                "mode": strategy.mode,
+                "pace": strategy.pace,
+            },
+            "scene_policy": scene_policy_id,
+            "packaging": {
+                "title":     getattr(packaging, "title",     ""),
+                "hook":      packaging.hook,
+                "thumbnail": getattr(packaging, "thumbnail", {}),
+            },
+            "scenes": scene_rows,
+            "performance": None,
+        }
+        self._upsert_run_history(run_record)
 
         result = CycleResult(
             video_id            = video_id,
@@ -287,6 +320,24 @@ class SystemOrchestrator:
             "scene_policy_id": scene_policy_id,
         })
 
+        # ── Update run-history with real performance data ──────────────────
+        drop_scene_idxs: list[int] = []
+        if curve and scene_map:
+            from src.retention_correction_engine import detect_drops
+            drops = detect_drops(curve)
+            for dp in drops:
+                info = scene_map.get(dp.timestamp_idx)
+                if info:
+                    drop_scene_idxs.append(info.get("scene_idx", dp.timestamp_idx))
+        self._upsert_run_history({
+            "video_id":   video_id,
+            "performance": {
+                "ctr":           ctr,
+                "avg_watch_pct": avg_watch_pct,
+                "drops":         drop_scene_idxs,
+            },
+        })
+
         logger.info(
             f"SystemOrchestrator: learned from {video_id!r} — "
             f"ctr={ctr:.3f} ret={retention_30s:.2f} watch={avg_watch_pct:.2f}"
@@ -307,6 +358,30 @@ class SystemOrchestrator:
         )
 
     # ── Cycle persistence ──────────────────────────────────────────────────────
+
+    def _upsert_run_history(self, patch: dict[str, Any]) -> None:
+        """Insert or merge-update the run_history.json record for patch["video_id"]."""
+        try:
+            self._run_history_path.parent.mkdir(parents=True, exist_ok=True)
+            runs: list[dict] = []
+            if self._run_history_path.exists():
+                try:
+                    runs = json.loads(self._run_history_path.read_text())
+                except Exception:
+                    pass
+
+            vid = patch.get("video_id")
+            idx = next((i for i, r in enumerate(runs) if r.get("video_id") == vid), None)
+            if idx is None:
+                runs.append(patch)
+            else:
+                for k, v in patch.items():
+                    if v is not None:
+                        runs[idx][k] = v
+
+            self._run_history_path.write_text(json.dumps(runs, indent=2))
+        except Exception as exc:
+            logger.warning(f"SystemOrchestrator: could not update run_history ({exc})")
 
     def _persist_cycle(self, record: dict[str, Any]) -> None:
         try:
