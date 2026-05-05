@@ -26,9 +26,12 @@ import json
 import time
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    from src.live_state import LiveState
 
 
 _TRACE_FILE = "pipeline_trace.json"
@@ -71,9 +74,15 @@ class PipelineObserver:
     every state change so a crash mid-run still leaves a readable file.
     """
 
-    def __init__(self, run_dir: Path, pipeline: str = "daily") -> None:
+    def __init__(
+        self,
+        run_dir: Path,
+        pipeline: str = "daily",
+        live_state: "LiveState | None" = None,
+    ) -> None:
         self.run_dir  = run_dir
         self.pipeline = pipeline
+        self._live    = live_state
         self._started_ts  = time.time()
         self._started_at  = _now_iso()
         self._steps: dict[str, _StepRecord] = {}
@@ -91,6 +100,8 @@ class PipelineObserver:
             started_at=_now_iso(),
             started_ts=time.time(),
         )
+        if self._live is not None:
+            self._live.step_running(name)
         self._persist()
 
     def step_done(self, name: str, **metadata) -> None:
@@ -105,6 +116,8 @@ class PipelineObserver:
         rec.duration_sec = elapsed
         rec.metadata     = metadata
         logger.debug(f"Step '{name}' done in {elapsed:.1f}s")
+        if self._live is not None:
+            self._live.step_done(name, duration_sec=elapsed)
         self._persist()
 
     def step_skip(self, name: str, **metadata) -> None:
@@ -120,6 +133,8 @@ class PipelineObserver:
         rec.finished_at  = _now_iso()
         rec.duration_sec = elapsed
         rec.metadata     = metadata
+        if self._live is not None:
+            self._live.step_skipped(name)
         self._persist()
 
     def step_fail(self, name: str, exc: BaseException) -> None:
@@ -136,6 +151,8 @@ class PipelineObserver:
         rec.duration_sec = elapsed
         rec.error        = f"{type(exc).__name__}: {exc}"
         logger.debug(f"Step '{name}' failed after {elapsed:.1f}s: {exc}")
+        if self._live is not None:
+            self._live.step_failed(name, f"{type(exc).__name__}: {exc}")
         self._persist()
 
     # ── pipeline lifecycle ────────────────────────────────────────────────────
@@ -145,6 +162,8 @@ class PipelineObserver:
         self._status      = status
         self._finished_at = _now_iso()
         self._extra       = extra
+        if self._live is not None:
+            self._live.finish(status)
         trace = self._persist()
         logger.info(
             f"Pipeline trace: {status} — "

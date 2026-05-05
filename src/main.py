@@ -49,6 +49,7 @@ from src.checkpoint import PipelineCheckpoint
 from src.quality_gate import run_gate, QualityGateError
 from src.cost_tracker import reset_ledger
 from src.pipeline_observer import PipelineObserver
+from src.live_state import LiveState
 
 
 def _setup_logging(run_dir: Path) -> None:
@@ -280,7 +281,10 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
     summary = {"date": date_str, "run_dir": str(run_dir)}
     ledger   = reset_ledger()
     cp       = PipelineCheckpoint(run_dir)
-    observer = PipelineObserver(run_dir, pipeline="daily")
+    # 8 steps: scrape, script, voice, subtitles, video, thumbnail, upload_en, upload_ru
+    live = LiveState(settings.data_dir / "live_state.json")
+    live.start("daily", steps_total=8)
+    observer = PipelineObserver(run_dir, pipeline="daily", live_state=live)
     seen = SeenStories(
         settings.data_dir / "seen_stories.db",
         ttl_days=settings.dedup_ttl_days,
@@ -306,6 +310,10 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
                 news = viral_news
                 logger.info(f"Selected {len(news)} viral stories")
 
+            live.log_event(
+                f"Scraped {len(news)} stories"
+                + (f", selected {len(viral_news)} viral" if viral_news else "")
+            )
             cp.mark_done("scrape", {
                 "scraped_items": len(news),
                 "history_count": len(history),
@@ -357,6 +365,16 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
                 f"Strategic decisions: mode={strategy.mode}, "
                 f"exploration={strategy.exploration_rate:.2f}"
             )
+            _top_angle = max(strategy.angle_weights, key=strategy.angle_weights.get) if strategy.angle_weights else None
+            _top_format = max(strategy.format_weights, key=strategy.format_weights.get) if strategy.format_weights else None
+            live.set_strategy({
+                "mode": strategy.mode,
+                "exploration_rate": round(strategy.exploration_rate, 2),
+                "confidence": round(strategy.confidence, 2),
+                "top_angle": _top_angle,
+                "top_format": _top_format,
+            })
+            live.log_event(f"Strategy: {strategy.mode} mode, angle={_top_angle}")
 
             top_recs = get_recommendations()
             top_hooks = top_recs.get("top_hooks", [])
@@ -455,6 +473,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
                 script.save(script_cache)
 
             save_for_digest(settings.data_dir, dt.date.today(), script_cache)
+            live.log_event(f"Script ready: \"{script.title}\" ({len(script.scenes)} scenes)")
             cp.mark_done("script", {"title": script.title, "num_scenes": len(script.scenes)})
             observer.step_done("script", title=script.title, num_scenes=len(script.scenes))
         else:
@@ -479,6 +498,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
                 logger.info("Reusing cached audio; measuring durations")
                 _load_audio_durations(script, audio_dir)
             total_dur = sum(s.duration_sec for s in script.scenes)
+            live.log_event(f"Audio synthesized: {total_dur:.0f}s total")
             cp.mark_done("voice", {"total_duration_sec": total_dur})
             observer.step_done("voice", total_duration_sec=total_dur)
         else:
@@ -521,6 +541,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
                         outro_path=_en_outro,
                         use_presenter=settings.presenter_enabled)
             seen.mark_featured(news)
+            live.log_event(f"Video built: {long_video.name}")
             cp.mark_done("video", {"presenter": settings.presenter_enabled})
             observer.step_done("video", file=long_video.name,
                                presenter=settings.presenter_enabled)
@@ -595,6 +616,9 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
                         format=_ep[0].get("format", ""),
                         platform="youtube",
                     )
+                if video_id := ids.get("video_id"):
+                    live.log_event(f"Uploaded to YouTube EN: {video_id}")
+                    live.set_metrics({"video_id": video_id, "views": 0, "ctr": 0.0})
                 cp.mark_done("upload_en", {k: v for k, v in ids.items()})
                 observer.step_done("upload_en", **{k: v for k, v in ids.items()
                                                    if isinstance(v, (str, int, float, bool))})
@@ -639,6 +663,8 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         cost_report = ledger.save(run_dir / "cost_report.json")
         ledger.log_summary()
         summary["cost_usd"] = cost_report["total_usd"]
+        live.set_cost({"total_usd": cost_report["total_usd"]})
+        live.log_event(f"Pipeline complete! Cost: ${cost_report['total_usd']:.3f}")
 
         observer.finish(status="success", cost_usd=cost_report["total_usd"])
         notify_success(summary, "daily")
@@ -648,6 +674,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         logger.error(f"Quality gate blocked publish: {e}")
         summary["status"] = "quality_gate_failed"
         summary["error"]  = str(e)
+        live.log_event(f"Quality gate failed: {e}")
         observer.finish(status="quality_gate_failed", error=str(e))
         notify_failure(e, "daily", summary, str(e))
         raise
@@ -657,6 +684,7 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         logger.error(traceback.format_exc())
         summary["status"] = "failed"
         summary["error"]  = str(e)
+        live.log_event(f"Pipeline error: {type(e).__name__}: {e}")
         observer.finish(status="failed", error=str(e))
         notify_failure(e, "daily", summary, traceback.format_exc())
         raise
