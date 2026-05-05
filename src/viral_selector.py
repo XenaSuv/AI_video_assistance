@@ -43,17 +43,38 @@ def keyword_score(item: NewsItem) -> int:
 
 def gpt_score(item: NewsItem) -> int:
     prompt = f"""
-    Rate how viral this AI news is from 1 to 10.
+Rate how viral this AI news story is from 1 to 10.
 
-    News:
-    {item.title} - {item.summary}
+News:
+{item.title} — {item.summary}
 
-    Consider:
-    - Will people click?
-    - Is it surprising?
-    - Is it useful?
+SCORING CRITERIA:
 
-    Return only a number.
+1–3 → Low:
+- Minor update, niche, no clear impact
+
+4–6 → Medium:
+- Interesting but not surprising or widely relevant
+
+7–8 → High:
+- Clear impact (pricing, capabilities, major company)
+- Likely to attract clicks
+
+9–10 → Very high:
+- Strong surprise, controversy, or major shift
+- People will want to share or argue about it
+
+CONSIDER:
+- Click potential (would you click this title?)
+- Surprise or contrast (unexpected vs expected)
+- Real-world impact (money, jobs, capabilities)
+- Discussion potential (would people comment?)
+
+RULES:
+- Avoid overrating minor updates
+- Be strict — most news should fall in 5–7 range
+
+Return ONLY a number (1–10).
     """
 
     client = make_openai_client()

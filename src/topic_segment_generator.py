@@ -287,6 +287,27 @@ If trade-offs occur, prioritize narration quality over extras.
 - No generic AI hype phrases
 - Use concrete specifics (tools, prices, benchmarks)
 
+=== CHANNEL DNA ===
+- Every video must feel:
+  → practical (useful immediately)
+  → slightly opinionated (not neutral)
+  → grounded in real experience
+
+- Prefer:
+  → tension (expectation vs reality)
+  → trade-offs (benefit vs cost)
+  → specific outcomes (time saved, money, results)
+
+=== HOOK STANDARD ===
+- First 1–2 sentences must:
+  → create curiosity OR conflict
+  → clearly signal value
+  → avoid generic phrasing
+
+=== RETENTION RULE ===
+- Include at least one moment of tension or uncertainty mid-video
+- Avoid purely linear explanations
+
 === OPTIONAL ENHANCEMENTS (USE SELECTIVELY) ===
 
 short_narration:
@@ -404,22 +425,49 @@ def _log_usage(usage, label: str = "") -> None:
 # ── GPT: generate new topic ideas ─────────────────────────────────────────────
 
 _IDEA_GEN_PROMPT = """\
-You produce YouTube video ideas for an AI-niche channel (tech-savvy audience, 18-35).
-The channel covers AI tools, practical use cases, honest reviews, and news analysis.
+You produce YouTube video ideas for an AI-focused channel (tech-savvy audience, 18–35).
 
-Generate {count} fresh video topic ideas using these formats:
-  honest_review   – "I tried X — honest take" (one specific AI tool)
-  hidden_gems     – "N AI tools you've never heard of" (underrated, not ChatGPT/Midjourney)
-  ai_project_build– "I built [real project] using only AI" (site, design, business plan…)
-  news_with_opinion – "Big AI news + what it means for YOU" (one recent trend/announcement)
+GOAL:
+Generate {count} ideas that are highly clickable, specific, and built around a strong angle.
 
-Rules:
-- Mix all four formats
-- Be specific in subject/angle — avoid generic phrases
+FORMATS (must be balanced):
+- honest_review
+- hidden_gems
+- ai_project_build
+- news_with_opinion
+
+Ensure a roughly even mix across formats.
+
+--------------------------------
+REQUIREMENTS
+--------------------------------
+Each idea must:
+- Be specific (tool, project, or use case)
+- Include a clear tension or conflict
+- Feel like something worth clicking immediately
+
+Prefer ideas with:
+- experiments ("I tried X for 7 days")
+- constraints ("only AI", "no code", "$0 budget")
+- comparisons or trade-offs
+- surprising outcomes
+
+Avoid:
+- generic phrasing
+- overused tools (ChatGPT, Midjourney) unless angle is unique
 - Avoid topics already used: {used_titles}
 - today is {today}
 
+--------------------------------
+TREND LAYER
+--------------------------------
+Incorporate recent AI trends, tools, or discussions when relevant.
+
+--------------------------------
+OUTPUT
+--------------------------------
 Return JSON:
+
 {{
   "ideas": [
     {{
