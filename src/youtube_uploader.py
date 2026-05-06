@@ -22,6 +22,7 @@ from loguru import logger
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src import ffmpeg_utils
+from src.circuit_breaker import youtube_breaker
 from src.script_generator import VideoScript
 
 
@@ -120,6 +121,7 @@ def _youtube_client(
 
 # --------------------- Upload ---------------------
 
+@youtube_breaker
 def upload_video(
     video_path: Path,
     title: str,
