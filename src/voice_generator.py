@@ -16,6 +16,7 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.circuit_breaker import elevenlabs_breaker
 from src.script_generator import VideoScript
 from src.ffmpeg_utils import duration as ff_duration
 from src.cost_tracker import get_ledger
@@ -45,6 +46,7 @@ def _log_retry(retry_state) -> None:
     )
 
 
+@elevenlabs_breaker
 @retry(
     retry=retry_if_exception(_is_retryable_elevenlabs),
     wait=wait_exponential(multiplier=1, min=2, max=60),

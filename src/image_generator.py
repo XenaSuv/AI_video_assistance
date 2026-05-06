@@ -26,6 +26,7 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.circuit_breaker import openai_breaker
 from src.cost_tracker import get_ledger
 from src.retry_utils import http_get, http_post, make_openai_client
 from src.script_generator import Scene
@@ -51,6 +52,7 @@ def _log_dalle_retry(retry_state) -> None:
     logger.warning(f"DALL-E retry {retry_state.attempt_number}: {retry_state.outcome.exception()}")
 
 
+@openai_breaker
 @retry(
     retry=retry_if_exception(_is_retryable_dalle),
     wait=wait_exponential(multiplier=1, min=2, max=60),
