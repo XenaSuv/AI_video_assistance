@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import random
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -19,6 +20,10 @@ def _strategy_path() -> Path:
 
 def _actions_path() -> Path:
     return settings.data_dir / "auto_actions.json"
+
+
+def _stats_path() -> Path:
+    return settings.data_dir / "action_stats.json"
 
 
 def _load_json(path: Path, default: Any) -> Any:
@@ -40,6 +45,8 @@ def _save_json(path: Path, payload: Any) -> None:
 class AutoActionEngine:
     run_type: str = "daily"
     max_actions: int = 2
+    min_confidence: float = 0.4
+    exploration_rate: float = 0.2
 
     def default_strategy(self) -> dict[str, Any]:
         return {
@@ -67,6 +74,12 @@ class AutoActionEngine:
 
     def save_action_log(self, payload: dict[str, Any]) -> None:
         _save_json(_actions_path(), payload)
+
+    def load_stats(self) -> dict[str, dict[str, int]]:
+        return _load_json(_stats_path(), {})
+
+    def save_stats(self, payload: dict[str, dict[str, int]]) -> None:
+        _save_json(_stats_path(), payload)
 
     def generate_insights(self) -> list[dict[str, Any]]:
         records = [
@@ -141,11 +154,18 @@ class AutoActionEngine:
         new_ret = latest.get("avg_view_percentage") or 0.0
         delta = round(new_ret - prev_ret, 4)
 
-        scores = store.setdefault("scores", {})
+        stats = self.load_stats()
         for action in pending.get("actions", []):
-            action_type = action["type"]
-            score = scores.get(action_type, 0)
-            scores[action_type] = score + (1 if delta > 0 else -1)
+            action_type = action.get("type")
+            if not action_type or action_type == "no_change":
+                continue
+            stat = stats.setdefault(action_type, {"success": 1, "fail": 1})
+            if delta > 0:
+                stat["success"] += 1
+            else:
+                stat["fail"] += 1
+
+        self.save_stats(stats)
 
         pending["evaluation_status"] = "done"
         pending["evaluated_video_id"] = latest.get("video_id")
@@ -164,17 +184,43 @@ class AutoActionEngine:
             return {"type": "improve_packaging", "reason": "low_ctr", "source": rec["type"]}
         return None
 
-    def _limit(self, actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _score(self, action: dict[str, Any]) -> float:
+        stats = self.load_stats()
+        stat = stats.get(action["type"], {"success": 1, "fail": 1})
+        success = stat["success"]
+        fail = stat["fail"]
+        return success / (success + fail)
+
+    def _select(self, candidates: list[tuple[dict[str, Any], float]]) -> list[dict[str, Any]]:
+        if not candidates:
+            return []
+
+        deduped: list[tuple[dict[str, Any], float]] = []
         seen: set[str] = set()
-        limited: list[dict[str, Any]] = []
-        for action in actions:
-            if action["type"] in seen:
+        for action, score in sorted(candidates, key=lambda x: x[1], reverse=True):
+            action_type = action["type"]
+            if action_type in seen:
                 continue
-            seen.add(action["type"])
-            limited.append(action)
-            if len(limited) >= self.max_actions:
+            seen.add(action_type)
+            deduped.append((action, score))
+
+        if deduped and random.random() < self.exploration_rate:
+            explored_action, score = random.choice(deduped)
+            explored = copy.deepcopy(explored_action)
+            explored["confidence"] = round(score, 3)
+            explored["selection_mode"] = "explore"
+            return [explored]
+
+        selected: list[dict[str, Any]] = []
+        for action, score in deduped:
+            if score > self.min_confidence:
+                chosen = copy.deepcopy(action)
+                chosen["confidence"] = round(score, 3)
+                chosen["selection_mode"] = "confident"
+                selected.append(chosen)
+            if len(selected) >= self.max_actions:
                 break
-        return limited
+        return selected
 
     def _apply(self, strategy: dict[str, Any], actions: list[dict[str, Any]]) -> dict[str, Any]:
         updated = copy.deepcopy(strategy)
@@ -193,12 +239,13 @@ class AutoActionEngine:
         if self.performance_good(insights):
             return strategy, [{"type": "no_change", "reason": "performance_good", "source": "guard"}]
 
-        actions: list[dict[str, Any]] = []
+        candidates: list[tuple[dict[str, Any], float]] = []
         for rec in insights:
             action = self._map(rec)
             if action:
-                actions.append(action)
-        actions = self._limit(actions)
+                score = self._score(action)
+                candidates.append((action, score))
+        actions = self._select(candidates)
         if not actions:
             return strategy, []
         return self._apply(strategy, actions), actions
