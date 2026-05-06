@@ -257,6 +257,19 @@ def _build_recommendation_block() -> str:
     return "=== ANALYTICS INSIGHTS ===\n" + "\n\n".join(sections)
 
 
+def _build_strategy_block(strategy: dict[str, Any] | None) -> str:
+    """Return a compact prompt block describing the current content strategy."""
+    if not strategy:
+        return ""
+    return (
+        "=== CURRENT CONTENT STRATEGY ===\n"
+        f"- pace: {strategy.get('pace', 'normal')}\n"
+        f"- hook_aggressiveness: {strategy.get('hook_aggressiveness', 0.5):.2f}\n"
+        f"- packaging_style: {strategy.get('packaging_style', 'standard')}\n"
+        "Use this as light guidance, not as a rigid formula."
+    )
+
+
 def _fill_missing_short_narrations(
     scenes: list[Scene],
     client: OpenAI,
@@ -306,6 +319,7 @@ def generate_script(
     items: list[NewsItem],
     num_scenes: int = 8,
     data_dir: Path | None = None,
+    strategy: dict[str, Any] | None = None,
 ) -> VideoScript:
     """Call GPT to produce a structured VideoScript.
 
@@ -323,6 +337,9 @@ def generate_script(
         num_scenes=num_scenes,
         items_block=_build_items_block(items),
     )
+    strategy_block = _build_strategy_block(strategy)
+    if strategy_block:
+        user_prompt += "\n\n" + strategy_block
     if data_dir is not None:
         try:
             analytics_block = _build_recommendation_block()

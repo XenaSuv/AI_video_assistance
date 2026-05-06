@@ -40,13 +40,25 @@ def _save_db(data: list[dict[str, Any]]) -> None:
         logger.error(f"Failed to save performance DB: {exc}")
 
 
-def save_result(video_id: str, hook: str, title: str, description: str = "") -> None:
+def save_result(
+    video_id: str,
+    hook: str,
+    title: str,
+    description: str = "",
+    *,
+    content_type: str = "daily",
+    strategy: dict[str, Any] | None = None,
+    auto_actions: list[dict[str, Any]] | None = None,
+) -> None:
     """Record a newly published video with its hook and title."""
     record = {
         "video_id": video_id,
+        "content_type": content_type,
         "hook": hook,
         "title": title,
         "description": description,
+        "strategy": strategy or {},
+        "auto_actions": auto_actions or [],
         "timestamp": datetime.utcnow().isoformat(),
         "updated": datetime.utcnow().isoformat(),
         "views": 0,
