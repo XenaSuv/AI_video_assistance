@@ -18,6 +18,7 @@ from loguru import logger
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import src.ffmpeg_utils as ffmpeg_utils
 from config import settings
+from src.auto_action_engine import AutoActionEngine
 from src.deduplicator import SeenStories
 from src.digest_script_generator import save_for_digest
 from src.hook_selector import record_usage
@@ -273,6 +274,12 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
     )
 
     try:
+        action_engine = AutoActionEngine(run_type="daily")
+        strategy, auto_actions, insights = action_engine.prepare_strategy()
+        summary["strategy"] = strategy
+        summary["auto_actions"] = auto_actions
+        summary["insights"] = insights
+
         # 1. Scrape
         news_cache = run_dir / "news.json"
         if news_cache.exists():
@@ -308,7 +315,12 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
         script_cache = run_dir / "script.json"
         script = _load_cached_script(script_cache)
         if script is None:
-            script = generate_script(news, num_scenes=8, data_dir=settings.data_dir)
+            script = generate_script(
+                news,
+                num_scenes=8,
+                data_dir=settings.data_dir,
+                strategy=strategy,
+            )
             script.save(script_cache)
         # Persist a digest copy so the Sunday workflow can find it across CI runs
         save_for_digest(settings.data_dir, dt.date.today(), script_cache)
@@ -377,7 +389,15 @@ def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
             if video_id := ids.get("video_id"):
                 record_usage(script.hook, video_id, settings.data_dir, "daily")
                 record_thumbnail_usage(thumbnail, video_id, settings.data_dir, "daily")
-                save_result(video_id, script.hook, script.title, script.description)
+                save_result(
+                    video_id,
+                    script.hook,
+                    script.title,
+                    script.description,
+                    content_type="daily",
+                    strategy=strategy,
+                    auto_actions=auto_actions,
+                )
 
         # 8. Russian variant (optional)
         if settings.ru_enabled:
