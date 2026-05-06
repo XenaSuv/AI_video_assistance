@@ -586,6 +586,7 @@ def frames_to_video(
         stdin=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
+    assert proc.stdin is not None
     for frame in frames:
         # Ensure the frame is the right size
         if frame.shape != (height, width, 3):

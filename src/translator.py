@@ -14,9 +14,11 @@ from pathlib import Path
 
 from loguru import logger
 from openai import OpenAI
+from src.retry_utils import make_openai_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.cost_tracker import get_ledger
 from src.script_generator import Scene, VideoScript
 
 _SYSTEM = """\
@@ -43,6 +45,13 @@ def _log_usage(usage, label: str = "") -> None:
         f"{tag}OpenAI tokens — prompt: {usage.prompt_tokens} "
         f"({cached} cached, {pct}% hit) | completion: {usage.completion_tokens}"
     )
+    get_ledger().record_llm(
+        tag=label or "llm",
+        model=settings.openai_model,
+        prompt_tokens=usage.prompt_tokens or 0,
+        completion_tokens=usage.completion_tokens or 0,
+        cached_tokens=cached,
+    )
 
 
 def translate_script(script: VideoScript, target_lang: str) -> VideoScript:
@@ -51,7 +60,7 @@ def translate_script(script: VideoScript, target_lang: str) -> VideoScript:
     *target_lang* is a plain-language name, e.g. ``"Russian"`` or ``"Spanish"``.
     The original VideoScript is not mutated.
     """
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = make_openai_client()
 
     payload = {
         "title":       script.title,

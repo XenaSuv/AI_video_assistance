@@ -27,9 +27,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.breaking_detector import mark_publish_failed, mark_published
 from src.breaking_script_generator import generate_breaking_short_script
-from src.main import _load_audio_durations
+from src.pipeline_orchestrator import _load_audio_durations, _load_cached_script, _setup_logging
 from src.scraper import NewsItem
-from src.script_generator import Scene, VideoScript
+from src.script_generator import VideoScript
 from src.shorts_generator import build_short, create_short_video
 from src.translator import translate_script
 from src.video_generator import generate_clips_for_scene
@@ -37,26 +37,6 @@ from src.voice_generator import synthesize_script
 from src.youtube_uploader import upload_short
 from src.slack_notifier import notify_success, notify_failure
 
-
-def _setup_logging(run_dir: Path) -> None:
-    logger.remove()
-    logger.add(sys.stderr, level="INFO",
-               format="<green>{time:HH:mm:ss}</green> | <level>{level:<7}</level> | {message}")
-    logger.add(run_dir / "run.log", level="DEBUG", rotation="10 MB")
-
-
-def _load_cached_script(path: Path) -> VideoScript | None:
-    if not path.exists():
-        return None
-    data = json.loads(path.read_text())
-    return VideoScript(
-        title=data["title"],
-        description=data["description"],
-        tags=data["tags"],
-        hook=data["hook"],
-        scenes=[Scene(idx=i, **{k: v for k, v in s.items() if k != "idx"})
-                for i, s in enumerate(data["scenes"])],
-    )
 
 
 def run_breaking_pipeline(item: NewsItem, skip_upload: bool = False) -> dict:

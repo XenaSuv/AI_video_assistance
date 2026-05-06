@@ -21,6 +21,7 @@ from pathlib import Path
 import numpy as np
 from loguru import logger
 from openai import OpenAI
+from src.retry_utils import make_openai_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
@@ -45,7 +46,15 @@ def _load(data_dir: Path) -> tuple[list[dict], np.ndarray]:
     jp  = _json_path(data_dir)
     np_ = _npy_path(data_dir)
 
-    entries: list[dict] = json.loads(jp.read_text()) if jp.exists() else []
+    raw_entries = json.loads(jp.read_text()) if jp.exists() else []
+    entries: list[dict] = []
+    for e in raw_entries:
+        if not isinstance(e, dict):
+            continue
+        path = e.get("path")
+        if not isinstance(path, str):
+            continue
+        entries.append(e)
     matrix = np.load(str(np_)).astype(np.float32) if (np_.exists() and entries) \
              else np.zeros((0, _DIM), dtype=np.float32)
 
@@ -72,7 +81,7 @@ def _save(data_dir: Path, entries: list[dict], matrix: np.ndarray) -> None:
 # ── embedding ─────────────────────────────────────────────────────────────────
 
 def _embed(text: str) -> np.ndarray:
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = make_openai_client()
     resp   = client.embeddings.create(model="text-embedding-3-small", input=text[:2048])
     return np.array(resp.data[0].embedding, dtype=np.float32)
 

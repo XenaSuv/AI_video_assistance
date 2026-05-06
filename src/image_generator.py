@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 import shutil
 import sys
+import textwrap
 from pathlib import Path
 
 import requests
@@ -25,6 +26,9 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.circuit_breaker import openai_breaker
+from src.cost_tracker import get_ledger
+from src.retry_utils import http_get, http_post, make_openai_client
 from src.script_generator import Scene
 import src.ffmpeg_utils as ffmpeg_utils
 import src.image_cache as image_cache
@@ -48,6 +52,7 @@ def _log_dalle_retry(retry_state) -> None:
     logger.warning(f"DALL-E retry {retry_state.attempt_number}: {retry_state.outcome.exception()}")
 
 
+@openai_breaker
 @retry(
     retry=retry_if_exception(_is_retryable_dalle),
     wait=wait_exponential(multiplier=1, min=2, max=60),
@@ -64,8 +69,7 @@ def _call_dalle(client: OpenAI, prompt: str) -> bytes:
         n=1,
     )
     url = response.data[0].url
-    dl  = requests.get(url, timeout=60)
-    dl.raise_for_status()
+    dl  = http_get(url, timeout=60)
     return dl.content
 
 
@@ -108,10 +112,11 @@ def generate_dalle_image(prompt: str, out_path: Path) -> Path:
     if out_path.exists():
         logger.info(f"Reusing cached image: {out_path.name}")
         return out_path
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = make_openai_client()
     logger.info(f"DALL-E 3 HD: {prompt[:80]}…")
     data = _call_dalle(client, prompt)
     out_path.write_bytes(data)
+    get_ledger().record_image(f"image-{out_path.stem}", "dall-e-3")
     logger.info(f"  → {out_path.name} ({len(data)//1024} KB)")
     return out_path
 
@@ -129,7 +134,7 @@ def generate_sd_image(prompt: str, out_path: Path) -> Path:
         raise RuntimeError("STABILITY_API_KEY not configured")
 
     logger.info(f"Stable Diffusion (breaking): {prompt[:80]}…")
-    resp = requests.post(
+    resp = http_post(
         "https://api.stability.ai/v2beta/stable-image/generate/core",
         headers={"authorization": f"Bearer {key}", "accept": "image/*"},
         files={
@@ -140,8 +145,6 @@ def generate_sd_image(prompt: str, out_path: Path) -> Path:
         },
         timeout=90,
     )
-    if resp.status_code != 200:
-        raise RuntimeError(f"Stability AI {resp.status_code}: {resp.text[:200]}")
 
     out_path.write_bytes(resp.content)
     logger.info(f"  → {out_path.name} (SD, {len(resp.content)//1024} KB)")
@@ -202,20 +205,18 @@ def _unsplash_photo(query: str, out_path: Path) -> Path | None:
     if not key:
         return None
     try:
-        r = requests.get(
+        r = http_get(
             _UNSPLASH_PHOTO_URL,
             headers={"Authorization": f"Client-ID {key}"},
             params={"query": query, "orientation": "landscape", "per_page": 5},
             timeout=15,
         )
-        r.raise_for_status()
         results = r.json().get("results", [])
         if not results:
             return None
         photo = results[0]
         img_url = photo["urls"].get("regular") or photo["urls"]["full"]
-        img_r = requests.get(img_url, timeout=60)
-        img_r.raise_for_status()
+        img_r = http_get(img_url, timeout=60)
         out_path.write_bytes(img_r.content)
         user = photo.get("user", {}).get("name", "Unknown")
         logger.info(f"  Stock photo (Unsplash): '{query}' by {user} → {out_path.name}")
@@ -230,13 +231,12 @@ def _pexels_photo(query: str, out_path: Path) -> Path | None:
     if not key:
         return None
     try:
-        r = requests.get(
+        r = http_get(
             _PEXELS_PHOTO_URL,
             headers={"Authorization": key},
             params={"query": query, "orientation": "landscape", "size": "medium", "per_page": 5},
             timeout=15,
         )
-        r.raise_for_status()
         photos = r.json().get("photos", [])
         if not photos:
             return None
@@ -244,8 +244,7 @@ def _pexels_photo(query: str, out_path: Path) -> Path | None:
         img_url = src.get("large2x") or src.get("large") or src.get("original")
         if not img_url:
             return None
-        img_r = requests.get(img_url, timeout=60)
-        img_r.raise_for_status()
+        img_r = http_get(img_url, timeout=60)
         out_path.write_bytes(img_r.content)
         photographer = photos[0].get("photographer", "Unknown")
         logger.info(f"  Stock photo (Pexels): '{query}' by {photographer} → {out_path.name}")
@@ -310,6 +309,20 @@ def _valid_video_clip(path: Path) -> bool:
 # ── Screenshot helper ─────────────────────────────────────────────────────────
 
 def _try_real_screenshot(scene: Scene, tool: str | None, img_path: Path) -> bool:
+    # Dynamic URL screenshot (topic segments)
+    if scene.screenshot_url:
+        try:
+            from src.screenshot_capturer import capture_url
+            capture_url(scene.screenshot_url, img_path)
+            return img_path.exists()
+        except Exception as e:
+            logger.warning(
+                f"Scene {scene.idx} dynamic screenshot failed ({scene.screenshot_url}): {e} "
+                "— falling back to image generation"
+            )
+            return False
+
+    # Curated library screenshot (weekly tutorials)
     if not tool or not scene.screenshot_key:
         return False
     try:
@@ -324,6 +337,70 @@ def _try_real_screenshot(scene: Scene, tool: str | None, img_path: Path) -> bool
             "— falling back to image generation"
         )
         return False
+
+
+# ── Text overlay renderer ─────────────────────────────────────────────────────
+
+_TO_BG     = (13, 17, 23)
+_TO_ACCENT = (56, 189, 248)
+_TO_WHITE  = (255, 255, 255)
+_TO_DIM    = (139, 156, 178)
+_FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+_FONT_REG  = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+
+
+def _render_text_overlay_clip(scene: "Scene", clip_path: Path) -> Path:
+    """Render a bold-text card (heading + pull-quote) as a Ken Burns clip.
+
+    Costs nothing — pure PIL, no image API call.
+    """
+    from PIL import Image, ImageDraw, ImageFont  # lazy import — PIL may be absent in tests
+
+    img_dir = clip_path.parent.parent / "images"
+    img_dir.mkdir(parents=True, exist_ok=True)
+    img_path = img_dir / f"scene_{scene.idx:02d}_text.png"
+
+    if not img_path.exists():
+        img  = Image.new("RGB", (OUT_W, OUT_H), color=_TO_BG)
+        draw = ImageDraw.Draw(img)
+
+        # Subtle top fade (lighter navy gradient)
+        for y in range(220):
+            t = 1 - y / 220
+            draw.line([(0, y), (OUT_W, y)], fill=(
+                int(_TO_BG[0] + 12 * t),
+                int(_TO_BG[1] + 12 * t),
+                int(_TO_BG[2] + 22 * t),
+            ))
+
+        # Left accent bar
+        draw.rectangle([(60, 180), (67, 545)], fill=_TO_ACCENT)
+
+        try:
+            font_h = ImageFont.truetype(_FONT_BOLD, 68)
+            font_q = ImageFont.truetype(_FONT_REG,  32)
+        except OSError:
+            font_h = ImageFont.load_default()
+            font_q = font_h
+
+        # Heading — ALL CAPS, wrapped at ~22 chars, max 4 lines
+        lines = textwrap.wrap(scene.heading.upper(), width=22)[:4]
+        y_h = 200
+        for line in lines:
+            draw.text((95, y_h), line, font=font_h, fill=_TO_WHITE)
+            y_h += 80
+
+        # Pull-quote: first sentence of narration, max 120 chars, 2 lines
+        pull  = scene.narration.split(".")[0].strip()[:120]
+        plines = textwrap.wrap(pull, width=62)[:2]
+        y_q = OUT_H - 55 - len(plines) * 40
+        for line in plines:
+            draw.text((95, y_q), line, font=font_q, fill=_TO_DIM)
+            y_q += 40
+
+        img.save(img_path)
+
+    return _ken_burns_clip(img_path, float(scene.duration_sec), clip_path)
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -369,6 +446,10 @@ def generate_scene_clip(
     data_dir = settings.data_dir
 
     try:
+        # 0. scene_type override — text overlay rendered entirely in PIL
+        if getattr(scene, "scene_type", None) == "text_overlay":
+            return _render_text_overlay_clip(scene, clip_path)
+
         # 1. Infographic — fully animated
         if scene.infographic_data:
             from src.infographic_generator import generate_infographic_clip
@@ -390,18 +471,26 @@ def generate_scene_clip(
         if not img_path.exists():
             embedding = None  # carry from cache lookup to add_entry
 
+            visual_prompt = (scene.visual_prompt or "").strip()
+            if not visual_prompt:
+                visual_prompt = (scene.heading or "").strip()
+            if not visual_prompt:
+                visual_prompt = (scene.narration or "").strip().split(".")[0]
+            if not visual_prompt:
+                visual_prompt = "A cinematic AI newsroom scene"
+
             if not _try_real_screenshot(scene, tool, img_path):
                 # 4. Cross-run similarity cache
                 cached, embedding = image_cache.find_similar(
-                    scene.visual_prompt, data_dir
+                    visual_prompt, data_dir
                 )
                 if cached:
                     shutil.copy2(str(cached), str(img_path))
                 else:
                     # 5. Stock photo for generic real-world scenes
                     generated = False
-                    if _is_generic_prompt(scene.visual_prompt):
-                        result = fetch_stock_photo(scene.visual_prompt, img_path)
+                    if _is_generic_prompt(visual_prompt):
+                        result = fetch_stock_photo(visual_prompt, img_path)
                         if result:
                             generated = True
                             logger.info(f"Scene {scene.idx}: stock photo used (saved ~$0.08)")
@@ -409,7 +498,7 @@ def generate_scene_clip(
                     # 6. Stable Diffusion for breaking-news clips
                     if not generated and is_breaking and settings.stability_api_key:
                         try:
-                            generate_sd_image(scene.visual_prompt, img_path)
+                            generate_sd_image(visual_prompt, img_path)
                             generated = True
                         except Exception as exc:
                             logger.warning(
@@ -418,12 +507,15 @@ def generate_scene_clip(
 
                     # 7. DALL-E 3 HD — universal fallback
                     if not generated:
-                        generate_dalle_image(scene.visual_prompt, img_path)
+                        prompt = visual_prompt
+                        if getattr(scene, "scene_type", None) == "diagram":
+                            prompt = f"clean whiteboard-style diagram explaining: {prompt}"
+                        generate_dalle_image(prompt, img_path)
 
                     # Persist in cross-run cache (skip cache-hit copies)
                     if img_path.exists():
                         image_cache.add_entry(
-                            scene.visual_prompt, img_path, data_dir,
+                            visual_prompt, img_path, data_dir,
                             embedding=embedding,
                         )
         else:

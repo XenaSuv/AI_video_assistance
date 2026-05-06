@@ -29,6 +29,9 @@ logs/
 # Data (SQLite dedup DB is restored from CI cache)
 data/seen_stories.db
 
+# Scraper cache (ephemeral, regenerated each day)
+data/scraper_cache/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -38,3 +41,5 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+.coverage
+htmlcov/

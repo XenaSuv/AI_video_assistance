@@ -13,11 +13,14 @@ from typing import Any
 
 from loguru import logger
 from openai import OpenAI
+from src.retry_utils import make_openai_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.cost_tracker import get_ledger
 from src.analytics import get_proven_hooks, get_proven_titles, top_keywords
 from src.scraper import NewsItem
+from src.editorial_brain import editorial_plan_to_prompt, EditorialPlan
 
 
 @dataclass
@@ -29,11 +32,14 @@ class Scene:
     visual_prompt: str          # DALL-E 3 prompt; used as fallback when no screenshot
     duration_sec: int = 0       # filled after TTS timing is known
     screenshot_key: str | None = None    # weekly tutorials: real screenshot from curated library
+    screenshot_url: str | None = None    # topic segments: capture any public URL on the fly
     short_narration: str | None = None   # ~120 words written for a standalone Shorts cut
     infographic_data: dict | None = None # animated chart/stat; skips DALL-E when set
     video_query: str | None = None       # stock B-roll search term; beats DALL-E, loses to infographic
     source_quote: str | None = None      # verbatim quote (≤30 words) from a named source
     quote_attribution: str | None = None # "Name, Role · Org · domain.com"
+    scene_type: str = "image"            # assigned by SceneVarietyEngine
+    scene_intent: str = "explain"        # explain | shock | data | reaction
 
 
 @dataclass
@@ -69,18 +75,32 @@ class VideoScript:
 # --------------------- Prompt ---------------------
 
 SYSTEM_PROMPT = """You are the writer and producer for a daily AI news YouTube channel.
-Your scripts sound like a knowledgeable friend explaining the latest AI developments —
-NOT a press release or corporate blog post. You cite specific papers, companies,
-researchers, and real numbers. Honest about limitations; no hype.
-No "welcome back to the channel" filler — assume viewers know the channel.
+Your scripts sound like a human AI YouTuber with an editorial voice —
+a knowledgeable friend, not a press release or corporate blog post. Write like a real creator with energy, curiosity, skepticism, and specific detail. Cite papers, companies, researchers, and real numbers. Be honest about limitations; avoid hype. No "welcome back to the channel" filler — assume viewers know the channel.
+
+=== CORE PRIORITY ===
+1. Clear, engaging narration
+2. Strong editorial voice
+3. Accurate information
+4. Visual enhancements (only when useful)
+
+If conflicts arise, prioritize narration quality.
+
+=== EDITORIAL ANGLE (REQUIRED) ===
+Identify one subtle theme of the day (e.g. “AI is getting cheaper”, “models vs agents”).
+Let it influence tone, but don’t force it.
 
 === NARRATION STYLE ===
-- Write conversationally: contractions ("it's", "you'll", "they've", "here's") are good
-- Every scene: topic hook → key facts → implication for viewers → bridge to next topic
-- Use concrete specifics: model names, benchmark scores, funding amounts, release dates
-- Vary sentence length: short punchy sentences for impact, longer ones for explanation
-- Speak as "we" when contextualising the field; never "I"
-- Close the final scene with a genuine, non-cringey call to like/subscribe
+- Conversational, contractions
+- Natural flow (do NOT rigidly repeat the same structure per scene)
+- Each scene must include:
+  → what happened
+  → why it matters
+- At least one opinion per scene
+
+=== COMPLEXITY CONTROL ===
+- Do NOT force every feature into every scene
+- It’s OK to leave optional fields null
 
 === INFOGRAPHIC DATA ===
 Set "infographic_data" to replace the static DALL-E image with an animated chart whenever
@@ -116,32 +136,22 @@ Good examples: "developer coding laptop", "data center servers blinking lights",
 Use null for: data/comparison scenes (use infographic), abstract AI concepts,
 policy/opinion scenes, any scene where a DALL-E illustration communicates better.
 
-=== VISUAL PROMPTS ===
-Each "visual_prompt" should be a photorealistic DALL-E 3 description that uses the
-headline's actual company, product, or service names. Aim for a serious editorial
-news feel rather than colorful fantasy. For OpenAI, Anthropic, or Google stories,
-prefer a brand-inspired background prompt with subtle corporate color cues and
-no obvious logos.
+=== VISUAL PRIORITY ===
+Use ONLY ONE primary enhancement per scene:
+1. infographic_data (if numbers are central)
+2. video_query (if real-world action adds value)
+3. visual_prompt (fallback)
+
+Avoid combining multiple unless clearly beneficial.
 
 === SHORT NARRATION ===
-Fill "short_narration" for EXACTLY 2-3 middle scenes (not scene 0 intro, not the last
-sign-off). Each must be fully self-contained (~120 words):
-- First sentence: news hook — "Breaking:", "Just in:", "Here's what just happened:"
-- Body: one story with all context included; viewer has NOT seen the full video
-- Final sentence exactly: "Subscribe for daily AI news."
-- Never use "In today's video", "As I mentioned", or cross-references to other scenes
-Set short_narration to null for the opening intro and closing sign-off only.
+- Use in EXACTLY 2 scenes (not 2–3 → reduces failure rate)
+- Must be clearly shorter and punchier
+- Strict format remains
 
 === SOURCE QUOTES ===
-For 2-4 scenes, pull a verbatim or near-verbatim quote directly from the source material.
-- source_quote: ≤30 words. Must be something a named person or official org actually said
-  or wrote. Never fabricate or paraphrase into quote form — only use text present in the
-  news item summaries or titles. Leave null if no attributable quote exists.
-- quote_attribution: "Full Name, Title · Organization · domain.com"
-  Examples: "Sam Altman, CEO · OpenAI · openai.com"
-            "Google DeepMind Research Team · deepmind.google"
-            "Anthropic · May 2025 · anthropic.com"
-  Leave null when source_quote is null.
+- Only include if clearly present in input
+- If unsure → null (no guessing)
 
 === YOUTUBE METADATA ===
 title: under 70 characters, one emoji maximum, tease the #1 story
@@ -153,6 +163,14 @@ hook_variants: exactly 3 distinct hooks, each 5-10 seconds when spoken aloud:
   variant 0 — lead with the most surprising single fact or number from today's news
   variant 1 — open with a provocative "what if" or rhetorical question
   variant 2 — bold declarative statement of the biggest implication
+
+=== STRICT REQUIREMENTS ===
+- You MUST follow the provided hook exactly as the opening line
+- You MUST reflect the persona tone in every paragraph
+- You MUST structure the script according to scene_plan and the editorial plan
+- You MUST write like a human YouTuber, not a robotic summary
+- You MUST include at least one opinionated statement per scene
+- Avoid neutral news tone
 
 === OUTPUT FORMAT ===
 Output MUST be a single valid JSON object. No markdown fences. No commentary.
@@ -196,13 +214,52 @@ News items (ranked by relevance):
 
 
 _DAILY_SHORTS_FILL_PROMPT = """\
-For each news scene below, write a standalone YouTube Shorts script (~120 words).
+For each news scene below, write a standalone YouTube Shorts script (~100–120 words).
 
-Rules:
-- First sentence must be a hook: "Breaking:", "Just in:", "Here's what happened with..."
-- Cover exactly ONE story from that scene — self-contained, no context needed
-- Last sentence: "Subscribe for daily AI news."
-- No filler, no "In today's video", direct and punchy
+GOAL:
+Make the viewer instantly understand what happened — and why it matters.
+
+--------------------------------
+STRUCTURE
+--------------------------------
+1. Hook (1 sentence):
+   - Must feel urgent and specific
+   - Vary phrasing (not only "Breaking")
+
+2. What happened (2–3 sentences):
+   - Clear, concrete facts (model, company, feature)
+
+3. Why it matters (2–3 sentences):
+   - Real implication (cost, speed, jobs, workflow)
+
+--------------------------------
+RULES
+--------------------------------
+- Cover exactly ONE story
+- Self-contained (no external context needed)
+- Every sentence adds NEW information
+- No filler, no repetition
+- Use specifics when possible (numbers, names, comparisons)
+
+--------------------------------
+HOOK EXAMPLES (vary style)
+--------------------------------
+- "This AI model just got 10x cheaper overnight."
+- "Google just made a move that could hit OpenAI."
+- "This tool now does in seconds what took hours."
+
+--------------------------------
+ENDING
+--------------------------------
+Last sentence MUST be:
+"Subscribe for daily AI news."
+
+--------------------------------
+TONE
+--------------------------------
+- Fast, clear, confident
+- Slight urgency, no clickbait
+
 
 Return JSON: {{"scenes": [{{"idx": <N>, "short_narration": "..."}}]}}
 
@@ -211,8 +268,8 @@ Scenes to fill:
 """
 
 
-def _log_usage(usage, label: str = "") -> None:
-    """Log OpenAI token usage including prompt-cache savings."""
+def _log_usage(usage, label: str = "", model: str = "") -> None:
+    """Log OpenAI token usage and record in the cost ledger."""
     if not usage:
         return
     details = usage.prompt_tokens_details
@@ -222,6 +279,13 @@ def _log_usage(usage, label: str = "") -> None:
     logger.debug(
         f"{tag}OpenAI tokens — prompt: {usage.prompt_tokens} "
         f"({cached} cached, {pct}% hit) | completion: {usage.completion_tokens}"
+    )
+    get_ledger().record_llm(
+        tag=label or "llm",
+        model=model or settings.openai_model,
+        prompt_tokens=usage.prompt_tokens or 0,
+        completion_tokens=usage.completion_tokens or 0,
+        cached_tokens=cached,
     )
 
 
@@ -320,6 +384,7 @@ def generate_script(
     num_scenes: int = 8,
     data_dir: Path | None = None,
     strategy: dict[str, Any] | None = None,
+    editorial_plan: EditorialPlan | dict[str, Any] | None = None,
 ) -> VideoScript:
     """Call GPT to produce a structured VideoScript.
 
@@ -329,7 +394,7 @@ def generate_script(
     if not items:
         raise ValueError("No news items provided")
 
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = make_openai_client()
     target_minutes = max(1, round(settings.script_target_words / 150))
     user_prompt = USER_PROMPT_TMPL.format(
         target_words=settings.script_target_words,
@@ -348,6 +413,18 @@ def generate_script(
                 logger.info("Added analytics guidance to script prompt")
         except Exception as exc:
             logger.warning(f"Failed to add analytics guidance: {exc}")
+    if editorial_plan is not None:
+        try:
+            if isinstance(editorial_plan, dict):
+                editorial_plan = EditorialPlan(
+                    selected_stories=editorial_plan.get("selected_stories", []),
+                    editorial_plan=editorial_plan.get("editorial_plan", []),
+                    global_style=editorial_plan.get("global_style", {}),
+                )
+            user_prompt += "\n\n" + editorial_plan_to_prompt(editorial_plan)
+            logger.info("Added editorial plan guidance to script prompt")
+        except Exception as exc:
+            logger.warning(f"Failed to add editorial plan guidance: {exc}")
 
     logger.info(f"Requesting script from {settings.openai_model} "
                 f"({settings.script_target_words} words, {num_scenes} scenes)")
@@ -375,11 +452,17 @@ def generate_script(
         short_nar = (s.get("short_narration") or "").strip() or None
         src_quote = (s.get("source_quote") or "").strip() or None
         src_attr  = (s.get("quote_attribution") or "").strip() or None
+        visual_prompt = (s.get("visual_prompt") or "").strip()
+        if not visual_prompt:
+            visual_prompt = (s.get("heading") or "").strip()
+        if not visual_prompt:
+            visual_prompt = (s.get("narration") or "").strip().split(".")[0]
+        visual_prompt = visual_prompt or "A cinematic AI newsroom scene"
         scenes.append(Scene(
             idx=i,
             heading=s["heading"],
             narration=s["narration"],
-            visual_prompt=s["visual_prompt"],
+            visual_prompt=visual_prompt,
             infographic_data=infographic,
             video_query=video_q,
             short_narration=short_nar,
@@ -434,69 +517,76 @@ def generate_short_script(news_item, hook: str) -> str:
         content = news_item.get("summary", "")
     content = str(content or "")
 
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = make_openai_client()
     angle = random.choice(["shock", "useful", "money", "lazy"])
     prompt = f"""
     You are creating a viral YouTube Shorts script.
 
-    IMPORTANT:
-    Do NOT sound like news.
-    Do NOT say "today", "recently", "announced".
-    Do NOT sound like AI-generated content.
+IMPORTANT:
+- Do NOT sound like news
+- Do NOT say "today", "recently", "announced"
+- Do NOT sound like AI-generated content
 
-    Act like a real person who just tested this AI tool.
+Act like a real person who just tested this AI tool.
 
-    ---
+---
 
-    News:
-    {content}
+News:
+{content}
 
-    Hook:
-    {hook}
+Hook:
+{hook}
 
-    ---
+---
 
-    Script rules:
+SCRIPT STRUCTURE:
 
-    1. Start with a strong hook (first 1–2 seconds)
-    2. Speak in FIRST PERSON ("I tried", "I tested")
-    3. Show a RESULT (what happened)
-    4. Explain WHY it matters in simple terms
-    5. Make it feel real and practical
+1. Hook (first line must grab attention immediately)
+2. What you did (specific action)
+3. What happened (clear result)
+4. Why it matters (simple, real-world impact)
 
-    ---
+---
 
-    Tone:
-    - natural
-    - slightly эмоциональный
-    - conversational
-    - confident
+RULES:
 
-    ---
+- Speak in FIRST PERSON ("I tried", "I tested")
+- Include ONE clear contrast (before vs after, slow vs fast, hard vs easy)
+- Include ONE natural reaction ("I didn't expect this", "this surprised me")
+- Be specific (what exactly you typed or did)
 
-    Style:
-    - short sentences
-    - no fluff
-    - no generic phrases
-    - no "this technology allows..."
+---
 
-    ---
+TONE:
+- natural
+- slightly emotional
+- conversational
+- confident
 
-    Length:
-    Max 80 words.
+---
 
-    ---
+STYLE:
+- short sentences
+- no fluff
+- no generic phrases
+- no "this technology allows..."
 
-    Example style:
+---
 
-    "I tried this new AI and it built a website in 10 seconds.
-    Like… fully working.
-    You just type what you want — and it does everything.
-    Honestly, this could replace basic dev work."
+LENGTH:
+Max 70–80 words.
 
-    ---
+---
 
-    Return ONLY the script.
+ENDING:
+End with a strong implication (not generic)
+
+Example:
+"Honestly, this could replace basic dev work."
+
+---
+
+Return ONLY the script.
     """
     prompt += f"\nFocus angle: {angle}"
 

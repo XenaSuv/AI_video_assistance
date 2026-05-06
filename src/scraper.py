@@ -10,7 +10,9 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
+import sys
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, quote as _url_quote
 
@@ -19,7 +21,11 @@ import xml.etree.ElementTree as ET
 import arxiv
 import requests
 from bs4 import BeautifulSoup
+from src.retry_utils import http_get
 from loguru import logger
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from config import settings
 
 
 @dataclass
@@ -34,6 +40,55 @@ class NewsItem:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+# ─────────────────── cache ───────────────────
+
+class ScraperCache:
+    """Per-source, per-day JSON cache stored in *cache_dir*.
+
+    Each entry is ``{key}.json`` containing::
+
+        {"date": "YYYY-MM-DD", "items": [...NewsItem dicts...]}
+
+    A cached file is considered fresh only when its ``date`` field matches
+    today.  Writes are atomic (write to ``.tmp`` then rename).
+    """
+
+    def __init__(self, cache_dir: Path) -> None:
+        self._dir   = cache_dir
+        self._today = dt.date.today().isoformat()
+
+    def get(self, key: str) -> list[NewsItem] | None:
+        """Return cached items if fresh, else None."""
+        path = self._dir / f"{key}.json"
+        if not path.exists():
+            return None
+        try:
+            data = json.loads(path.read_text())
+        except Exception as exc:
+            logger.warning(f"ScraperCache: unreadable cache for '{key}': {exc}")
+            return None
+        if data.get("date") != self._today:
+            return None
+        items = [NewsItem(**it) for it in data.get("items", [])]
+        logger.debug(f"ScraperCache: hit '{key}' — {len(items)} items")
+        return items
+
+    def set(self, key: str, items: list[NewsItem]) -> None:
+        """Persist *items* to cache."""
+        self._dir.mkdir(parents=True, exist_ok=True)
+        path = self._dir / f"{key}.json"
+        tmp  = path.with_suffix(".tmp")
+        try:
+            tmp.write_text(json.dumps(
+                {"date": self._today, "items": [i.to_dict() for i in items]},
+                indent=2,
+            ))
+            tmp.replace(path)
+            logger.debug(f"ScraperCache: saved '{key}' — {len(items)} items")
+        except Exception as exc:
+            logger.warning(f"ScraperCache: could not write cache for '{key}': {exc}")
 
 
 # ─────────────────── helpers ───────────────────
@@ -98,8 +153,7 @@ HF_DAILY_URL = "https://huggingface.co/api/daily_papers"
 
 def scrape_huggingface(max_results: int = 15) -> list[NewsItem]:
     try:
-        resp = requests.get(HF_DAILY_URL, timeout=20)
-        resp.raise_for_status()
+        resp = http_get(HF_DAILY_URL, timeout=20)
         data = resp.json()
     except Exception as e:
         logger.warning(f"HF Daily API failed: {e}")
@@ -123,7 +177,7 @@ def scrape_huggingface(max_results: int = 15) -> list[NewsItem]:
 
 
 def _scrape_huggingface_html(max_results: int) -> list[NewsItem]:
-    resp = requests.get("https://huggingface.co/papers", timeout=20)
+    resp = http_get("https://huggingface.co/papers", timeout=20)
     soup = BeautifulSoup(resp.text, "html.parser")
     items = []
     for art in soup.select("article")[:max_results]:
@@ -158,8 +212,7 @@ def scrape_hackernews(max_results: int = 10, hours_back: int = 24) -> list[NewsI
         "hitsPerPage":   max_results,
     }
     try:
-        resp = requests.get(HN_SEARCH, params=params, timeout=20)
-        resp.raise_for_status()
+        resp = http_get(HN_SEARCH, params=params, timeout=20)
         hits = resp.json().get("hits", [])
     except Exception as e:
         logger.warning(f"HN scrape failed: {e}")
@@ -207,8 +260,7 @@ def _scrape_rss(name: str, feed_url: str, score: float,
     """Parse an RSS 2.0 or Atom feed using stdlib XML — no feedparser needed."""
     cutoff = dt.date.today() - dt.timedelta(days=_OFFICIAL_DAYS_BACK)
     try:
-        resp = requests.get(feed_url, timeout=20, headers=_UA)
-        resp.raise_for_status()
+        resp = http_get(feed_url, timeout=20, headers=_UA)
         root = ET.fromstring(resp.content)
     except Exception as e:
         logger.warning(f"{name} RSS failed: {e}")
@@ -357,8 +409,7 @@ def _scrape_blog(name: str, url: str, score: float) -> list[NewsItem]:
     """Scrape a company blog page. Tries Next.js data first, then HTML."""
     cutoff = dt.date.today() - dt.timedelta(days=_OFFICIAL_DAYS_BACK)
     try:
-        resp = requests.get(url, timeout=20, headers=_UA)
-        resp.raise_for_status()
+        resp = http_get(url, timeout=20, headers=_UA)
     except Exception as e:
         logger.warning(f"{name} fetch failed: {e}")
         return []
@@ -382,11 +433,35 @@ def scrape_official_sources() -> list[NewsItem]:
 
 # ─────────────────── Aggregator ───────────────────
 
-def scrape_all(top_n: int = 10) -> list[NewsItem]:
+def scrape_all(top_n: int = 10, cache_dir: Path | None = None) -> list[NewsItem]:
     """Run all sources. Official company announcements are prioritised;
-    community/research items fill the remaining slots."""
-    official  = scrape_official_sources()
-    community = scrape_huggingface() + scrape_arxiv() + scrape_hackernews()
+    community/research items fill the remaining slots.
+
+    Results for each source are cached for the rest of the calendar day in
+    *cache_dir* (defaults to ``settings.data_dir / "scraper_cache"``).
+    Pass ``cache_dir=False`` to disable caching entirely.
+    """
+    cache: ScraperCache | None = None
+    if cache_dir is not False:
+        cache = ScraperCache(cache_dir or (settings.data_dir / "scraper_cache"))
+
+    def _cached(key: str, fn):
+        if cache is not None:
+            hit = cache.get(key)
+            if hit is not None:
+                logger.info(f"{key}: {len(hit)} items (cached)")
+                return hit
+        result = fn()
+        if cache is not None:
+            cache.set(key, result)
+        return result
+
+    official  = _cached("official_sources", scrape_official_sources)
+    community = (
+        _cached("huggingface",  scrape_huggingface)
+        + _cached("arxiv",      scrape_arxiv)
+        + _cached("hackernews", scrape_hackernews)
+    )
     all_items = official + community
 
     # Dedupe by lowercased title prefix

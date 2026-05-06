@@ -5,7 +5,9 @@ needs to be (RunwayML generates fixed-length clips; we loop/trim to match).
 """
 from __future__ import annotations
 
+import asyncio
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 from elevenlabs.client import ElevenLabs
@@ -14,8 +16,21 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.circuit_breaker import elevenlabs_breaker
 from src.script_generator import VideoScript
 from src.ffmpeg_utils import duration as ff_duration
+from src.cost_tracker import get_ledger
+
+
+def annotated_to_ssml(text: str) -> str:
+    """Convert annotated text with voice tags to SSML for ElevenLabs."""
+    # Replace annotations with SSML
+    ssml = text.replace("[PAUSE_SHORT]", '<break time="300ms"/>')
+    ssml = ssml.replace("[PAUSE_LONG]", '<break time="700ms"/>')
+    ssml = ssml.replace("[EMPHASIS]", '<emphasis level="strong">')
+    ssml = ssml.replace("[/EMPHASIS]", '</emphasis>')
+    # Wrap in speak tag
+    return f"<speak>{ssml}</speak>"
 
 
 def _is_retryable_elevenlabs(exc: BaseException) -> bool:
@@ -31,6 +46,7 @@ def _log_retry(retry_state) -> None:
     )
 
 
+@elevenlabs_breaker
 @retry(
     retry=retry_if_exception(_is_retryable_elevenlabs),
     wait=wait_exponential(multiplier=1, min=2, max=60),
@@ -38,7 +54,7 @@ def _log_retry(retry_state) -> None:
     before_sleep=_log_retry,
     reraise=True,
 )
-def _tts_convert(client: ElevenLabs, text: str, voice_id: str, model_id: str) -> object:
+def _tts_convert(client: ElevenLabs, text: str, voice_id: str, model_id: str, use_ssml: bool = False) -> Iterator[bytes]:
     return client.text_to_speech.convert(
         voice_id=voice_id,
         model_id=model_id,
@@ -53,7 +69,35 @@ def _tts_convert(client: ElevenLabs, text: str, voice_id: str, model_id: str) ->
     )
 
 
-def synthesize_script(
+def _synthesize_one_scene(
+    scene,
+    audio_dir: Path,
+    v_id: str,
+    m_id: str,
+    client: ElevenLabs,
+) -> Path:
+    """Synthesize TTS for a single scene and write the mp3. Thread-safe."""
+    path = audio_dir / f"scene_{scene.idx:02d}.mp3"
+    logger.info(
+        f"TTS scene {scene.idx}: {scene.heading!r} ({len(scene.narration.split())} words)"
+    )
+    narration = scene.narration
+    use_ssml = any(tag in narration for tag in ["[PAUSE", "[EMPHASIS"])
+    if use_ssml:
+        narration = annotated_to_ssml(narration)
+        logger.info(f"  Using SSML for scene {scene.idx}")
+    audio_bytes = _tts_convert(client, narration, v_id, m_id, use_ssml)
+    get_ledger().record_tts(f"tts-scene-{scene.idx:02d}", len(narration), m_id)
+    with open(path, "wb") as f:
+        for chunk in audio_bytes:
+            if chunk:
+                f.write(chunk)
+    scene.duration_sec = int(ff_duration(path)) + 1
+    logger.info(f"  → {path.name} ({scene.duration_sec}s)")
+    return path
+
+
+async def async_synthesize_script(
     script: VideoScript,
     out_dir: Path,
     *,
@@ -61,8 +105,9 @@ def synthesize_script(
     model_id: str | None = None,
     audio_subdir: str = "audio",
 ) -> list[Path]:
-    """Generate one mp3 per scene. Mutates script.scenes[*].duration_sec.
+    """Synthesize all scenes concurrently; each ElevenLabs call runs in a thread pool.
 
+    Mutates script.scenes[*].duration_sec — same contract as the sync version.
     *voice_id* and *model_id* default to the values in settings, allowing
     language-variant pipelines to pass a different voice without touching config.
     *audio_subdir* lets variants write to e.g. ``audio_ru/`` alongside ``audio/``.
@@ -73,28 +118,35 @@ def synthesize_script(
     audio_dir = out_dir / audio_subdir
     audio_dir.mkdir(parents=True, exist_ok=True)
 
-    paths: list[Path] = []
-    for scene in script.scenes:
-        path = audio_dir / f"scene_{scene.idx:02d}.mp3"
-        logger.info(f"TTS scene {scene.idx}: {scene.heading!r} "
-                    f"({len(scene.narration.split())} words)")
-
-        audio_bytes = _tts_convert(client, scene.narration, v_id, m_id)
-
-        with open(path, "wb") as f:
-            for chunk in audio_bytes:
-                if chunk:
-                    f.write(chunk)
-
-        from src.ffmpeg_utils import duration as _ff_dur
-        scene.duration_sec = int(_ff_dur(path)) + 1
-
-        paths.append(path)
-        logger.info(f"  → {path.name} ({scene.duration_sec}s)")
-
+    loop = asyncio.get_running_loop()
+    paths: list[Path] = await asyncio.gather(*[
+        loop.run_in_executor(None, _synthesize_one_scene, s, audio_dir, v_id, m_id, client)
+        for s in script.scenes
+    ])
+    # Return in scene order regardless of completion order
+    paths = sorted(paths, key=lambda p: p.name)
     total = sum(s.duration_sec for s in script.scenes)
     logger.info(f"Total narration: {total}s ({total/60:.1f} min)")
-    return paths
+    return list(paths)
+
+
+def synthesize_script(
+    script: VideoScript,
+    out_dir: Path,
+    *,
+    voice_id: str | None = None,
+    model_id: str | None = None,
+    audio_subdir: str = "audio",
+) -> list[Path]:
+    """Generate one mp3 per scene concurrently. Mutates script.scenes[*].duration_sec."""
+    return asyncio.run(
+        async_synthesize_script(
+            script, out_dir,
+            voice_id=voice_id,
+            model_id=model_id,
+            audio_subdir=audio_subdir,
+        )
+    )
 
 
 def synthesize_hook(
@@ -126,6 +178,8 @@ def synthesize_hook(
 
     logger.info(f"TTS hook ({len(hook_text.split())} words): {hook_text[:60]!r}...")
     audio_bytes = _tts_convert(client, hook_text, v_id, m_id)
+    get_ledger().record_tts("tts-hook", len(hook_text), m_id)
+
     with open(hook_path, "wb") as f:
         for chunk in audio_bytes:
             if chunk:

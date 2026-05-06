@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import re
 from openai import OpenAI
+from src.retry_utils import make_openai_client
 from loguru import logger
 
 from config import settings
+from src.cost_tracker import get_ledger
 
 
 def generate_hooks(news_text: str, n: int = 3) -> list[str]:
@@ -22,7 +24,7 @@ def generate_hooks(news_text: str, n: int = 3) -> list[str]:
     Output as JSON array.
     """
 
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = make_openai_client()
     response = client.chat.completions.create(
         model=settings.openai_model,
         messages=[{"role": "user", "content": prompt}],
@@ -31,6 +33,8 @@ def generate_hooks(news_text: str, n: int = 3) -> list[str]:
 
     import json
     text = (response.choices[0].message.content or "").strip()
+    if response.usage:
+        get_ledger().record_llm("hooks-generate", settings.openai_model, response.usage.prompt_tokens or 0, response.usage.completion_tokens or 0)
     text = re.sub(r"^```json\s*", "", text, flags=re.IGNORECASE).strip()
     text = re.sub(r"```$", "", text).strip()
     try:

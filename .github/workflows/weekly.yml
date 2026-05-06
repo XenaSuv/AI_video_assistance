@@ -115,6 +115,7 @@ jobs:
 
       - name: Run weekly pipeline
         env:
+          SLACK_WEBHOOK_URL: ${{ vars.SLACK_WEBHOOK_URL }}
           OPENAI_API_KEY:         ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL:           gpt-4o-mini
           ELEVENLABS_API_KEY:     ${{ secrets.ELEVENLABS_API_KEY }}
@@ -128,6 +129,8 @@ jobs:
           OUTPUT_DIR:             output
           LOG_DIR:                logs
           DATA_DIR:               data
+          PEXELS_API_KEY:         ${{ secrets.PEXELS_API_KEY }}
+          PIXABAY_API_KEY:        ${{ secrets.PIXABAY_API_KEY }}
           BACKGROUND_MUSIC_PATH:  ${{ vars.BACKGROUND_MUSIC_PATH || 'background_music.mp3' }}
           BACKGROUND_MUSIC_VOLUME: ${{ vars.BACKGROUND_MUSIC_VOLUME || '0.10' }}
           SHORTS_MUSIC_VOLUME:    ${{ vars.SHORTS_MUSIC_VOLUME || '0.13' }}

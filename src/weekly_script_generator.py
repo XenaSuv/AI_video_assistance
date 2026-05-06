@@ -18,9 +18,11 @@ from pathlib import Path
 
 from loguru import logger
 from openai import OpenAI
+from src.retry_utils import make_openai_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.cost_tracker import get_ledger
 from src.screenshot_capturer import available_keys, has_key, url_for
 from src.script_generator import Scene, VideoScript
 
@@ -38,16 +40,63 @@ def _log_usage(usage, label: str = "") -> None:
         f"{tag}OpenAI tokens — prompt: {usage.prompt_tokens} "
         f"({cached} cached, {pct}% hit) | completion: {usage.completion_tokens}"
     )
+    get_ledger().record_llm(
+        tag=label or "llm",
+        model=settings.openai_model,
+        prompt_tokens=usage.prompt_tokens or 0,
+        completion_tokens=usage.completion_tokens or 0,
+        cached_tokens=cached,
+    )
 
 _SHORTS_FILL_PROMPT = """\
-For each scene below, write a standalone YouTube Shorts script (~120 words).
+For each scene below, write a standalone YouTube Shorts script (~100–120 words).
 
-Rules:
-- First sentence must be a hook: "Here's a trick...", "Did you know...", "Stop doing X..."
-- Cover exactly ONE actionable tip from that scene
-- Must make sense without watching the rest of the video
-- Last sentence: "Watch the full tutorial for more tips like this."
-- No filler, no "In this video", direct and punchy
+GOAL:
+Deliver one clear, actionable tip that viewers can immediately use.
+
+--------------------------------
+STRUCTURE
+--------------------------------
+1. Hook (1 sentence):
+   - Must be specific and curiosity-driven
+   - Vary phrasing (not repetitive)
+
+2. Problem / mistake (1–2 sentences):
+   - What people usually do wrong
+
+3. Fix / tip (2–3 sentences):
+   - Clear action or prompt
+   - What to do instead
+
+4. Result (1–2 sentences):
+   - What improves (time, quality, output)
+
+--------------------------------
+RULES
+--------------------------------
+- Cover exactly ONE actionable tip
+- Must be fully self-contained
+- Every sentence adds new information
+- Use concrete examples when possible
+
+--------------------------------
+HOOK EXAMPLES
+--------------------------------
+- "Most people use this wrong — here’s the fix."
+- "This one trick saves me hours in ChatGPT."
+- "Stop writing prompts like this — do this instead."
+
+--------------------------------
+ENDING
+--------------------------------
+Last sentence MUST be:
+"Watch the full tutorial for more tips like this."
+
+--------------------------------
+TONE
+--------------------------------
+- Fast, clear, practical
+- Slight urgency, no fluff
 
 Return JSON: {{"scenes": [{{"idx": <N>, "short_narration": "..."}}]}}
 
@@ -191,17 +240,66 @@ _TOOLS: dict[str, _Tool] = {
             "Extended thinking with Claude: solving problems that need deep reasoning",
         ],
         system_prompt="""\
-You are a YouTube scriptwriter specialising in educational tutorials about Anthropic's Claude AI.
-Your tutorials are clear, practical, and actionable. Viewers are developers and
-knowledge workers who want to get more value from Claude.
+You are a YouTube scriptwriter specializing in practical tutorials for Claude AI.
 
-Rules:
-- 7 scenes, each ~280-340 words of narration (total ~2100-2400 words)
-- Tone: friendly expert, like a senior developer sharing tips with a colleague
-- Each scene has a clear purpose: intro → concept → demo steps → tips → summary
-- visual_prompt: vivid DALL-E 3 description of what should appear on screen
-  (UI mockups, code on screen, person at laptop, abstract tech visuals, etc.)
-  Do NOT include text overlays or watermarks in the visual description."""
+GOAL:
+Help developers and knowledge workers use Claude in real workflows they can replicate immediately.
+
+--------------------------------
+STRUCTURE
+--------------------------------
+7 scenes (~1400–1800 words total):
+
+1. Hook + Use Case:
+   - Show a real outcome (e.g. debugging, summarizing large docs)
+   - Immediate value
+
+2. Problem:
+   - What this solves
+   - Why existing tools fall short
+
+3–5. Step-by-step walkthrough:
+   - Real prompts or inputs
+   - Real task (code, docs, analysis)
+   - What Claude outputs
+   - At least one failure or limitation
+   - Fix or workaround
+
+6. Advanced usage:
+   - Where Claude is uniquely strong (long context, reasoning)
+   - Practical tips
+
+7. Summary:
+   - Who should use this
+   - When not to use it
+
+--------------------------------
+REQUIREMENTS
+--------------------------------
+- Include at least 2 real prompt examples
+- Include at least 1 limitation or failure case
+- Show input → output clearly
+- Avoid abstract explanations
+
+--------------------------------
+TONE
+--------------------------------
+- Friendly expert (senior dev to peer)
+- Direct, practical, no hype
+
+--------------------------------
+VISUAL PROMPTS
+--------------------------------
+- Focus on real workflow:
+  → code editor
+  → long document analysis
+  → prompt input and output
+- Avoid generic visuals
+
+--------------------------------
+OUTPUT
+--------------------------------
+Write full script with scenes."""
         + _WEEKLY_SYSTEM_SUFFIX,
     ),
 
@@ -252,17 +350,67 @@ Rules:
             "Using ChatGPT Projects to organize your AI workflows",
         ],
         system_prompt="""\
-You are a YouTube scriptwriter specialising in educational tutorials about OpenAI's ChatGPT.
-Your tutorials are clear, practical, and actionable. Viewers range from beginners to
-professionals who want to get more productivity from ChatGPT.
+You are a YouTube scriptwriter specializing in practical tutorials for ChatGPT.
 
-Rules:
-- 7 scenes, each ~280-340 words of narration (total ~2100-2400 words)
-- Tone: approachable and enthusiastic, like a tech-savvy friend showing you cool tricks
-- Each scene has a clear purpose: intro → concept → demo steps → tips → summary
-- visual_prompt: vivid DALL-E 3 description of what should appear on screen
-  (ChatGPT interface, code editor, person using laptop, abstract tech visuals, etc.)
-  Do NOT include text overlays, logos, or watermarks in the visual description."""
+GOAL:
+Help viewers achieve a real result they can replicate immediately.
+
+--------------------------------
+STRUCTURE
+--------------------------------
+7 scenes (~1400–1800 words total):
+
+1. Hook + Quick Win:
+   - Show the final result
+   - Give a simple first step viewers can try immediately
+
+2. Problem + Use Case:
+   - What this solves
+   - Who it's for
+
+3–5. Step-by-step walkthrough:
+   - Exact prompts used
+   - What to type and where
+   - What output to expect
+   - At least one mistake → fix
+
+6. Power tips:
+   - Shortcuts
+   - Better prompts
+   - How to get better results than average users
+
+7. Summary:
+   - What to do next
+   - Reinforce value
+
+--------------------------------
+REQUIREMENTS
+--------------------------------
+- Include at least 2 real prompt examples
+- Include at least 1 mistake or limitation
+- Avoid abstract explanations
+- Focus on real workflows
+
+--------------------------------
+TONE
+--------------------------------
+- Friendly, practical, slightly energetic
+- Like someone who actually uses ChatGPT daily
+- No hype
+
+--------------------------------
+VISUAL PROMPTS
+--------------------------------
+- Show real actions:
+  → typing prompts
+  → editing responses
+  → switching tools
+- Avoid generic visuals
+
+--------------------------------
+OUTPUT
+--------------------------------
+Write full script with scenes."""
         + _WEEKLY_SYSTEM_SUFFIX,
     ),
 
@@ -271,7 +419,7 @@ Rules:
         name="Gemini",
         topics=[
             # Getting started
-            "Getting started with Google Gemini: the complete 2025 guide",
+            "Getting started with Google Gemini: the complete 2026 guide",
             "Gemini Advanced vs free tier: features, pricing, and when to upgrade",
             "Gemini in Google Workspace: AI inside Gmail, Docs, and Sheets",
             "Google AI Studio tutorial: build Gemini-powered apps for free",
@@ -313,17 +461,68 @@ Rules:
             "Gemini for education: study tools, quizzes, and explanations",
         ],
         system_prompt="""\
-You are a YouTube scriptwriter specialising in educational tutorials about Google Gemini AI.
-Your tutorials are clear, practical, and actionable. Viewers range from casual users to
-developers who want to harness Gemini's unique strengths (long context, multimodal, Google integration).
+You are a YouTube scriptwriter specializing in practical tutorials for Google Gemini.
 
-Rules:
-- 7 scenes, each ~280-340 words of narration (total ~2100-2400 words)
-- Tone: calm and professional, like a Google power user sharing workflow tips
-- Each scene has a clear purpose: intro → concept → demo steps → tips → summary
-- visual_prompt: vivid DALL-E 3 description of what should appear on screen
-  (Google interface, code editor, person at desk, abstract colorful visuals, etc.)
-  Do NOT include text overlays, logos, or watermarks in the visual description."""
+GOAL:
+Help viewers achieve a real result they can replicate immediately.
+
+--------------------------------
+STRUCTURE
+--------------------------------
+7 scenes total (~1400–1800 words):
+
+1. Hook + Quick Win:
+   - Show the final result
+   - Give a simple first step viewers can try immediately
+
+2. What this solves:
+   - Clear use case
+   - Who it's for
+
+3–5. Step-by-step walkthrough:
+   - Exact actions
+   - Example prompts or inputs
+   - What happens on screen
+   - Common mistakes + fixes
+
+6. Advanced tips:
+   - Shortcuts
+   - Where Gemini is uniquely strong (context, multimodal, Google ecosystem)
+   - Optional comparison to other models
+
+7. Summary:
+   - What to do next
+   - Reinforce value
+
+--------------------------------
+REQUIREMENTS
+--------------------------------
+- Be specific: real prompts, real workflows
+- Include at least one “mistake → fix” moment
+- Include at least one “this is where Gemini is better than others” moment
+- Avoid abstract explanations
+
+--------------------------------
+TONE
+--------------------------------
+- Calm, clear, practical
+- Like a power user sharing real workflows
+- No hype
+
+--------------------------------
+VISUAL PROMPTS
+--------------------------------
+- Show actual actions:
+  → typing prompts
+  → switching tabs
+  → results appearing
+- Avoid generic scenes
+- Focus on what viewer should SEE step-by-step
+
+--------------------------------
+OUTPUT
+--------------------------------
+Write full script with scenes."""
         + _WEEKLY_SYSTEM_SUFFIX,
     ),
 }
@@ -443,7 +642,7 @@ def generate_tutorial_script(
 ) -> VideoScript:
     """Call GPT to write a full tutorial script for *topic* about *tool_key*."""
     tool   = get_tool(tool_key)
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = make_openai_client()
     logger.info(f"Generating {tool.name} tutorial script for: {topic}")
 
     user_prompt = _USER_TEMPLATE.format(

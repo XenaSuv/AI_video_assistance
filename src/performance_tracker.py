@@ -49,16 +49,23 @@ def save_result(
     content_type: str = "daily",
     strategy: dict[str, Any] | None = None,
     auto_actions: list[dict[str, Any]] | None = None,
+    angle: str = "",
+    format: str = "",
+    platform: str = "youtube",
 ) -> None:
-    """Record a newly published video with its hook and title."""
+    """Record a newly published video with its hook, title, and editorial context."""
     record = {
         "video_id": video_id,
+        "platform": platform,
         "content_type": content_type,
         "hook": hook,
         "title": title,
         "description": description,
         "strategy": strategy or {},
         "auto_actions": auto_actions or [],
+        "angle": angle,
+        "format": format,
+        "analyzed": False,
         "timestamp": datetime.utcnow().isoformat(),
         "updated": datetime.utcnow().isoformat(),
         "views": 0,
@@ -112,6 +119,35 @@ def update_metrics(
             logger.info(f"Performance metrics updated: video_id={video_id}")
             return
     logger.warning(f"Video record not found for update: video_id={video_id}")
+
+
+def mark_analyzed(video_id: str) -> None:
+    """Mark a video record as having had feedback collected."""
+    data = _load_db()
+    for record in data:
+        if record["video_id"] == video_id:
+            record["analyzed"] = True
+            record["updated"] = datetime.utcnow().isoformat()
+            _save_db(data)
+            return
+    logger.warning(f"mark_analyzed: record not found for {video_id}")
+
+
+def get_unanalyzed(min_age_hours: float = 24.0) -> list[dict[str, Any]]:
+    """Return records not yet analyzed and older than min_age_hours."""
+    data = _load_db()
+    cutoff = datetime.utcnow().timestamp() - min_age_hours * 3600
+    result = []
+    for r in data:
+        if r.get("analyzed"):
+            continue
+        try:
+            ts = datetime.fromisoformat(r["timestamp"]).timestamp()
+        except Exception:
+            continue
+        if ts <= cutoff:
+            result.append(r)
+    return result
 
 
 def get_top_hooks(limit: int = 10) -> list[dict[str, Any]]:

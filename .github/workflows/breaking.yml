@@ -136,11 +136,14 @@ jobs:
 
       - name: Run breaking news pipeline
         env:
+          SLACK_WEBHOOK_URL: ${{ vars.SLACK_WEBHOOK_URL }}
           OPENAI_API_KEY:            ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL:              gpt-4o-mini
           ELEVENLABS_API_KEY:        ${{ secrets.ELEVENLABS_API_KEY }}
           ELEVENLABS_VOICE_ID:       ${{ secrets.ELEVENLABS_VOICE_ID }}
           ELEVENLABS_MODEL:          eleven_turbo_v2_5
+          PEXELS_API_KEY:            ${{ secrets.PEXELS_API_KEY }}
+          PIXABAY_API_KEY:           ${{ secrets.PIXABAY_API_KEY }}
           YOUTUBE_CLIENT_SECRETS:    config/client_secrets.json
           YOUTUBE_TOKEN_FILE:        config/token.pickle
           YOUTUBE_CATEGORY_ID:       "28"

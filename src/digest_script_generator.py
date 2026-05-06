@@ -18,9 +18,11 @@ from pathlib import Path
 
 from loguru import logger
 from openai import OpenAI
+from src.retry_utils import make_openai_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.cost_tracker import get_ledger
 from src.script_generator import Scene, VideoScript
 
 # Target word count for the digest (vs ~2200 for daily full episode)
@@ -30,47 +32,103 @@ _DIGEST_SCENES = 8   # hook + 6 story scenes + sign-off
 
 _SYSTEM_PROMPT = """\
 You are the writer for a YouTube channel's weekly AI news digest.
-Every Sunday you publish a punchy "This Week in AI" recap that covers
-the biggest stories of the past week in one concise video.
 
-Rules:
-- Tone: informed, energetic, conversational — like a smart friend summarizing the week
-- 8 scenes total (~950 words): one hook, six story scenes, one sign-off
-- Each scene ~100-130 words of narration
-- DO NOT say "welcome back" or pad with filler
-- Prioritise impact: lead with the most consequential story in scene 1
-- visual_prompt: photorealistic DALL-E 3 description, 2-3 sentences. Use actual company/product names from the story and a serious news editorial style (no logos, no real people).
+GOAL:
+Turn this week’s AI news into a clear narrative, not just a list of updates.
 
-=== SOURCE QUOTES ===
-For 2-3 story scenes, include a real quote from that week's story.
-- source_quote: ≤25 words, verbatim from the source. Never fabricate.
-  Leave null if no directly attributable quote is available.
-- quote_attribution: "Name, Role · Organization · domain.com"
-  Leave null when source_quote is null.
+--------------------------------
+EDITORIAL ANGLE (REQUIRED)
+--------------------------------
+Identify one underlying theme of the week
+(e.g. "AI is getting cheaper", "agents are becoming real", "Big Tech vs open-source")
 
-=== OUTPUT FORMAT ===
-Return ONLY valid JSON, no markdown fences, no commentary.
+All stories should loosely connect to this theme.
+
+--------------------------------
+SELECTION RULES
+--------------------------------
+- 6 most impactful stories
+- Prioritize real-world impact (money, users, regulation, capabilities)
+- Avoid minor or speculative updates
+
+--------------------------------
+STRUCTURE
+--------------------------------
+8 scenes total (~950–1050 words):
+
+1. Hook:
+   - Highlight the week's theme
+   - Create curiosity
+
+2–7. Six story scenes:
+   Each must include:
+   - What happened (clear, specific)
+   - Why it matters (non-generic, concrete)
+   - One distinct angle per story (avoid repetition)
+
+8. Sign-off:
+   - Reinforce the weekly theme
+   - Forward-looking insight (not generic)
+
+--------------------------------
+SCENE VARIETY (IMPORTANT)
+--------------------------------
+Vary pacing and focus across stories:
+- Some more factual
+- Some more analytical
+- Some more practical (what viewers can do)
+
+Avoid repeating the same structure 6 times.
+
+--------------------------------
+TONE
+--------------------------------
+- Smart, concise, slightly opinionated
+- No filler, no clichés
+- Write like explaining to an informed friend
+
+--------------------------------
+HOOK VARIANTS
+--------------------------------
+- Must reflect the weekly theme (not just one story)
+- 3 distinct angles:
+  1. surprising fact
+  2. provocative question
+  3. bold implication
+
+--------------------------------
+VISUAL PROMPTS
+--------------------------------
+- Photorealistic, grounded in real scenes
+- Specific moments, not abstract AI visuals
+- No logos, no public figures
+
+--------------------------------
+SOURCE QUOTES
+--------------------------------
+- Only include if certain
+- Otherwise null
+
+--------------------------------
+OUTPUT FORMAT
+--------------------------------
+Return ONLY valid JSON:
+
 {
   "title": "This Week in AI: [2-3 word theme] | Week of [date]",
-  "description": "2-4 sentence summary + (TIMESTAMPS_AUTOFILL)",
-  "tags": ["10-15 tags"],
-  "hook_variants": [
-    "variant 0: most surprising stat or fact this week (5-10s spoken)",
-    "variant 1: provocative question about the week's biggest story (5-10s spoken)",
-    "variant 2: boldest implication of the week's events (5-10s spoken)"
-  ],
+  "description": "2–4 sentence summary + (TIMESTAMPS_AUTOFILL)",
+  "tags": ["10–15 tags"],
+  "hook_variants": ["...", "...", "..."],
   "scenes": [
     {
-      "heading": "short chapter title max 8 words",
-      "narration": "~100-130 words of spoken text",
-      "visual_prompt": "DALL-E 3 image prompt, 2-3 sentences",
+      "heading": "...",
+      "narration": "...",
+      "visual_prompt": "...",
       "source_quote": null,
       "quote_attribution": null
-    },
-    ...
+    }
   ]
-}
-(8 scenes total: hook opener, 6 story scenes, sign-off closer)"""
+}"""
 
 
 _USER_TEMPLATE = """\
@@ -94,6 +152,13 @@ def _log_usage(usage, label: str = "") -> None:
     logger.debug(
         f"{tag}OpenAI tokens — prompt: {usage.prompt_tokens} "
         f"({cached} cached, {pct}% hit) | completion: {usage.completion_tokens}"
+    )
+    get_ledger().record_llm(
+        tag=label or "llm",
+        model=settings.openai_model,
+        prompt_tokens=usage.prompt_tokens or 0,
+        completion_tokens=usage.completion_tokens or 0,
+        cached_tokens=cached,
     )
 
 
@@ -173,7 +238,7 @@ def generate_digest_script(
     if not week_blocks:
         raise ValueError("No daily scripts found for the week — cannot generate digest")
 
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = make_openai_client()
     week_block = "\n\n".join(week_blocks)
 
     user_prompt = _USER_TEMPLATE.format(

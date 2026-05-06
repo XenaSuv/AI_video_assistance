@@ -5,6 +5,8 @@ B-roll generation is handled by image_generator.generate_scene_clip().
 """
 from __future__ import annotations
 
+import asyncio
+import functools
 import sys
 from pathlib import Path
 
@@ -16,6 +18,8 @@ from src.script_generator import Scene, VideoScript
 from src.image_generator import generate_scene_clip
 from src.quote_card import render_quote_card_png
 from src.presenter import generate_presenter_clip
+from src.scene_strategy_engine import SceneStrategyEngine
+from src.scene_variety_engine import SceneVarietyEngineV2
 from src.voice_generator import synthesize_hook
 import src.ffmpeg_utils as ffmpeg_utils
 
@@ -53,6 +57,30 @@ def generate_clips_for_scene(
     *is_breaking* — activates Stable Diffusion instead of DALL-E.
     """
     return [generate_scene_clip(scene, out_dir, tool=tool, run_dir=run_dir, is_breaking=is_breaking)]
+
+
+async def _async_build_clips(
+    script: VideoScript,
+    clip_dir: Path,
+    *,
+    tool: str | None,
+    run_dir: Path,
+    is_breaking: bool,
+) -> dict[int, list[Path]]:
+    """Generate all scene clips concurrently; each clip runs in a thread pool."""
+    loop = asyncio.get_running_loop()
+    tasks = [
+        loop.run_in_executor(
+            None,
+            functools.partial(
+                generate_clips_for_scene, s, clip_dir,
+                tool=tool, run_dir=run_dir, is_breaking=is_breaking,
+            ),
+        )
+        for s in script.scenes
+    ]
+    results = await asyncio.gather(*tasks)
+    return {s.idx: clips for s, clips in zip(script.scenes, results)}
 
 
 # --------------------- Assembly ---------------------
@@ -194,10 +222,8 @@ def assemble_video(
     content_path = ffmpeg_utils.concat(ordered_segments, content_path)
 
     # Wrap with intro / outro
-    has_intro = intro_path and intro_path.exists()
-    has_outro = outro_path and outro_path.exists()
-
-    if has_intro:
+    # Use direct Path checks so mypy can narrow Path | None → Path inside each block.
+    if intro_path and intro_path.exists():
         intro_w, intro_h = ffmpeg_utils.video_size(intro_path)
         if (intro_w, intro_h) != (VIDEO_W, VIDEO_H):
             logger.info(
@@ -211,7 +237,7 @@ def assemble_video(
         intro_path = ffmpeg_utils.ensure_audio_stream(intro_path, intro_audio)
         logger.info(f"Intro: {intro_path.name}")
 
-    if has_outro:
+    if outro_path and outro_path.exists():
         outro_w, outro_h = ffmpeg_utils.video_size(outro_path)
         if (outro_w, outro_h) != (VIDEO_W, VIDEO_H):
             logger.info(
@@ -226,7 +252,7 @@ def assemble_video(
         logger.info(f"Outro: {outro_path.name}")
 
     body_parts = [content_path]
-    if has_outro:
+    if outro_path and outro_path.exists():
         body_parts.append(outro_path)
 
     if len(body_parts) == 1:
@@ -235,23 +261,23 @@ def assemble_video(
         body_path = assembled_dir / "body_with_outro.mp4"
         body_path = ffmpeg_utils.concat(body_parts, body_path)
 
-    # Mix background music under content and outro so it reaches the true end.
-    music_path = _resolve_music_path()
-    if music_path:
-        body_music = assembled_dir / "body_with_music.mp4"
-        body_path = ffmpeg_utils.mix_music(
-            body_path,
-            music_path,
-            body_music,
-            volume=settings.background_music_volume,
-        )
-
-    if has_intro:
+    if intro_path and intro_path.exists():
         final_path = ffmpeg_utils.concat([intro_path, body_path], output_path)
     else:
         import shutil
         shutil.copy2(str(body_path), str(output_path))
         final_path = output_path
+
+    # Mix background music under the entire final video
+    music_path = _resolve_music_path()
+    if music_path:
+        final_with_music = assembled_dir / "final_with_music.mp4"
+        final_path = ffmpeg_utils.mix_music(
+            final_path,
+            music_path,
+            final_with_music,
+            volume=settings.background_music_volume,
+        )
 
     logger.info(f"Final video written: {final_path}")
     return final_path
@@ -266,22 +292,42 @@ def build_video(
     outro_path: Path | None = None,
     is_breaking: bool = False,
     use_presenter: bool = False,
+    editorial_plan: object | None = None,
+    strategy_config: object | None = None,
 ) -> Path:
     """End-to-end video creation.
 
-    *tool*          – pass claude/chatgpt/gemini for weekly tutorials (enables
-                      real-screenshot capture); None → DALL-E / B-roll / infographic.
-    *is_breaking*   – activates Stable Diffusion as the image generator.
-    *use_presenter* – generate a D-ID talking-head hook clip (weekly only).
+    *tool*            – pass claude/chatgpt/gemini for weekly tutorials.
+    *is_breaking*     – activates Stable Diffusion as the image generator.
+    *use_presenter*   – generate a D-ID talking-head hook clip (weekly only).
+    *editorial_plan*  – EditorialPlan for angle/format-aware scene type selection.
+    *strategy_config* – StrategyConfig from DecisionEngineV2.decide(); biases
+                        scene type selection via scene_mix proportions.
     *intro_path / outro_path* – prepended / appended when the file exists.
     """
     clip_dir = out_dir / "clips"
     clip_dir.mkdir(parents=True, exist_ok=True)
 
-    clip_paths_by_scene = {
-        s.idx: generate_clips_for_scene(s, clip_dir, tool=tool, run_dir=out_dir, is_breaking=is_breaking)
-        for s in script.scenes
-    }
+    # v2 pipeline: strategy (intent + feedback) → score-weighted scene_type
+    _strat_engine   = SceneStrategyEngine()
+    _variety_engine = SceneVarietyEngineV2(_strat_engine)
+    if strategy_config is not None:
+        # Full contract path: DecisionEngineV2 config drives everything
+        _variety_engine.assign_from_config(
+            script.scenes,
+            strategy_config,
+            editorial_plan=editorial_plan,
+        )
+    else:
+        _strategy = _strat_engine.build_strategy(
+            script.scenes,
+            editorial_plan=editorial_plan,
+        )
+        _variety_engine.assign(script.scenes, _strategy)
+
+    clip_paths_by_scene = asyncio.run(
+        _async_build_clips(script, clip_dir, tool=tool, run_dir=out_dir, is_breaking=is_breaking)
+    )
     audio_paths_by_scene = {
         s.idx: out_dir / "audio" / f"scene_{s.idx:02d}.mp3" for s in script.scenes
     }

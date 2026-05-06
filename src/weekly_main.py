@@ -24,10 +24,9 @@ from pathlib import Path
 from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import src.ffmpeg_utils as ffmpeg_utils
 from config import settings
 from src.hook_selector import record_usage
-from src.main import _get_shared_outro, _load_cached_script, _needs_video_rebuild, _run_language_variant
+from src.pipeline_orchestrator import _get_shared_outro, _load_audio_durations, _load_cached_script, _needs_video_rebuild, _run_language_variant, _setup_logging
 from src.subtitle_generator import generate_subtitles
 from src.script_generator import VideoScript
 from src.shorts_generator import build_short
@@ -51,18 +50,6 @@ from src.slack_notifier import notify_success, notify_failure
 
 _VALID_TOOLS = ["claude", "chatgpt", "gemini"]
 
-
-def _setup_logging(run_dir: Path) -> None:
-    logger.remove()
-    logger.add(sys.stderr, level="INFO",
-               format="<green>{time:HH:mm:ss}</green> | <level>{level:<7}</level> | {message}")
-    logger.add(run_dir / "run.log", level="DEBUG", rotation="10 MB")
-
-
-def _load_audio_durations(script: VideoScript, audio_dir: Path) -> None:
-    for s in script.scenes:
-        p = audio_dir / f"scene_{s.idx:02d}.mp3"
-        s.duration_sec = int(ffmpeg_utils.duration(p)) + 1
 
 
 def run_weekly_pipeline(

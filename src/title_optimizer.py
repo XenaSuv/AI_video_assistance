@@ -3,33 +3,57 @@ from __future__ import annotations
 import json
 import re
 from openai import OpenAI
+from src.retry_utils import make_openai_client
 from loguru import logger
 
 from config import settings
+from src.cost_tracker import get_ledger
 
 
-client = OpenAI(api_key=settings.openai_api_key)
+client = make_openai_client()
 
 
 def generate_titles(news_item, n: int = 5) -> list[str]:
     prompt = f"""
     Create {n} highly clickable YouTube titles.
 
-    News:
-    {news_item['title']} - {news_item['summary']}
+News:
+{news_item['title']} — {news_item['summary']}
 
-    Rules:
-    - Max 60 characters
-    - Use curiosity
-    - Make people want to click
-    - Avoid boring wording
+GOAL:
+Maximize click-through rate while staying specific and believable.
 
-    Examples of style:
-    - "This AI changes everything"
-    - "You won’t believe what AI just did"
-    - "This replaces your job?"
+--------------------------------
+RULES
+--------------------------------
+- Max 60 characters
+- Each title must feel different (vary angle)
+- Use curiosity, but avoid generic clickbait
 
-    Return JSON array.
+--------------------------------
+PREFER:
+- Specific details (numbers, results, comparisons)
+- Clear outcome ("what changed", "what this means")
+- Tension or contrast (better vs worse, faster vs slower)
+- Real-world impact (cost, jobs, speed, capability)
+
+--------------------------------
+AVOID:
+- "This changes everything"
+- "You won't believe"
+- vague or generic phrases
+- titles that could apply to any AI news
+
+--------------------------------
+TITLE STYLES (mix these):
+- Result-driven ("This AI is 10x cheaper than GPT-4")
+- Question ("Is this the first real GPT-4 competitor?")
+- Contrarian ("This AI is impressive — but flawed")
+- Impact ("This could replace junior developers")
+
+--------------------------------
+OUTPUT:
+Return a JSON array of titles.
     """
 
     res = client.chat.completions.create(
@@ -39,6 +63,8 @@ def generate_titles(news_item, n: int = 5) -> list[str]:
     )
 
     text = (res.choices[0].message.content or "").strip()
+    if res.usage:
+        get_ledger().record_llm("title-generate", settings.openai_model, res.usage.prompt_tokens or 0, res.usage.completion_tokens or 0)
     text = re.sub(r"^```json\s*", "", text, flags=re.IGNORECASE).strip()
     text = re.sub(r"```$", "", text).strip()
     try:
@@ -55,17 +81,34 @@ def generate_titles(news_item, n: int = 5) -> list[str]:
 
 def pick_best_title(titles: list[str]) -> str:
     prompt = f"""
-    Choose the most clickable YouTube title.
+Choose the most clickable YouTube title.
 
-    Titles:
-    {titles}
+Titles:
+{titles}
 
-    Criteria:
-    - curiosity
-    - emotional impact
-    - clarity
+GOAL:
+Maximize click-through rate (CTR).
 
-    Return ONLY the best title.
+CRITERIA (in priority order):
+1. Curiosity gap (does it make you want to click immediately?)
+2. Clear value (what will the viewer gain?)
+3. Specificity (numbers, constraints, concrete outcome)
+4. Emotional or surprising angle
+5. Clarity (easy to understand at a glance)
+
+PREFER titles that:
+- include tension or conflict
+- suggest a result or outcome
+- use numbers or constraints ("7 days", "$0", "500 pages")
+
+AVOID titles that:
+- are generic or safe
+- sound like summaries
+- lack a clear hook
+
+If multiple are similar, choose the more bold and curiosity-driven one.
+
+Return ONLY the best title.
     """
 
     res = client.chat.completions.create(
@@ -73,6 +116,8 @@ def pick_best_title(titles: list[str]) -> str:
         messages=[{"role": "user", "content": prompt}],
     )
     result = (res.choices[0].message.content or "").strip()
+    if res.usage:
+        get_ledger().record_llm("title-select", settings.openai_model, res.usage.prompt_tokens or 0, res.usage.completion_tokens or 0)
     if result:
         return result
     return titles[0] if titles else "AI NEWS"

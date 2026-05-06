@@ -21,19 +21,18 @@ import traceback
 from pathlib import Path
 
 from loguru import logger
-import src.ffmpeg_utils as ffmpeg_utils
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.digest_script_generator import collect_week_scripts, generate_digest_script
 from src.hook_selector import record_usage
-from src.main import (
+from src.pipeline_orchestrator import (
     _get_intro_duration,
     _get_shared_outro,
     _load_audio_durations,
     _load_cached_script,
     _needs_video_rebuild,
     _run_language_variant,
+    _setup_logging,
 )
 from src.subtitle_generator import generate_subtitles
 from src.script_generator import Scene, VideoScript
@@ -48,12 +47,6 @@ from src.voice_generator import synthesize_script
 from src.youtube_uploader import publish_episode
 from src.slack_notifier import notify_success, notify_failure
 
-
-def _setup_logging(run_dir: Path) -> None:
-    logger.remove()
-    logger.add(sys.stderr, level="INFO",
-               format="<green>{time:HH:mm:ss}</green> | <level>{level:<7}</level> | {message}")
-    logger.add(run_dir / "run.log", level="DEBUG", rotation="10 MB")
 
 
 
