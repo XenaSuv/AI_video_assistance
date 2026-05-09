@@ -53,13 +53,6 @@ def _log_dalle_retry(retry_state) -> None:
 
 
 @openai_breaker
-@retry(
-    retry=retry_if_exception(_is_retryable_dalle),
-    wait=wait_exponential(multiplier=1, min=2, max=60),
-    stop=stop_after_attempt(4),
-    before_sleep=_log_dalle_retry,
-    reraise=True,
-)
 def _call_dalle(client: OpenAI, prompt: str) -> bytes:
     response = client.images.generate(
         model="dall-e-3",
@@ -103,6 +96,11 @@ def _normalize_visual_prompt(prompt: str) -> str:
     prompt = re.sub(r"style:\s*vivid", "style: photorealistic", prompt, flags=re.IGNORECASE)
     if "photorealistic" not in prompt.lower() and "photo-realistic" not in prompt.lower():
         prompt = f"photorealistic {prompt}"
+    
+    # Enhance for news script realism
+    if "news" in lower or "documentary" not in prompt.lower():
+        prompt += ", highly detailed, professional news photography style, realistic lighting and shadows, sharp focus, documentary aesthetic"
+    
     return prompt
 
 
