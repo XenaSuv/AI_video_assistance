@@ -20,7 +20,6 @@ sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 from config import settings
 from src.scraper import NewsItem
 from src.feedback_analyzer import FeedbackAnalyzer
-from src.decision_engine import DecisionEngine
 from src.shared_types import ContentStrategy
 
 ANGLE_CANDIDATES = [
