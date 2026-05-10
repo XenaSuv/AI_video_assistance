@@ -63,6 +63,7 @@ from src.retention_correction_engine import (
     FixType,
     DropPoint,
 )
+from src.shorts_experiment_engine import ShortsExperimentEngine
 
 
 # ── Stateless helpers ─────────────────────────────────────────────────────────
@@ -453,6 +454,7 @@ class PipelineOrchestrator:
             self._step_thumbnail()
             self._step_quality_gate()
             self._step_upload_en()
+            self._step_shorts_experiments()
             self._step_upload_ru()
             self._finalize()
 
@@ -683,6 +685,30 @@ class PipelineOrchestrator:
                 },
             )
             mutated_hooks = mutated.get("mutated_hooks", [])
+
+            # Inject high-performing hooks from past Shorts experiments so the
+            # editorial brain can prioritise proven openers.
+            _shorts_engine = ShortsExperimentEngine(data_dir=settings.data_dir)
+            _shorts_best_hooks = _shorts_engine.get_best_hooks(n=5)
+            if _shorts_best_hooks:
+                mutated_hooks = _shorts_best_hooks + mutated_hooks
+                logger.info(
+                    f"ShortsExperimentEngine: prepended {len(_shorts_best_hooks)} "
+                    f"proven hook(s) to hook_candidates"
+                )
+            # Boost hook_aggressiveness when Shorts signal is strong enough.
+            _shorts_signal = _shorts_engine.get_strong_signal()
+            if _shorts_signal and self._auto_strategy is not None:
+                self._auto_strategy["hook_aggressiveness"] = min(
+                    1.0,
+                    float(self._auto_strategy.get("hook_aggressiveness", 0.5))
+                    + _shorts_signal,
+                )
+                logger.info(
+                    f"ShortsExperimentEngine: boosted hook_aggressiveness by "
+                    f"{_shorts_signal} → "
+                    f"{self._auto_strategy['hook_aggressiveness']:.2f}"
+                )
 
             editorial_brain = EditorialBrain(config={"channel_name": settings.channel_name})
             editorial_plan = editorial_brain.run(
@@ -969,6 +995,79 @@ class PipelineOrchestrator:
             if not meta.get("skipped"):
                 self._summary.update(meta)
             self._observer.step_skip("upload_en")
+
+    def _step_shorts_experiments(self) -> None:
+        """Generate and upload hook-variant Shorts experiments for the top story.
+
+        Each experiment is an independent 25s Short with a different hook type.
+        Results are collected in the next run's deferred feedback loop via
+        _collect_thompson_strategy() which calls ShortsExperimentEngine.collect_analytics().
+
+        Non-fatal: failures are logged and the pipeline continues normally.
+        """
+        if self._skip_upload or not self._news or not self._script:
+            return
+        if self._cp.is_done("shorts_experiments"):
+            logger.info("Shorts experiments already done for this run")
+            return
+
+        try:
+            from src.shorts_generator import create_short_video
+            from src.youtube_uploader import upload_short
+
+            shorts_engine = ShortsExperimentEngine(data_dir=settings.data_dir)
+            top_story = {
+                "title":  self._news[0].title,
+                "source": getattr(self._news[0], "source", ""),
+            }
+            experiments = shorts_engine.generate(top_story)
+            uploaded = 0
+
+            for exp in experiments:
+                try:
+                    exp_dir = self._run_dir / "shorts_experiments"
+                    exp_dir.mkdir(parents=True, exist_ok=True)
+                    script_text = "\n".join([exp.hook_text, exp.core_text, exp.payoff_text])
+                    video_path = create_short_video(
+                        script_text=script_text,
+                        out_dir=exp_dir,
+                        duration_sec=25,
+                    )
+                    short_title = exp.hook_text[:95] + ("…" if len(exp.hook_text) > 95 else "")
+                    video_id = upload_short(
+                        video_path=video_path,
+                        title=short_title,
+                        description=(
+                            f"{exp.hook_text}\n\n"
+                            f"{exp.core_text}\n\n"
+                            f"#AINews #Shorts #AI"
+                        ),
+                        tags=["AI", "AINews", "Shorts", exp.hook_type],
+                        client_secrets=settings.youtube_client_secrets,
+                        token_file=settings.youtube_token_file,
+                    )
+                    shorts_engine.mark_uploaded(
+                        exp.experiment_id,
+                        video_id=video_id,
+                        video_path=str(video_path),
+                    )
+                    uploaded += 1
+                    logger.info(
+                        f"ShortsExperiment uploaded: [{exp.hook_type}] {video_id}"
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        f"ShortsExperiment: failed to generate/upload "
+                        f"[{exp.hook_type}]: {exc}"
+                    )
+
+            self._cp.mark_done("shorts_experiments", {"uploaded": uploaded})
+            self._summary["shorts_experiments"] = {"uploaded": uploaded}
+            logger.info(
+                f"ShortsExperimentEngine: {uploaded}/{len(experiments)} experiments uploaded"
+            )
+        except Exception as exc:
+            logger.warning(f"ShortsExperimentEngine: step failed (non-fatal): {exc}")
 
     def _step_upload_ru(self) -> None:
         assert self._script is not None
@@ -1296,6 +1395,20 @@ class PipelineOrchestrator:
                     f"ThompsonBandit: deferred update failed for "
                     f"{run_dir.name}: {exc}"
                 )
+
+        # Collect analytics for past Shorts experiments and learn from winners.
+        try:
+            _shorts_engine = ShortsExperimentEngine(data_dir=settings.data_dir)
+            _new_results = _shorts_engine.collect_analytics(min_age_hours=4.0)
+            if _new_results:
+                _analysis = _shorts_engine.analyze()
+                logger.info(
+                    f"ShortsExperimentEngine: collected {_new_results} result(s), "
+                    f"winners={_analysis['winners']}, "
+                    f"best_hook={_analysis['best_hook_type']!r}"
+                )
+        except Exception as _shorts_exc:
+            logger.warning(f"ShortsExperimentEngine: deferred feedback failed: {_shorts_exc}")
 
         if not preferred_types:
             return None
