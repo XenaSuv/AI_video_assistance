@@ -24,7 +24,8 @@ from src.deduplicator import SeenStories
 from src.digest_script_generator import save_for_digest
 from src.hook_selector import record_usage
 from src.analytics import get_recommendations
-from src.decision_engine import DecisionEngine
+from src.decision_engine_v2 import DecisionEngineV2, StrategyConfig
+from src.shared_types import ContentStrategy
 from src.feedback_analyzer import FeedbackAnalyzer
 from src.hook_mutation_engine import HookMutationEngine
 from src.performance_tracker import save_result
@@ -166,6 +167,31 @@ def _needs_video_rebuild(video_path: Path) -> bool:
     for cached in assembled_dir.glob("title_*.mp4"):
         cached.unlink(missing_ok=True)
     return True
+
+
+def _strategy_config_to_content_strategy(config: StrategyConfig) -> ContentStrategy:
+    """Bridge DecisionEngineV2 StrategyConfig to ContentStrategy for editorial_brain.
+
+    v2 operates at channel level (mode, pace, hook_aggressiveness).
+    ContentStrategy is story-level (angle_weights, format_weights, exploration_rate).
+
+    angle_weights and format_weights are left empty — editorial_brain already
+    reads its own FeedbackAnalyzer data to score those, so no signal is lost.
+
+    exploration_rate is derived from hook_aggressiveness: a more aggressive hook
+    posture means less random exploration (we're committing to proven tactics).
+    confidence is tied to mode: safe → high confidence, experimental → low.
+    """
+    mode = "balanced" if config.mode == "experimental" else config.mode
+    exploration_rate = round(max(0.1, min(0.4, 0.4 - config.hook_aggressiveness * 0.3)), 2)
+    confidence = {"safe": 0.8, "growth": 0.5, "experimental": 0.3}.get(config.mode, 0.5)
+    return ContentStrategy(
+        angle_weights={},
+        format_weights={},
+        exploration_rate=exploration_rate,
+        mode=mode,
+        confidence=confidence,
+    )
 
 
 def _classify_hook_type(hook: str) -> str:
@@ -345,6 +371,7 @@ class PipelineOrchestrator:
         self._auto_actions: list[dict] = []
         self._auto_insights: list[dict] = []
         self._thompson_preferred_type: str | None = None
+        self._v2_config: StrategyConfig | None = None
 
         try:
             self._step_scrape()
@@ -462,29 +489,31 @@ class PipelineOrchestrator:
             self._summary["auto_actions"] = self._auto_actions
             self._summary["insights"] = self._auto_insights
 
-            decision_engine = DecisionEngine()
-            strategy = decision_engine.decide(self._feedback_history)
+            decision_engine = DecisionEngineV2()
+            v2_config: StrategyConfig = decision_engine.decide()
+            # Derive ContentStrategy for editorial_brain (angle/format weights are
+            # handled by editorial_brain's own FeedbackAnalyzer, so empty is fine).
+            strategy = _strategy_config_to_content_strategy(v2_config)
+            self._v2_config = v2_config  # kept for record() in deferred feedback
 
             logger.info(
-                f"Strategic decisions: mode={strategy.mode}, "
-                f"exploration={strategy.exploration_rate:.2f}"
-            )
-            _top_angle = (
-                max(strategy.angle_weights, key=lambda k: strategy.angle_weights[k])
-                if strategy.angle_weights else None
-            )
-            _top_format = (
-                max(strategy.format_weights, key=lambda k: strategy.format_weights[k])
-                if strategy.format_weights else None
+                f"Strategic decisions: mode={v2_config.mode}, "
+                f"pace={v2_config.pace}, "
+                f"hook_aggressiveness={v2_config.hook_aggressiveness:.2f}"
             )
             self._live.set_strategy({
-                "mode": strategy.mode,
+                "mode": v2_config.mode,
+                "pace": v2_config.pace,
+                "hook_aggressiveness": round(v2_config.hook_aggressiveness, 2),
+                "video_length": v2_config.video_length,
                 "exploration_rate": round(strategy.exploration_rate, 2),
                 "confidence": round(strategy.confidence, 2),
-                "top_angle": _top_angle,
-                "top_format": _top_format,
             })
-            self._live.log_event(f"Strategy: {strategy.mode} mode, angle={_top_angle}")
+            self._live.log_event(
+                f"Strategy: {v2_config.mode} mode, "
+                f"pace={v2_config.pace}, "
+                f"hook={v2_config.hook_aggressiveness:.1f}"
+            )
 
             top_recs = get_recommendations()
             top_hooks = top_recs.get("top_hooks", [])
@@ -543,7 +572,11 @@ class PipelineOrchestrator:
             self._live.log_event(
                 f"Script ready: \"{script.title}\" ({len(script.scenes)} scenes)"
             )
-            self._cp.mark_done("script", {"title": script.title, "num_scenes": len(script.scenes)})
+            self._cp.mark_done("script", {
+                "title": script.title,
+                "num_scenes": len(script.scenes),
+                "v2_mode": self._v2_config.mode if self._v2_config else "growth",
+            })
             self._observer.step_done("script", title=script.title, num_scenes=len(script.scenes))
         else:
             logger.info("Step 2 (script) already done — loading cached script.json")
@@ -904,11 +937,11 @@ class PipelineOrchestrator:
                 if not bandit.get_state().arms:
                     continue
 
-                metrics = get_video_metrics(video_id)
-                if metrics:
-                    impressions = int(metrics.get("views", 0))
+                yt_metrics = get_video_metrics(video_id)
+                if yt_metrics:
+                    impressions = int(yt_metrics.get("views", 0))
                     # avg_view_percentage from YouTube API is 0-100; normalise to 0-1
-                    retention = float(metrics.get("avg_view_percentage", 0.0)) / 100.0
+                    retention = float(yt_metrics.get("avg_view_percentage", 0.0)) / 100.0
                     # Use impressions as both views and potential "clicks" so the
                     # quality-adjusted formula (clicks × retention) acts as a
                     # retention-weighted success signal.
@@ -930,6 +963,28 @@ class PipelineOrchestrator:
                                 f"retention={retention:.2f})"
                             )
                             break  # only the active arm needs updating per video
+
+                    # Feed DecisionEngineV2's PerformanceStore with real metrics so
+                    # the next decide() call has accurate channel-level data.
+                    prior_mode = (
+                        cp_data.get("steps", {})
+                        .get("script", {})
+                        .get("v2_mode", "growth")
+                    )
+                    DecisionEngineV2().record(
+                        video_id=video_id,
+                        metrics={
+                            "avg_watch_pct":  retention,
+                            "hook_retention": retention,
+                            "ctr":            0.0,   # not available from basic metrics
+                            "drop_points":    [],
+                        },
+                        strategy=StrategyConfig(mode=prior_mode),
+                    )
+                    logger.info(
+                        f"DecisionEngineV2: recorded metrics for {video_id} "
+                        f"(mode={prior_mode!r}, retention={retention:.2f})"
+                    )
 
                 adjustments = bandit.suggest_strategy_adjustments()
                 preferred = adjustments.get("preferred_variant_type")
