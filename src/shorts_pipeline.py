@@ -131,15 +131,18 @@ def _render_text_short(
     audio_path: Path | None,
     out_dir: Path,
 ) -> Path:
-    """Render a fast-cut text-overlay Short (fallback when no avatar).
+    """Render a text-overlay Short with B-roll background and animated subtitles.
 
-    Structure:
-      - Black background (9:16)
-      - Hook text displayed prominently for the first 3 seconds
-      - Full narration audio track
-      - No Ken Burns, no DALL-E
+    Rendering layers (bottom → top):
+      1. Background — Pexels/Pixabay B-roll at 9:16; falls back to dark gradient
+      2. Hook text  — large centred caption at ~35% height for the full run
+      3. Subtitles  — animated 5-word chunks of the full narration at ~72% height
+      4. Audio      — TTS narration track
+      5. Music      — optional background track at low volume
     """
+    import shutil
     import src.ffmpeg_utils as ffmpeg_utils
+    from src.broll_fetcher import fetch_broll_for_short
 
     assembled = out_dir / "assembled"
     assembled.mkdir(parents=True, exist_ok=True)
@@ -154,30 +157,50 @@ def _render_text_short(
         except Exception:
             pass
 
-    # Base: solid dark background
-    base = assembled / f"base_{script.short_id}.mp4"
-    ffmpeg_utils.black_clip(base, width=SHORT_W, height=SHORT_H, duration_sec=duration)
+    # ── Layer 1: Background ───────────────────────────────────────────────────
+    # Try B-roll from Pexels/Pixabay using the topic; fall back to dark clip.
+    broll_path = assembled / f"broll_{script.short_id}.mp4"
+    base = fetch_broll_for_short(
+        script.topic, duration, broll_path, out_w=SHORT_W, out_h=SHORT_H,
+    )
+    if base is None:
+        logger.info(f"Short [{script.hook_type}]: no B-roll available — using dark background")
+        dark = assembled / f"base_{script.short_id}.mp4"
+        ffmpeg_utils.black_clip(dark, width=SHORT_W, height=SHORT_H, duration_sec=duration)
+        base = dark
 
-    # Large hook text overlay
-    captioned = assembled / f"captioned_{script.short_id}.mp4"
-    ffmpeg_utils.burn_captions(
+    # ── Layer 2: Hook text (large, upper-centre) ──────────────────────────────
+    hook_overlay = assembled / f"hook_{script.short_id}.mp4"
+    hook_overlay = ffmpeg_utils.burn_captions(
         base,
         script.hook,
-        captioned,
+        hook_overlay,
         font_size=88,
-        y_pct=0.42,
+        y_pct=0.35,
         color="white",
     )
 
-    # Mix in audio
+    # ── Layer 3: Animated narration subtitles (bottom third) ─────────────────
+    subtitle_text = " ".join([script.core, script.twist, script.ending])
+    subtitled = assembled / f"subtitled_{script.short_id}.mp4"
+    subtitled = ffmpeg_utils.burn_captions(
+        hook_overlay,
+        subtitle_text,
+        subtitled,
+        font_size=58,
+        y_pct=0.72,
+        color="yellow",
+    )
+
+    # ── Layer 4: Audio ────────────────────────────────────────────────────────
     if audio_path and audio_path.exists():
         with_audio = assembled / f"audio_{script.short_id}.mp4"
-        ffmpeg_utils.merge_av(captioned, audio_path, with_audio)
-        final = with_audio
+        ffmpeg_utils.merge_av(subtitled, audio_path, with_audio)
+        final: Path = with_audio
     else:
-        final = captioned
+        final = subtitled
 
-    # Background music (very low — voice should dominate)
+    # ── Layer 5: Background music ─────────────────────────────────────────────
     music_raw = settings.background_music_path.strip()
     if music_raw:
         music_path = Path(music_raw) if Path(music_raw).is_absolute() else settings.source_dir / music_raw
@@ -193,7 +216,6 @@ def _render_text_short(
             except Exception as exc:
                 logger.warning(f"Music mix failed (non-fatal): {exc}")
 
-    import shutil
     shutil.copy2(str(final), str(out_path))
     logger.info(f"Text Short rendered: {out_path.name} ({duration:.0f}s)")
     return out_path

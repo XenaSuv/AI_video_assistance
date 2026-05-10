@@ -221,3 +221,66 @@ def fetch_broll_clip(
         )
 
     return None   # signal: use DALL-E
+
+
+def fetch_broll_for_short(
+    query: str,
+    duration_sec: float,
+    out_path: Path,
+    *,
+    out_w: int = 1080,
+    out_h: int = 1920,
+) -> Path | None:
+    """Fetch a B-roll clip from Pexels (then Pixabay), convert to vertical 9:16.
+
+    Unlike fetch_broll_clip() this function takes a plain query string rather
+    than a Scene object, so Shorts can call it without creating a fake scene.
+    Returns the finished MP4 path at out_w×out_h or None on failure.
+    """
+    raw_path      = out_path.with_stem(out_path.stem + "_raw")
+    vertical_path = out_path.with_stem(out_path.stem + "_vertical")
+
+    pexels_key = settings.pexels_api_key
+    if pexels_key:
+        try:
+            videos = _pexels_search(query, per_page=5)
+            for vid in videos:
+                file_info = _pexels_best_file(vid)
+                if not file_info:
+                    continue
+                _download(file_info["link"], raw_path)
+                ffmpeg_utils.make_vertical(raw_path, vertical_path, out_w=out_w, out_h=out_h)
+                ffmpeg_utils.loop_and_trim(vertical_path, out_path, target_sec=duration_sec)
+                raw_path.unlink(missing_ok=True)
+                vertical_path.unlink(missing_ok=True)
+                logger.info(f"Shorts B-roll: Pexels clip for {query!r} → {out_path.name}")
+                return out_path
+            logger.debug(f"Shorts B-roll: no Pexels results for {query!r}")
+        except Exception as exc:
+            logger.warning(f"Shorts B-roll: Pexels failed ({exc})")
+            for p in (raw_path, vertical_path):
+                p.unlink(missing_ok=True)
+
+    pixabay_key = settings.pixabay_api_key
+    if pixabay_key:
+        try:
+            hits = _pixabay_search(query, per_page=5)
+            for hit in hits:
+                url = _pixabay_best_url(hit)
+                if not url:
+                    continue
+                _download(url, raw_path)
+                ffmpeg_utils.make_vertical(raw_path, vertical_path, out_w=out_w, out_h=out_h)
+                ffmpeg_utils.loop_and_trim(vertical_path, out_path, target_sec=duration_sec)
+                raw_path.unlink(missing_ok=True)
+                vertical_path.unlink(missing_ok=True)
+                logger.info(f"Shorts B-roll: Pixabay clip for {query!r} → {out_path.name}")
+                return out_path
+            logger.debug(f"Shorts B-roll: no Pixabay results for {query!r}")
+        except Exception as exc:
+            logger.warning(f"Shorts B-roll: Pixabay failed ({exc})")
+            for p in (raw_path, vertical_path):
+                p.unlink(missing_ok=True)
+
+    return None
+
