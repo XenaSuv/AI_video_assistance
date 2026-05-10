@@ -128,20 +128,23 @@ def scrape_arxiv(max_results: int = 20, days_back: int = 2) -> list[NewsItem]:
     cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days_back)
     items: list[NewsItem] = []
     client = arxiv.Client(page_size=50, delay_seconds=3, num_retries=3)
-    for r in client.results(search):
-        if r.published < cutoff:
-            continue
-        items.append(NewsItem(
-            source="arXiv",
-            title=r.title.strip().replace("\n", " "),
-            url=r.entry_id,
-            summary=r.summary.strip().replace("\n", " ")[:1200],
-            authors=[a.name for a in r.authors][:5],
-            published=r.published.date().isoformat(),
-            score=min(len(r.authors) / 10, 1.0),
-        ))
-        if len(items) >= max_results:
-            break
+    try:
+        for r in client.results(search):
+            if r.published < cutoff:
+                continue
+            items.append(NewsItem(
+                source="arXiv",
+                title=r.title.strip().replace("\n", " "),
+                url=r.entry_id,
+                summary=r.summary.strip().replace("\n", " ")[:1200],
+                authors=[a.name for a in r.authors][:5],
+                published=r.published.date().isoformat(),
+                score=min(len(r.authors) / 10, 1.0),
+            ))
+            if len(items) >= max_results:
+                break
+    except Exception as e:
+        logger.warning(f"arXiv fetch failed (skipping): {e}")
     logger.info(f"arXiv: {len(items)} papers")
     return items
 
@@ -177,7 +180,11 @@ def scrape_huggingface(max_results: int = 15) -> list[NewsItem]:
 
 
 def _scrape_huggingface_html(max_results: int) -> list[NewsItem]:
-    resp = http_get("https://huggingface.co/papers", timeout=20)
+    try:
+        resp = http_get("https://huggingface.co/papers", timeout=20)
+    except Exception as e:
+        logger.warning(f"HuggingFace HTML fallback failed (skipping): {e}")
+        return []
     soup = BeautifulSoup(resp.text, "html.parser")
     items = []
     for art in soup.select("article")[:max_results]:
@@ -451,7 +458,11 @@ def scrape_all(top_n: int = 10, cache_dir: Path | None = None) -> list[NewsItem]
             if hit is not None:
                 logger.info(f"{key}: {len(hit)} items (cached)")
                 return hit
-        result = fn()
+        try:
+            result = fn()
+        except Exception as e:
+            logger.warning(f"{key}: source failed, skipping ({e})")
+            return []
         if cache is not None:
             cache.set(key, result)
         return result
