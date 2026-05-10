@@ -55,9 +55,15 @@ from src.pipeline_observer import PipelineObserver
 from src.live_state import LiveState
 from src.thompson_bandit import ThompsonBandit
 from src.ab_testing_engine import ABTestVariant
-from src.youtube_analytics import get_video_metrics
+from src.youtube_analytics import get_video_metrics, get_retention_curve
 from src.sequence_learning_engine import SequenceLearningEngine
 from src.cross_learning_engine import CrossLearningEngine
+from src.retention_correction_engine import (
+    RetentionCorrectionEngine,
+    Correction,
+    FixType,
+    DropPoint,
+)
 
 
 # ── Stateless helpers ─────────────────────────────────────────────────────────
@@ -223,6 +229,54 @@ def _classify_hook_type(hook: str) -> str:
     )):
         return "curiosity"
     return "simple"
+
+
+def _build_scene_map(scenes: list[dict], curve_len: int) -> dict[int, dict]:
+    """Map retention-curve bucket indices to scene metadata.
+
+    Distributes curve indices proportionally across scenes by duration_sec.
+    Falls back to equal slices when durations are unavailable.
+    """
+    if not scenes or curve_len == 0:
+        return {}
+    durations = [s.get("duration_sec", 60) for s in scenes]
+    total = sum(durations) or len(scenes)
+    scene_map: dict[int, dict] = {}
+    bucket = 0
+    for scene_idx, (scene, dur) in enumerate(zip(scenes, durations)):
+        n_buckets = max(1, round(curve_len * dur / total))
+        for b in range(bucket, min(bucket + n_buckets, curve_len)):
+            scene_map[b] = {
+                "scene_idx":  scene_idx,
+                "scene_type": scene.get("scene_type", "image"),
+                "intent":     scene.get("scene_intent", scene.get("intent", "explain")),
+            }
+        bucket += n_buckets
+    return scene_map
+
+
+def _load_retention_state(data_dir: Path) -> dict:
+    """Load persisted retention correction state written by the deferred feedback loop."""
+    path = data_dir / "retention_state.json"
+    try:
+        if path.exists():
+            return json.loads(path.read_text())
+    except Exception:
+        pass
+    return {}
+
+
+def _save_retention_state(
+    data_dir: Path,
+    corrections: list[Correction],
+    adjustments: dict,
+) -> None:
+    """Persist retention correction results so the next pipeline run can use them."""
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "retention_state.json").write_text(json.dumps({
+        "corrections": [c.to_dict() for c in corrections],
+        "adjustments": adjustments,
+    }, indent=2))
 
 
 def _run_language_variant(
@@ -504,6 +558,27 @@ class PipelineOrchestrator:
             self._summary["auto_actions"] = self._auto_actions
             self._summary["insights"] = self._auto_insights
 
+            # Load persisted retention corrections from the most recent deferred
+            # analysis — feeds DecisionEngineV3 as predicted risks and is also
+            # applied scene-level after script generation.
+            _rce_state = _load_retention_state(settings.data_dir)
+            _rce_adjustments = _rce_state.get("adjustments", {})
+            _rce_corrections_raw: list[dict] = _rce_state.get("corrections", [])
+            _predicted_risks = [
+                {
+                    "scene_idx":   c["scene_idx"],
+                    "probability": min(1.0, round(
+                        c["confidence"] * c["drop"]["delta"], 4
+                    )),
+                }
+                for c in _rce_corrections_raw
+            ]
+            if _rce_corrections_raw:
+                logger.info(
+                    f"RetentionCorrectionEngine: loaded {len(_rce_corrections_raw)} "
+                    f"prior correction(s) → feeding v3 as predicted_risks"
+                )
+
             # Build context for DecisionEngineV3: channel metrics + bandit signals
             _perf_store = PerformanceStore(data_dir=settings.data_dir)
             _v3_engine = DecisionEngineV3(data_dir=settings.data_dir)
@@ -515,7 +590,7 @@ class PipelineOrchestrator:
                         "preferred_variant_type": self._thompson_preferred_type or "",
                     },
                 },
-                "prediction": {"risks": []},
+                "prediction": {"risks": _predicted_risks},
                 "history": _v3_engine.load_history(),
             }
             v3_strategy: UnifiedStrategy = _v3_engine.decide(_v3_context)
@@ -646,6 +721,43 @@ class PipelineOrchestrator:
                     logger.info(
                         f"SequenceLearningEngine: corrected {corrections} "
                         f"scene intent(s) to avoid known-bad patterns"
+                    )
+                # Apply retention corrections from the previous video's drop
+                # analysis.  Matched by scene_intent rather than position so
+                # they transfer across different news topics.
+                if _rce_corrections_raw:
+                    _rce_engine = RetentionCorrectionEngine(data_dir=settings.data_dir)
+                    # Best correction per intent (highest confidence wins)
+                    _intent_to_c: dict[str, dict] = {}
+                    for _rc in _rce_corrections_raw:
+                        _ri = _rc.get("intent", "explain")
+                        if _ri not in _intent_to_c or _rc.get("confidence", 1.0) > _intent_to_c[_ri].get("confidence", 1.0):
+                            _intent_to_c[_ri] = _rc
+                    _rce_matched: list[Correction] = [
+                        Correction(
+                            scene_idx  = scene.idx,
+                            fix        = FixType(_rc["fix"]),
+                            drop       = DropPoint(**_rc["drop"]),
+                            scene_type = _rc["scene_type"],
+                            intent     = _rc["intent"],
+                            confidence = _rc["confidence"],
+                        )
+                        for scene in script.scenes
+                        if (_rc := _intent_to_c.get(scene.scene_intent)) is not None
+                    ]
+                    if _rce_matched:
+                        _rce_engine.apply_corrections(script.scenes, _rce_matched)
+                        logger.info(
+                            f"RetentionCorrectionEngine: applied {len(_rce_matched)} "
+                            f"intent-matched correction(s) to current script scenes"
+                        )
+                # If the previous video dropped at scene 0, anchor the intro
+                # with an avatar scene to maximise hook retention.
+                if _rce_adjustments.get("force_avatar_intro") and script.scenes:
+                    script.scenes[0].scene_type = "avatar"
+                    logger.info(
+                        "RetentionCorrectionEngine: forced avatar intro "
+                        "(drop at scene 0 detected in prior video)"
                     )
                 script.save(script_cache)
 
@@ -1146,6 +1258,34 @@ class PipelineOrchestrator:
                                 f"CrossLearningEngine: learn() failed "
                                 f"for {run_dir.name}: {_cx_exc}"
                             )
+
+                    # Analyse the full retention curve for this past video so
+                    # the next run can apply scene-level corrections and get
+                    # accurate predicted_risks for DecisionEngineV3.
+                    try:
+                        _rce_curve = get_retention_curve(video_id)
+                        if _rce_curve and script_cache.exists():
+                            _rce_script_data = json.loads(script_cache.read_text())
+                            _rce_scene_map = _build_scene_map(
+                                _rce_script_data.get("scenes", []), len(_rce_curve)
+                            )
+                            _rce = RetentionCorrectionEngine(data_dir=settings.data_dir)
+                            _rce_found = _rce.analyze(
+                                {"curve": _rce_curve}, _rce_scene_map
+                            )
+                            _rce_adj = _rce.suggest_strategy_adjustments(
+                                _rce_found, _rce_scene_map, _rce_curve
+                            )
+                            _save_retention_state(settings.data_dir, _rce_found, _rce_adj)
+                            logger.info(
+                                f"RetentionCorrectionEngine: {len(_rce_found)} drop(s) "
+                                f"for {video_id}, state persisted for next run"
+                            )
+                    except Exception as _rce_exc:
+                        logger.warning(
+                            f"RetentionCorrectionEngine: analysis failed for "
+                            f"{run_dir.name}: {_rce_exc}"
+                        )
 
                 adjustments = bandit.suggest_strategy_adjustments()
                 preferred = adjustments.get("preferred_variant_type")
