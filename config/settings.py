@@ -71,6 +71,17 @@ class Settings:
     presenter_avatar_path: str  = _env("PRESENTER_AVATAR_PATH", "assets/avatar.png")
     presenter_enabled:     bool = _env("PRESENTER_ENABLED", "false").lower() in ("1", "true", "yes")
 
+    # AI Presenter — HeyGen Video API (preferred over D-ID when enabled)
+    # HEYGEN_API_KEY:   from app.heygen.com → Settings → API
+    # HEYGEN_AVATAR_ID: avatar ID from HeyGen's avatar library or custom avatar
+    # HEYGEN_VOICE_ID:  HeyGen voice used for text-mode TTS (fallback when audio fails)
+    # HEYGEN_ASPECT:    "16:9" (default) or "9:16" (Shorts)
+    heygen_api_key:  str  = _env("HEYGEN_API_KEY",  "")
+    heygen_avatar_id: str = _env("HEYGEN_AVATAR_ID", "")
+    heygen_voice_id:  str = _env("HEYGEN_VOICE_ID",  "")
+    heygen_aspect:    str = _env("HEYGEN_ASPECT",    "16:9")
+    heygen_enabled:   bool = _env("HEYGEN_ENABLED", "false").lower() in ("1", "true", "yes")
+
     # Slack notifications (optional — leave blank to disable)
     slack_webhook_url: str = _env("SLACK_WEBHOOK_URL", "")
 

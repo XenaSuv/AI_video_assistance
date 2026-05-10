@@ -887,7 +887,7 @@ class PipelineOrchestrator:
                 self._script, self._run_dir,
                 intro_path=self._en_intro,
                 outro_path=self._en_outro,
-                use_presenter=settings.presenter_enabled,
+                use_presenter=settings.presenter_enabled or settings.heygen_enabled,
             )
             self._seen.mark_featured(self._news)
             self._live.log_event(f"Video built: {self._long_video.name}")
