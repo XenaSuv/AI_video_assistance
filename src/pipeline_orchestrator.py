@@ -56,6 +56,7 @@ from src.thompson_bandit import ThompsonBandit
 from src.ab_testing_engine import ABTestVariant
 from src.youtube_analytics import get_video_metrics
 from src.sequence_learning_engine import SequenceLearningEngine
+from src.cross_learning_engine import CrossLearningEngine
 
 
 # ── Stateless helpers ─────────────────────────────────────────────────────────
@@ -524,6 +525,26 @@ class PipelineOrchestrator:
                     f"sequence bias pattern(s): {_sequence_bias}"
                 )
 
+            # Ask CrossLearningEngine for the best known combo for daily AI news.
+            # The recommendation (pace, persona, hook_type) is merged into
+            # auto_strategy so generate_script() and editorial_brain both see it.
+            _cross_engine = CrossLearningEngine(data_dir=settings.data_dir)
+            _cross_rec = _cross_engine.recommend(context={"topic": "AI news"})
+            if _cross_rec:
+                if self._auto_strategy is None:
+                    self._auto_strategy = {}
+                self._auto_strategy["pace"]    = _cross_rec.get("pace",    v2_config.pace)
+                self._auto_strategy["persona"] = _cross_rec.get("persona", "balanced")
+                # Use cross-learning hook type when Thompson has no preference yet
+                if not self._thompson_preferred_type:
+                    self._thompson_preferred_type = _cross_rec.get("hook_type")
+                logger.info(
+                    f"CrossLearningEngine: recommendation → "
+                    f"pace={_cross_rec.get('pace')!r}  "
+                    f"persona={_cross_rec.get('persona')!r}  "
+                    f"hook_type={_cross_rec.get('hook_type')!r}"
+                )
+
             self._live.log_event(
                 f"Strategy: {v2_config.mode} mode, "
                 f"pace={v2_config.pace}, "
@@ -593,10 +614,26 @@ class PipelineOrchestrator:
             self._live.log_event(
                 f"Script ready: \"{script.title}\" ({len(script.scenes)} scenes)"
             )
+            # Compute dominant scene type for cross-learning combo storage.
+            _scene_types = [s.scene_type for s in script.scenes]
+            _dominant_scene_type = (
+                max(set(_scene_types), key=_scene_types.count)
+                if _scene_types else "image"
+            )
             self._cp.mark_done("script", {
                 "title": script.title,
                 "num_scenes": len(script.scenes),
                 "v2_mode": self._v2_config.mode if self._v2_config else "growth",
+                "v2_pace": self._v2_config.pace if self._v2_config else "normal",
+                # Stored so _collect_thompson_strategy() can feed CrossLearningEngine
+                # with the actual combo that ran once YouTube metrics arrive.
+                "cross_combo": {
+                    "hook_type":  _classify_hook_type(script.hook),
+                    "scene_type": _dominant_scene_type,
+                    "persona":    (self._auto_strategy or {}).get("persona", "balanced"),
+                    "pace":       self._v2_config.pace if self._v2_config else "normal",
+                    "topic":      "AI news",
+                },
             })
             self._observer.step_done("script", title=script.title, num_scenes=len(script.scenes))
         else:
@@ -1030,6 +1067,44 @@ class PipelineOrchestrator:
                             logger.warning(
                                 f"SequenceLearningEngine: store_sequence failed "
                                 f"for {run_dir.name}: {_seq_exc}"
+                            )
+
+                    # Feed CrossLearningEngine with the full combo that ran for
+                    # this video + real retention.  Combo is stored in the script
+                    # checkpoint step so it's available here without re-reading
+                    # the full script.
+                    cross_combo = (
+                        cp_data.get("steps", {})
+                        .get("script", {})
+                        .get("cross_combo")
+                    )
+                    if cross_combo:
+                        try:
+                            CrossLearningEngine(data_dir=settings.data_dir).learn({
+                                "strategy": {
+                                    "pace":    cross_combo.get("pace",    "normal"),
+                                    "persona": cross_combo.get("persona", "balanced"),
+                                },
+                                "packaging": {
+                                    "hook_type": cross_combo.get("hook_type", "curiosity"),
+                                },
+                                "editorial": {
+                                    "topic": cross_combo.get("topic", "AI news"),
+                                },
+                                "scenes": [{"type": cross_combo.get("scene_type", "image")}],
+                                "performance": {
+                                    "avg_watch_pct": retention,
+                                    "ctr": 0.0,
+                                },
+                            })
+                            logger.info(
+                                f"CrossLearningEngine: learned combo "
+                                f"{cross_combo} → retention={retention:.2f}"
+                            )
+                        except Exception as _cx_exc:
+                            logger.warning(
+                                f"CrossLearningEngine: learn() failed "
+                                f"for {run_dir.name}: {_cx_exc}"
                             )
 
                 adjustments = bandit.suggest_strategy_adjustments()

@@ -331,6 +331,8 @@ def _build_strategy_block(strategy: dict[str, Any] | None) -> str:
         f"- hook_aggressiveness: {strategy.get('hook_aggressiveness', 0.5):.2f}",
         f"- packaging_style: {strategy.get('packaging_style', 'standard')}",
     ]
+    if persona := strategy.get("persona"):
+        lines.append(f"- persona: {persona} — let this shape the narrator's energy and tone")
     bias = strategy.get("sequence_bias")
     if bias:
         # Render each pattern as a readable arrow-chain, e.g. hook → twist → data
