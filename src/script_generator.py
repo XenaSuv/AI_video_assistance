@@ -39,7 +39,12 @@ class Scene:
     source_quote: str | None = None      # verbatim quote (≤30 words) from a named source
     quote_attribution: str | None = None # "Name, Role · Org · domain.com"
     scene_type: str = "image"            # assigned by SceneVarietyEngine
-    scene_intent: str = "explain"        # explain | shock | data | reaction
+    scene_intent: str = "explain"        # explain | shock | data | reaction | curiosity | twist
+    # Presentation Engine fields (filled by PresentationEngine.apply())
+    voice_direction: str = ""            # strong | pause | drop | curious | neutral
+    visual_direction: str = ""           # zoom_in | slow_zoom | cut_fast | subtitle_focus
+    pause_after: str = ""               # short | long | none
+    subtitle_style: str = ""            # bold_highlight | normal | none
 
 
 @dataclass

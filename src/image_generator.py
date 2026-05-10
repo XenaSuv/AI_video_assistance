@@ -263,14 +263,33 @@ def fetch_stock_photo(visual_prompt: str, out_path: Path) -> Path | None:
 
 # ── Ken Burns effect ──────────────────────────────────────────────────────────
 
-def _ken_burns_clip(img_path: Path, duration: float, clip_path: Path) -> Path:
+_VISUAL_DIRECTION_VARIANT: dict[str, int] = {
+    "zoom_in":        2,   # ken_burns variant 2 = zoom in
+    "slow_zoom":      3,   # ken_burns variant 3 = zoom out (slow pull back)
+    "cut_fast":       0,   # pan left→right (fast pacing signal)
+    "subtitle_focus": 1,   # pan right→left (neutral; text dominates)
+}
+
+
+def _ken_burns_clip(
+    img_path: Path,
+    duration: float,
+    clip_path: Path,
+    visual_direction: str = "",
+) -> Path:
     """Animate a static image with one of four Ken Burns movements via ffmpeg.
 
     Input dimensions are read from the image itself so the effect works
     for any image source (DALL-E 1792×1024, SD 1344×768, stock photos, etc.).
+
+    When *visual_direction* is provided by PresentationEngine it overrides the
+    hash-based variant selection so motion matches the scene's intent.
     """
-    stem_last = img_path.stem.split("_")[-1]
-    variant   = int(stem_last) % 4 if stem_last.isdigit() else (hash(img_path.stem) % 4)
+    if visual_direction and visual_direction in _VISUAL_DIRECTION_VARIANT:
+        variant = _VISUAL_DIRECTION_VARIANT[visual_direction]
+    else:
+        stem_last = img_path.stem.split("_")[-1]
+        variant   = int(stem_last) % 4 if stem_last.isdigit() else (hash(img_path.stem) % 4)
 
     with PILImage.open(img_path) as pil_img:
         in_w, in_h = pil_img.size
@@ -398,7 +417,10 @@ def _render_text_overlay_clip(scene: "Scene", clip_path: Path) -> Path:
 
         img.save(img_path)
 
-    return _ken_burns_clip(img_path, float(scene.duration_sec), clip_path)
+    return _ken_burns_clip(
+        img_path, float(scene.duration_sec), clip_path,
+        visual_direction=getattr(scene, "visual_direction", ""),
+    )
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -519,7 +541,10 @@ def generate_scene_clip(
         else:
             logger.info(f"Reusing cached image: {img_path.name}")
 
-        result = _ken_burns_clip(img_path, float(scene.duration_sec), clip_path)
+        result = _ken_burns_clip(
+            img_path, float(scene.duration_sec), clip_path,
+            visual_direction=getattr(scene, "visual_direction", ""),
+        )
         if not _valid_video_clip(result):
             logger.warning(
                 f"Scene {scene.idx}: generated clip invalid, falling back to placeholder"
