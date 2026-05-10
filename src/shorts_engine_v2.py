@@ -397,35 +397,66 @@ class ShortsEngineV2:
     # ── daily pipeline feed ───────────────────────────────────────────────────
 
     def generate_hooks(self, topic: str, n: int = 10) -> list[dict[str, str]]:
-        """Return proven + template hooks for *topic* for daily pipeline injection.
+        """Return pattern-learned + proven + template hooks for *topic*.
 
-        Proven winners (from learning store) come first; templates fill the rest.
+        Priority order:
+          1. HookPatternEngine structural patterns (best combo knowledge)
+          2. ShortsEngineV2 proven winners (best hook_type combos)
+          3. Template hooks (fill remainder)
         """
+        from src.hook_pattern_engine import HookPatternEngine
         hooks: list[dict[str, str]] = []
 
-        # Proven winners first
-        top = self.get_top_hooks(n=n)
-        for rec in top:
-            template = _pick_template(rec.hook_type, seed=topic + rec.hook_type)
-            hooks.append({
-                "text":      template.format(topic=topic),
-                "hook_type": rec.hook_type,
-                "source":    "learned",
-                "retention_3s": str(rec.retention_3s),
-            })
+        # 1. Pattern-learned hooks (structural insight level)
+        try:
+            pattern_engine = HookPatternEngine(data_dir=self._data_dir)
+            pattern_hooks = pattern_engine.generate_best_hooks(topic, n=n)
+            for ph in pattern_hooks:
+                hooks.append({
+                    "text":      ph["text"],
+                    "hook_type": ph.get("pattern", "general"),
+                    "source":    "pattern_learned",
+                    "avg_retention_3s": ph.get("avg_retention_3s", ""),
+                })
+        except Exception as exc:
+            logger.debug(f"HookPatternEngine skipped: {exc}")
 
-        # Fill remainder with template hooks across all types
+        # 2. Proven winners from ShortsEngineV2 learning store
         if len(hooks) < n:
+            seen_texts = {h["text"] for h in hooks}
+            top = self.get_top_hooks(n=n)
+            for rec in top:
+                template = _pick_template(rec.hook_type, seed=topic + rec.hook_type)
+                text = template.format(topic=topic)
+                if text in seen_texts:
+                    continue
+                hooks.append({
+                    "text":           text,
+                    "hook_type":      rec.hook_type,
+                    "source":         "learned",
+                    "retention_3s":   str(rec.retention_3s),
+                })
+                seen_texts.add(text)
+                if len(hooks) >= n:
+                    break
+
+        # 3. Template hooks for remaining slots
+        if len(hooks) < n:
+            seen_texts = {h["text"] for h in hooks}
             seen_types = {h["hook_type"] for h in hooks}
             for hook_type, templates in _HOOK_TEMPLATES.items():
                 if hook_type in seen_types:
                     continue
                 for tmpl in templates[:max(1, (n - len(hooks)) // len(_HOOK_TEMPLATES))]:
+                    text = tmpl.format(topic=topic)
+                    if text in seen_texts:
+                        continue
                     hooks.append({
-                        "text":      tmpl.format(topic=topic),
+                        "text":      text,
                         "hook_type": hook_type,
                         "source":    "template",
                     })
+                    seen_texts.add(text)
                     if len(hooks) >= n:
                         break
                 if len(hooks) >= n:
