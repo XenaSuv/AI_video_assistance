@@ -24,8 +24,7 @@ from src.deduplicator import SeenStories
 from src.digest_script_generator import save_for_digest
 from src.hook_selector import record_usage
 from src.analytics import get_recommendations
-from src.decision_engine_v3 import DecisionEngineV3, UnifiedStrategy
-from src.decision_engine_v2 import PerformanceStore
+from src.decision_engine_v3 import DecisionEngineV3, UnifiedStrategy, PerformanceStore
 from src.shared_types import ContentStrategy
 from src.feedback_analyzer import FeedbackAnalyzer
 from src.hook_mutation_engine import HookMutationEngine

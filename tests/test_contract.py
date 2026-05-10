@@ -1,23 +1,20 @@
-"""Tests for the unified contract between DecisionEngineV2 and SceneVarietyEngineV2.
+"""Tests for the contract between StrategyConfig/ScenePolicy and SceneVarietyEngineV2.
 
 Covers:
 - ScenePolicy normalisation and serialisation
-- StrategyConfig.scene_policy population from strategy builders
+- StrategyConfig.scene_policy population
 - SceneVarietyEngineV2.assign_from_config() full pipeline
 - Avatar frequency management
 - Pattern interrupt enforcement
 - Priority intent bypass
-- update_scene_mix_from_feedback()
-- End-to-end: DecisionEngineV2.decide() → assign_from_config()
 """
 from __future__ import annotations
 
 import pytest
 from dataclasses import dataclass, field
 from typing import Any
-from unittest.mock import patch
 
-from src.decision_engine_v2 import DecisionEngineV2, ScenePolicy, StrategyConfig, PerformanceStore
+from src.shared_types import ScenePolicy, StrategyConfig
 from src.scene_variety_engine import SceneVarietyEngineV2
 from src.scene_strategy_engine import SceneStrategyEngine
 
@@ -113,36 +110,6 @@ class TestStrategyConfigScenePolicySync:
 
 
 # ── Strategy builders populate scene_policy ───────────────────────────────────
-
-class TestStrategyBuildersPolicies:
-    def setup_method(self):
-        self.engine = DecisionEngineV2(performance_store=PerformanceStore(data_dir=_tmp_dir()))
-
-    def test_growth_policy_fields(self):
-        cfg = self.engine._growth_strategy({})
-        assert cfg.scene_policy.pattern_interrupt_frequency == 2
-        assert "hook" in cfg.scene_policy.priority_intents
-        assert "shock" in cfg.scene_policy.priority_intents
-        assert cfg.scene_policy.avoid_repetition is True
-
-    def test_safe_policy_fields(self):
-        cfg = self.engine._safe_strategy({})
-        assert cfg.scene_policy.pattern_interrupt_frequency == 4
-        assert cfg.scene_policy.priority_intents == ["hook"]
-
-    def test_experimental_policy_has_mix(self):
-        cfg = self.engine._experimental_strategy({})
-        assert isinstance(cfg.scene_policy.mix, dict)
-        assert len(cfg.scene_policy.mix) > 0
-
-    def test_growth_policy_mix_matches_scene_mix(self):
-        cfg = self.engine._growth_strategy({})
-        assert cfg.scene_policy.mix == cfg.scene_mix
-
-    def test_safe_policy_mix_matches_scene_mix(self):
-        cfg = self.engine._safe_strategy({})
-        assert cfg.scene_policy.mix == cfg.scene_mix
-
 
 # ── assign_from_config: intent assignment ─────────────────────────────────────
 
@@ -378,100 +345,6 @@ class TestInfographicDataHonoured:
         scenes[2].infographic_data = {"type": "bar_chart"}
         engine.assign_from_config(scenes, cfg)
         assert scenes[2].scene_type == "infographic"
-
-
-# ── update_scene_mix_from_feedback ────────────────────────────────────────────
-
-class TestUpdateSceneMixFromFeedback:
-    def test_returns_normalised_dict(self):
-        de  = DecisionEngineV2(performance_store=PerformanceStore(data_dir=_tmp_dir()))
-        sse = SceneStrategyEngine(data_dir=_tmp_dir())
-        mix = de.update_scene_mix_from_feedback(sse)
-        assert isinstance(mix, dict)
-        assert len(mix) > 0
-        assert abs(sum(mix.values()) - 1.0) < 1e-4
-
-    def test_mix_keys_match_score_types(self):
-        de  = DecisionEngineV2(performance_store=PerformanceStore(data_dir=_tmp_dir()))
-        sse = SceneStrategyEngine(data_dir=_tmp_dir())
-        mix = de.update_scene_mix_from_feedback(sse)
-        expected_keys = set(sse.get_scores().keys())
-        assert set(mix.keys()) == expected_keys
-
-    def test_returns_empty_if_no_scores(self):
-        de = DecisionEngineV2(performance_store=PerformanceStore(data_dir=_tmp_dir()))
-
-        class _FakeEngine:
-            def get_scores(self):
-                return {}
-
-        mix = de.update_scene_mix_from_feedback(_FakeEngine())
-        assert mix == {}
-
-
-# ── Full end-to-end contract pipeline ─────────────────────────────────────────
-
-class TestFullContractPipeline:
-    def test_decide_then_assign_from_config(self):
-        de     = DecisionEngineV2(performance_store=PerformanceStore(data_dir=_tmp_dir()))
-        cfg    = de.decide({"avg_watch_pct": 0.60, "recent_trend": "stable"})
-
-        # safe mode expected
-        assert cfg.mode == "safe"
-        assert isinstance(cfg.scene_policy, ScenePolicy)
-        assert cfg.scene_policy.mix
-
-        engine = SceneVarietyEngineV2()
-        scenes = _scenes(8)
-        engine.assign_from_config(scenes, cfg)
-
-        # Every scene must have a valid type and intent
-        from src.scene_variety_engine import SCENE_TYPES, SCENE_INTENTS
-        for s in scenes:
-            assert s.scene_type in (*SCENE_TYPES, "avatar"), s.scene_type
-            assert s.scene_intent in SCENE_INTENTS, s.scene_intent
-
-    def test_growth_mode_pipeline(self):
-        de  = DecisionEngineV2(performance_store=PerformanceStore(data_dir=_tmp_dir()))
-        cfg = de.decide({"avg_watch_pct": 0.30, "recent_trend": "stable"})
-        assert cfg.mode == "growth"
-
-        engine = SceneVarietyEngineV2()
-        scenes = _scenes(6)
-        engine.assign_from_config(scenes, cfg)
-        assert scenes[0].scene_intent == "hook"
-
-    def test_experimental_mode_pipeline(self):
-        de  = DecisionEngineV2(performance_store=PerformanceStore(data_dir=_tmp_dir()))
-        cfg = de.decide({"avg_watch_pct": 0.50, "recent_trend": "down"})
-        assert cfg.mode == "experimental"
-
-        engine = SceneVarietyEngineV2()
-        scenes = _scenes(5)
-        engine.assign_from_config(scenes, cfg)
-        # No crash; all scene types must be valid strings
-        from src.scene_variety_engine import SCENE_TYPES
-        for s in scenes:
-            assert isinstance(s.scene_type, str)
-
-    def test_policy_serialises_and_deserialises_for_next_run(self):
-        """StrategyConfig can be stored and recreated for the next pipeline run."""
-        de  = DecisionEngineV2(performance_store=PerformanceStore(data_dir=_tmp_dir()))
-        cfg = de.decide({"avg_watch_pct": 0.60, "recent_trend": "stable"})
-
-        d    = cfg.to_dict()
-        cfg2 = StrategyConfig.from_dict(d)
-        assert cfg2.scene_policy.pattern_interrupt_frequency == cfg.scene_policy.pattern_interrupt_frequency
-        assert cfg2.scene_policy.priority_intents == cfg.scene_policy.priority_intents
-
-    def test_record_and_decide_uses_stored_metrics(self, tmp_path):
-        ps = PerformanceStore(data_dir=tmp_path)
-        de = DecisionEngineV2(performance_store=ps)
-        cfg = de.decide({"avg_watch_pct": 0.35, "recent_trend": "stable"})
-        de.record("vid-001", {"avg_watch_pct": 0.35, "hook_retention": 0.45, "ctr": 0.03}, cfg)
-
-        cfg2 = de.decide()   # uses stored metrics
-        assert cfg2.mode in ("growth", "safe", "experimental")
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

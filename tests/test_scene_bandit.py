@@ -455,43 +455,6 @@ class TestIntrospection:
         assert stats[0]["id"] == "policy_A"
 
 
-# ── Integration with DecisionEngineV2 ─────────────────────────────────────────
-
-class TestDecisionEngineIntegration:
-    def test_decide_without_bandit_uses_default_mix(self):
-        from src.decision_engine_v2 import DecisionEngineV2
-        engine  = DecisionEngineV2(data_dir=_tmp())
-        config  = engine.decide(metrics={"avg_watch_pct": 0.5, "ctr": 0.05})
-        assert isinstance(config.scene_mix, dict)
-        assert len(config.scene_mix) > 0
-
-    def test_decide_with_bandit_overrides_scene_mix(self):
-        from src.decision_engine_v2 import DecisionEngineV2
-        engine = DecisionEngineV2(data_dir=_tmp())
-        custom_mix = {"image": 0.9, "diagram": 0.1}
-        bandit = _bandit(_arm("policy_X", alpha=100.0, beta=1.0))
-        bandit._state.arms[0].scene_mix = custom_mix
-        # With seed=0 and only one arm, policy_X is always selected
-        config = engine.decide(
-            metrics={"avg_watch_pct": 0.5, "ctr": 0.05},
-            scene_bandit=bandit,
-        )
-        assert config.scene_policy.mix == custom_mix
-        assert config.scene_mix        == custom_mix
-
-    def test_decide_with_empty_bandit_falls_back_gracefully(self):
-        from src.decision_engine_v2 import DecisionEngineV2
-        engine = DecisionEngineV2(data_dir=_tmp())
-        bandit = SceneBandit(data_dir=_tmp())
-        bandit._state.arms = []
-        config = engine.decide(
-            metrics={"avg_watch_pct": 0.5, "ctr": 0.05},
-            scene_bandit=bandit,
-        )
-        # Fallback: default mix from mode builder
-        assert isinstance(config.scene_mix, dict)
-
-
 # ── Convergence ────────────────────────────────────────────────────────────────
 
 class TestConvergence:
