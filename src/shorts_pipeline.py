@@ -48,6 +48,21 @@ from src.slack_notifier import notify_success, notify_failure
 SHORT_W, SHORT_H = 1080, 1920
 
 
+# ── Editorial helper ──────────────────────────────────────────────────────────
+
+def _story_to_editorial(story: dict) -> dict:
+    """Convert a scraped story dict to the editorial format ShortsEngineV2 expects."""
+    title   = story.get("title", "AI")
+    summary = story.get("summary", story.get("description", title))
+    words   = title.split()
+    topic   = " ".join(words[:4]) if words else "AI"
+    return {
+        "topic":     topic,
+        "core_fact": summary,
+        "angle":     title,
+    }
+
+
 # ── Video rendering ───────────────────────────────────────────────────────────
 
 def _synthesize_short_audio(script: ShortScript, out_dir: Path) -> Path | None:
@@ -215,7 +230,7 @@ def _upload(script: ShortScript, video_path: Path) -> str | None:
             title=title,
             description=(
                 f"{script.hook}\n\n"
-                f"{script.context}\n\n"
+                f"{script.core}\n\n"
                 f"#AINews #Shorts #AI #{script.hook_type}"
             ),
             tags=["AI", "AINews", "Shorts", script.hook_type, script.topic],
@@ -265,9 +280,20 @@ class ShortsPipeline:
                 return summary
             logger.info(f"Story: {story.get('title')}")
 
-            # 2. Generate Short scripts
-            engine  = ShortsEngineV2(data_dir=settings.data_dir)
-            scripts = engine.generate(story, max_shorts=max_shorts)
+            # 2. Build editorial dict and generate Short scripts
+            editorial = _story_to_editorial(story)
+            engine    = ShortsEngineV2(data_dir=settings.data_dir)
+
+            # Log best known combination to guide future generation strategy
+            best_combo = engine.get_best_combination()
+            if best_combo:
+                logger.info(
+                    f"ShortsV2 best combo so far: "
+                    f"[{best_combo['hook_type']}|{best_combo['style']}|{best_combo['persona']}] "
+                    f"avg_retention_3s={best_combo['avg_retention_3s']}"
+                )
+
+            scripts = engine.generate(editorial, max_shorts=max_shorts)
             summary["generated"] = len(scripts)
             logger.info(f"Generated {len(scripts)} Short scripts")
 
@@ -286,6 +312,17 @@ class ShortsPipeline:
                     f"ShortsExperiment: {new_results} new result(s), "
                     f"winners={analysis['winners']}, best={analysis['best_hook_type']!r}"
                 )
+                # Feed analytics into ShortsEngineV2's learning store so
+                # get_top_hooks() / get_best_combination() improve over time.
+                prev_scripts = {s.short_id: s for s in engine.load_scripts()}
+                for exp_result in exp_engine._store.load_results():
+                    script = prev_scripts.get(exp_result.experiment_id)
+                    if script:
+                        engine.learn(script, {
+                            "retention_3s": exp_result.retention_3s,
+                            "avg_watch":    exp_result.avg_watch_pct,
+                            "completion":   exp_result.completion_rate,
+                        })
 
             # 4. Render + upload each Short
             results: list[dict] = []
@@ -313,8 +350,8 @@ class ShortsPipeline:
                                 story_title   = story.get("title", ""),
                                 hook_type     = script.hook_type,
                                 hook_text     = script.hook,
-                                core_text     = script.context,
-                                payoff_text   = script.payoff,
+                                core_text     = script.core,
+                                payoff_text   = script.ending,
                                 video_id      = video_id,
                                 video_path    = str(video_path),
                             )
