@@ -1,0 +1,106 @@
+name: Daily Shorts (Hook Experiments)
+
+on:
+  schedule:
+    - cron: "0 10 * * *"   # 10:00 UTC daily — after the main video is live
+  workflow_dispatch:
+    inputs:
+      story:
+        description: "Override story title (leave blank to scrape top story)"
+        required: false
+        default: ""
+      max_shorts:
+        description: "Number of Shorts to generate (default 5)"
+        required: false
+        default: "5"
+      dry_run:
+        description: "Dry run — generate scripts only, skip render and upload"
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  shorts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-dejavu libjpeg-dev zlib1g-dev \
+            libfreetype6-dev liblcms2-dev libwebp-dev
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Restore data directory cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/shorts_experiments.jsonl
+            data/shorts_results.jsonl
+            data/shorts_scripts_v2.jsonl
+            data/cross_learning.jsonl
+          key: shorts-data-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            shorts-data-${{ runner.os }}-
+
+      - name: Restore YouTube token
+        run: |
+          echo "$YOUTUBE_TOKEN_PICKLE_B64" | base64 -d > config/token.pickle
+          echo "$YOUTUBE_CLIENT_SECRETS_B64" | base64 -d > config/client_secrets.json
+        env:
+          YOUTUBE_TOKEN_PICKLE_B64: ${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}
+          YOUTUBE_CLIENT_SECRETS_B64: ${{ secrets.YOUTUBE_CLIENT_SECRETS_B64 }}
+
+      - name: Run Shorts Pipeline
+        env:
+          OPENAI_API_KEY:         ${{ secrets.OPENAI_API_KEY }}
+          ELEVENLABS_API_KEY:     ${{ secrets.ELEVENLABS_API_KEY }}
+          HEYGEN_API_KEY:         ${{ secrets.HEYGEN_API_KEY }}
+          HEYGEN_AVATAR_ID:       ${{ secrets.HEYGEN_AVATAR_ID }}
+          HEYGEN_VOICE_ID:        ${{ secrets.HEYGEN_VOICE_ID }}
+          HEYGEN_ENABLED:         ${{ secrets.HEYGEN_ENABLED || 'false' }}
+          HEYGEN_ASPECT:          "9:16"
+          PEXELS_API_KEY:         ${{ secrets.PEXELS_API_KEY }}
+          YOUTUBE_PRIVACY:        ${{ secrets.YOUTUBE_PRIVACY || 'public' }}
+          SLACK_WEBHOOK_URL:      ${{ secrets.SLACK_WEBHOOK_URL }}
+          CHANNEL_NAME:           ${{ secrets.CHANNEL_NAME }}
+        run: |
+          ARGS=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          if [ -n "${{ github.event.inputs.story }}" ]; then
+            ARGS="$ARGS --story \"${{ github.event.inputs.story }}\""
+          fi
+          MAX="${{ github.event.inputs.max_shorts || '5' }}"
+          ARGS="$ARGS --max $MAX"
+          python src/shorts_pipeline.py $ARGS
+
+      - name: Save data directory cache
+        if: always()
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/shorts_experiments.jsonl
+            data/shorts_results.jsonl
+            data/shorts_scripts_v2.jsonl
+            data/cross_learning.jsonl
+          key: shorts-data-${{ runner.os }}-${{ github.run_id }}
+
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shorts-run-${{ github.run_id }}
+          path: |
+            output/shorts_*/shorts_summary.json
+            output/shorts_*/shorts_run.log
+          retention-days: 7
