@@ -733,18 +733,18 @@ class PipelineOrchestrator:
                         _ri = _rc.get("intent", "explain")
                         if _ri not in _intent_to_c or _rc.get("confidence", 1.0) > _intent_to_c[_ri].get("confidence", 1.0):
                             _intent_to_c[_ri] = _rc
-                    _rce_matched: list[Correction] = [
-                        Correction(
-                            scene_idx  = scene.idx,
-                            fix        = FixType(_rc["fix"]),
-                            drop       = DropPoint(**_rc["drop"]),
-                            scene_type = _rc["scene_type"],
-                            intent     = _rc["intent"],
-                            confidence = _rc["confidence"],
-                        )
-                        for scene in script.scenes
-                        if (_rc := _intent_to_c.get(scene.scene_intent)) is not None
-                    ]
+                    _rce_matched: list[Correction] = []
+                    for _scene in script.scenes:
+                        _match = _intent_to_c.get(_scene.scene_intent)
+                        if _match is not None:
+                            _rce_matched.append(Correction(
+                                scene_idx  = _scene.idx,
+                                fix        = FixType(_match["fix"]),
+                                drop       = DropPoint(**_match["drop"]),
+                                scene_type = _match["scene_type"],
+                                intent     = _match["intent"],
+                                confidence = _match["confidence"],
+                            ))
                     if _rce_matched:
                         _rce_engine.apply_corrections(script.scenes, _rce_matched)
                         logger.info(
