@@ -26,6 +26,9 @@ for _mod in (
     "google_auth_oauthlib.flow",
     # numpy / ffmpeg_utils (pulled in by quality_gate and video modules)
     "numpy",
+    # Pillow — imported at module level by image_generator
+    "PIL",
+    "PIL.Image",
     # arxiv pulls in feedparser which requires sgmllib (removed in Python 3)
     "arxiv",
     "feedparser",
