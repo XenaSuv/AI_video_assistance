@@ -364,7 +364,7 @@ class ShortsEngineV2:
         records = self._load_learning()
         return sorted(records, key=lambda r: r.retention_3s, reverse=True)[:n]
 
-    def get_best_combination(self) -> dict[str, str] | None:
+    def get_best_combination(self) -> dict[str, str | float] | None:
         """Return the {hook_type, style, persona} combination with the highest
         average retention_3s (requires ≥3 data points per combination).
         """
@@ -386,12 +386,13 @@ class ShortsEngineV2:
             return None
 
         best = max(candidates, key=lambda k: candidates[k])
-        return {
-            "hook_type":    best[0],
-            "style":        best[1],
-            "persona":      best[2],
-            "avg_retention_3s": round(candidates[best], 4),
+        result: dict[str, str | float] = {
+            "hook_type":         best[0],
+            "style":             best[1],
+            "persona":           best[2],
+            "avg_retention_3s":  round(candidates[best], 4),
         }
+        return result
 
     # ── daily pipeline feed ───────────────────────────────────────────────────
 
