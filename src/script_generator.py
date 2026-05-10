@@ -325,13 +325,23 @@ def _build_strategy_block(strategy: dict[str, Any] | None) -> str:
     """Return a compact prompt block describing the current content strategy."""
     if not strategy:
         return ""
-    return (
-        "=== CURRENT CONTENT STRATEGY ===\n"
-        f"- pace: {strategy.get('pace', 'normal')}\n"
-        f"- hook_aggressiveness: {strategy.get('hook_aggressiveness', 0.5):.2f}\n"
-        f"- packaging_style: {strategy.get('packaging_style', 'standard')}\n"
-        "Use this as light guidance, not as a rigid formula."
-    )
+    lines = [
+        "=== CURRENT CONTENT STRATEGY ===",
+        f"- pace: {strategy.get('pace', 'normal')}",
+        f"- hook_aggressiveness: {strategy.get('hook_aggressiveness', 0.5):.2f}",
+        f"- packaging_style: {strategy.get('packaging_style', 'standard')}",
+    ]
+    bias = strategy.get("sequence_bias")
+    if bias:
+        # Render each pattern as a readable arrow-chain, e.g. hook → twist → data
+        pattern_strs = [" → ".join(str(i) for i in p) for p in bias]
+        lines.append(
+            "- scene_intent_sequence: videos with the following scene-intent orderings "
+            "have historically retained viewers best — try to follow a similar arc: "
+            + " | ".join(pattern_strs)
+        )
+    lines.append("Use this as light guidance, not as a rigid formula.")
+    return "\n".join(lines)
 
 
 def _fill_missing_short_narrations(

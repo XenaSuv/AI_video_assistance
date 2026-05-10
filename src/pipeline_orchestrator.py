@@ -55,6 +55,7 @@ from src.live_state import LiveState
 from src.thompson_bandit import ThompsonBandit
 from src.ab_testing_engine import ABTestVariant
 from src.youtube_analytics import get_video_metrics
+from src.sequence_learning_engine import SequenceLearningEngine
 
 
 # ── Stateless helpers ─────────────────────────────────────────────────────────
@@ -509,6 +510,20 @@ class PipelineOrchestrator:
                 "exploration_rate": round(strategy.exploration_rate, 2),
                 "confidence": round(strategy.confidence, 2),
             })
+            # Pull the top-N retention-proven intent patterns from history and
+            # inject them into the strategy dict so generate_script() can pass
+            # them as ordering guidance to the GPT prompt.
+            _seq_engine = SequenceLearningEngine(data_dir=settings.data_dir)
+            _sequence_bias = _seq_engine.get_sequence_bias(n=3)
+            if _sequence_bias:
+                if self._auto_strategy is None:
+                    self._auto_strategy = {}
+                self._auto_strategy["sequence_bias"] = [list(p) for p in _sequence_bias]
+                logger.info(
+                    f"SequenceLearningEngine: injecting {len(_sequence_bias)} "
+                    f"sequence bias pattern(s): {_sequence_bias}"
+                )
+
             self._live.log_event(
                 f"Strategy: {v2_config.mode} mode, "
                 f"pace={v2_config.pace}, "
@@ -565,6 +580,12 @@ class PipelineOrchestrator:
                 script = self._humanize_script(script, persona)
                 script = self._apply_micro_hooks(script, editorial_plan, persona)
                 script = self._apply_thompson_hook(script)
+                corrections = _seq_engine.auto_correct_sequence(script.scenes)
+                if corrections:
+                    logger.info(
+                        f"SequenceLearningEngine: corrected {corrections} "
+                        f"scene intent(s) to avoid known-bad patterns"
+                    )
                 script.save(script_cache)
 
             self._script = script
@@ -985,6 +1006,31 @@ class PipelineOrchestrator:
                         f"DecisionEngineV2: recorded metrics for {video_id} "
                         f"(mode={prior_mode!r}, retention={retention:.2f})"
                     )
+
+                    # Feed SequenceLearningEngine with this video's scene-intent
+                    # sequence and its real retention so future runs can favour
+                    # orderings that historically retain viewers.
+                    script_cache = run_dir / "script.json"
+                    if script_cache.exists():
+                        try:
+                            script_data = json.loads(script_cache.read_text())
+                            scene_dicts = [
+                                {"intent": s.get("scene_intent", s.get("intent", "explain"))}
+                                for s in script_data.get("scenes", [])
+                            ]
+                            SequenceLearningEngine(data_dir=settings.data_dir).store_sequence({
+                                "scenes": scene_dicts,
+                                "performance": {
+                                    "avg_watch_pct": retention,
+                                    "ctr": 0.0,
+                                    "drops": [],
+                                },
+                            })
+                        except Exception as _seq_exc:
+                            logger.warning(
+                                f"SequenceLearningEngine: store_sequence failed "
+                                f"for {run_dir.name}: {_seq_exc}"
+                            )
 
                 adjustments = bandit.suggest_strategy_adjustments()
                 preferred = adjustments.get("preferred_variant_type")
