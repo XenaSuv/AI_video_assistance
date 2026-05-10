@@ -18,6 +18,7 @@ from src.script_generator import Scene, VideoScript
 from src.image_generator import generate_scene_clip
 from src.quote_card import render_quote_card_png
 from src.presenter import generate_presenter_clip
+from src.heygen_presenter import generate_heygen_clip
 from src.scene_strategy_engine import SceneStrategyEngine
 from src.scene_variety_engine import SceneVarietyEngineV2
 from src.voice_generator import synthesize_hook
@@ -332,22 +333,57 @@ def build_video(
         s.idx: out_dir / "audio" / f"scene_{s.idx:02d}.mp3" for s in script.scenes
     }
 
-    # Presenter hook clip (D-ID) — weekly tutorials only
+    # ── Presenter hook clip ───────────────────────────────────────────────────
+    # HeyGen takes priority over D-ID when both are enabled.
     presenter_clip: Path | None = None
-    if use_presenter and settings.presenter_enabled:
+    if use_presenter or settings.heygen_enabled:
         try:
             hook_audio = synthesize_hook(script, out_dir)
-            avatar_path = Path(settings.presenter_avatar_path)
-            if not avatar_path.is_absolute():
-                avatar_path = settings.source_dir.parent / avatar_path
-            presenter_clip = generate_presenter_clip(
-                hook_audio,
-                out_dir / "assembled" / "presenter_hook.mp4",
-                api_key=settings.did_api_key,
-                avatar_path=avatar_path,
-            )
+            if settings.heygen_enabled:
+                presenter_clip = generate_heygen_clip(
+                    hook_audio,
+                    out_dir / "assembled" / "heygen_hook.mp4",
+                    api_key=settings.heygen_api_key,
+                    avatar_id=settings.heygen_avatar_id,
+                    aspect=settings.heygen_aspect,
+                    fallback_text=script.hook,
+                    voice_id=settings.heygen_voice_id,
+                )
+            elif settings.presenter_enabled:
+                avatar_path = Path(settings.presenter_avatar_path)
+                if not avatar_path.is_absolute():
+                    avatar_path = settings.source_dir.parent / avatar_path
+                presenter_clip = generate_presenter_clip(
+                    hook_audio,
+                    out_dir / "assembled" / "presenter_hook.mp4",
+                    api_key=settings.did_api_key,
+                    avatar_path=avatar_path,
+                )
         except Exception as exc:
-            logger.warning(f"Presenter generation failed (non-fatal): {exc}")
+            logger.warning(f"Presenter hook generation failed (non-fatal): {exc}")
+
+    # ── HeyGen avatar scenes ──────────────────────────────────────────────────
+    # Replace clips for scenes with scene_type == "avatar" with HeyGen clips.
+    if settings.heygen_enabled:
+        assembled_dir = out_dir / "assembled"
+        assembled_dir.mkdir(parents=True, exist_ok=True)
+        for scene in script.scenes:
+            if scene.scene_type != "avatar":
+                continue
+            audio_path = out_dir / "audio" / f"scene_{scene.idx:02d}.mp3"
+            heygen_path = assembled_dir / f"heygen_scene_{scene.idx:02d}.mp4"
+            clip = generate_heygen_clip(
+                audio_path,
+                heygen_path,
+                api_key=settings.heygen_api_key,
+                avatar_id=settings.heygen_avatar_id,
+                aspect=settings.heygen_aspect,
+                fallback_text=scene.narration,
+                voice_id=settings.heygen_voice_id,
+            )
+            if clip is not None:
+                clip_paths_by_scene[scene.idx] = [clip]
+                logger.info(f"HeyGen: avatar clip ready for scene {scene.idx}")
 
     output_path = out_dir / "final_video.mp4"
     return assemble_video(
