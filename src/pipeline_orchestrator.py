@@ -51,6 +51,9 @@ from src.quality_gate import run_gate, QualityGateError
 from src.cost_tracker import reset_ledger
 from src.pipeline_observer import PipelineObserver
 from src.live_state import LiveState
+from src.thompson_bandit import ThompsonBandit
+from src.ab_testing_engine import ABTestVariant
+from src.youtube_analytics import get_video_metrics
 
 
 # ── Stateless helpers ─────────────────────────────────────────────────────────
@@ -163,6 +166,22 @@ def _needs_video_rebuild(video_path: Path) -> bool:
     for cached in assembled_dir.glob("title_*.mp4"):
         cached.unlink(missing_ok=True)
     return True
+
+
+def _classify_hook_type(hook: str) -> str:
+    """Return the variant type (conflict / curiosity / simple) for a hook string."""
+    lower = hook.lower()
+    if any(k in lower for k in (
+        "problem", "threat", "fail", "wrong", "danger", "crisis",
+        "battle", "war", " vs ", "collapse", "kill",
+    )):
+        return "conflict"
+    if any(k in lower for k in (
+        "nobody", "secret", "surprising", "wait", "weird", "actually",
+        "hidden", "but here", "?", "you won't", "you didn't",
+    )):
+        return "curiosity"
+    return "simple"
 
 
 def _run_language_variant(
@@ -325,6 +344,7 @@ class PipelineOrchestrator:
         self._auto_strategy: dict | None = None
         self._auto_actions: list[dict] = []
         self._auto_insights: list[dict] = []
+        self._thompson_preferred_type: str | None = None
 
         try:
             self._step_scrape()
@@ -422,6 +442,15 @@ class PipelineOrchestrator:
         feedback_analyzer.collect_deferred_feedback(min_age_hours=24.0)
         self._feedback_history = feedback_analyzer.load_feedback_history()
 
+        # Update per-video Thompson bandits from YouTube metrics and get the
+        # preferred hook type to guide this run's hook selection.
+        self._thompson_preferred_type = self._collect_thompson_strategy()
+        if self._thompson_preferred_type:
+            logger.info(
+                f"ThompsonBandit: preferred hook type from recent history: "
+                f"{self._thompson_preferred_type!r}"
+            )
+
         script_cache = self._run_dir / "script.json"
         self._observer.step_start("script")
         if not self._cp.is_done("script"):
@@ -506,6 +535,7 @@ class PipelineOrchestrator:
                 )
                 script = self._humanize_script(script, persona)
                 script = self._apply_micro_hooks(script, editorial_plan, persona)
+                script = self._apply_thompson_hook(script)
                 script.save(script_cache)
 
             self._script = script
@@ -680,6 +710,7 @@ class PipelineOrchestrator:
                         format=_ep[0].get("format", ""),
                         platform="youtube",
                     )
+                    self._setup_thompson_variants(video_id)
                     self._live.log_event(f"Uploaded to YouTube EN: {video_id}")
                     self._live.set_metrics({"video_id": video_id, "views": 0, "ctr": 0.0})
                 self._cp.mark_done("upload_en", {k: v for k, v in ids.items()})
@@ -832,6 +863,142 @@ class PipelineOrchestrator:
                 scene.narration = hooked.final_script
         logger.info(f"Applied micro-hooks to {len(script.scenes)} scenes")
         return script
+
+    # ── Thompson Bandit integration ───────────────────────────────────────────
+
+    def _collect_thompson_strategy(self) -> str | None:
+        """Update per-video Thompson bandits with fresh YouTube metrics.
+
+        Scans the last 7 run directories that contain a thompson_state.json.
+        For each, fetches current YouTube view metrics, updates the arm that
+        was active, and collects the suggested preferred hook type.
+
+        Returns the most common preferred hook type across recent videos, or
+        None if no data is available (e.g. first run, no credentials).
+        """
+        preferred_types: list[str] = []
+
+        run_dirs = sorted(
+            [p.parent for p in settings.output_dir.glob("*/thompson_state.json")],
+            key=lambda p: p.name,
+            reverse=True,
+        )[:7]
+
+        for run_dir in run_dirs:
+            if run_dir == self._run_dir:
+                continue
+            try:
+                cp_path = run_dir / "checkpoint.json"
+                if not cp_path.exists():
+                    continue
+                cp_data = json.loads(cp_path.read_text())
+                video_id = (
+                    cp_data.get("steps", {})
+                    .get("upload_en", {})
+                    .get("video_id")
+                )
+                if not video_id:
+                    continue
+
+                bandit = ThompsonBandit(data_dir=run_dir)
+                if not bandit.get_state().arms:
+                    continue
+
+                metrics = get_video_metrics(video_id)
+                if metrics:
+                    impressions = int(metrics.get("views", 0))
+                    # avg_view_percentage from YouTube API is 0-100; normalise to 0-1
+                    retention = float(metrics.get("avg_view_percentage", 0.0)) / 100.0
+                    # Use impressions as both views and potential "clicks" so the
+                    # quality-adjusted formula (clicks × retention) acts as a
+                    # retention-weighted success signal.
+                    clicks = impressions
+
+                    for arm in bandit.get_state().arms:
+                        new_imps = max(0, impressions - arm.impressions)
+                        new_clicks = max(0, clicks - arm.clicks)
+                        if new_imps > 0:
+                            bandit.update(
+                                arm.variant_id,
+                                impressions=new_imps,
+                                clicks=new_clicks,
+                                retention_30s=retention,
+                            )
+                            logger.info(
+                                f"ThompsonBandit: updated arm {arm.variant_id!r} "
+                                f"for {video_id} (+{new_imps} impressions, "
+                                f"retention={retention:.2f})"
+                            )
+                            break  # only the active arm needs updating per video
+
+                adjustments = bandit.suggest_strategy_adjustments()
+                preferred = adjustments.get("preferred_variant_type")
+                if preferred:
+                    preferred_types.append(preferred)
+
+            except Exception as exc:
+                logger.warning(
+                    f"ThompsonBandit: deferred update failed for "
+                    f"{run_dir.name}: {exc}"
+                )
+
+        if not preferred_types:
+            return None
+        # Most common preferred type wins
+        return max(set(preferred_types), key=preferred_types.count)
+
+    def _apply_thompson_hook(self, script: VideoScript) -> VideoScript:
+        """Swap the active hook to match Thompson Bandit's preferred variant type.
+
+        Only acts when there is a clear preference and at least one hook_variant
+        matches that type.  Leaves the script unchanged if no match is found.
+        """
+        if not self._thompson_preferred_type or not script.hook_variants:
+            return script
+        preferred = self._thompson_preferred_type
+        match = next(
+            (h for h in script.hook_variants if _classify_hook_type(h) == preferred),
+            None,
+        )
+        if match and match != script.hook:
+            logger.info(
+                f"ThompsonBandit: hook swapped to {preferred!r} type — "
+                f"{match[:80]!r}"
+            )
+            script.hook = match
+        return script
+
+    def _setup_thompson_variants(self, video_id: str) -> None:
+        """Register hook variants as Thompson arms for this video after upload.
+
+        Creates one arm per hook_variant (max 4), classifies each by type, then
+        calls select_variant() to log which arm the bandit currently favours.
+        State is persisted to output/<date>/thompson_state.json so the next
+        pipeline run can update it with real YouTube metrics.
+        """
+        hook_texts = self._script.hook_variants or [self._script.hook]  # type: ignore[union-attr]
+        variants = [
+            ABTestVariant(
+                id=chr(ord("A") + i),
+                type=_classify_hook_type(h),
+                title=self._script.title,  # type: ignore[union-attr]
+                thumbnail={},
+                hook=h,
+            )
+            for i, h in enumerate(hook_texts[:4])
+        ]
+
+        bandit = ThompsonBandit(data_dir=self._run_dir)
+        bandit.register_variants(variants)
+
+        best = bandit.select_variant()
+        if best:
+            bandit.record_switch()
+            logger.info(
+                f"ThompsonBandit: {len(variants)} arm(s) registered for {video_id}; "
+                f"initial selection → {best.variant_id!r} ({best.type}) "
+                f"— {best.hook[:60]!r}"
+            )
 
     def _setup_logging(self) -> None:
         _setup_logging(self._run_dir)
