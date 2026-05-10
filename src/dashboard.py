@@ -201,6 +201,63 @@ def render(state: dict) -> None:
                 m = entry.get("msg", "")
                 st.markdown(f"`{t}` {m}")
 
+    # ── hook patterns section ─────────────────────────────────────────────────
+    st.divider()
+    render_hook_patterns()
+
+
+# ── hook patterns ────────────────────────────────────────────────────────────
+
+def _load_hook_patterns() -> tuple[list[dict], list[dict]]:
+    """Load top patterns and best combos from HookPatternEngine."""
+    try:
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from src.hook_pattern_engine import HookPatternEngine
+        engine   = HookPatternEngine()
+        patterns = [p.to_dict() for p in engine.get_top_patterns(n=10)]
+        combos   = [c.to_dict() for c in engine.get_best_combo(n=10)]
+        return patterns, combos
+    except Exception:
+        return [], []
+
+
+def render_hook_patterns() -> None:
+    st.header("Hook Patterns")
+
+    patterns, combos = _load_hook_patterns()
+
+    if not patterns:
+        st.caption("No hook pattern data yet — runs after Shorts collect analytics.")
+        return
+
+    # Single-feature pattern ranking
+    st.subheader("Pattern Ranking")
+    rows = []
+    for p in patterns:
+        rows.append({
+            "Pattern":   p.get("pattern", ""),
+            "Avg Ret 3s": f"{p.get('avg_score', 0):.2%}",
+            "Count":     p.get("count", 0),
+            "Top Emotion":   p.get("top_emotion", ""),
+            "Top Structure": p.get("top_structure", ""),
+            "Top Tone":      p.get("top_tone", ""),
+        })
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+
+    if combos:
+        st.subheader("Best Combinations (pattern + tone + structure)")
+        combo_rows = []
+        for c in combos:
+            combo_rows.append({
+                "Pattern":   c.get("pattern", ""),
+                "Tone":      c.get("tone", ""),
+                "Structure": c.get("structure", ""),
+                "Avg Ret 3s": f"{c.get('avg_score', 0):.2%}",
+                "Count":     c.get("count", 0),
+            })
+        st.dataframe(combo_rows, use_container_width=True, hide_index=True)
+
 
 # ── entry point ───────────────────────────────────────────────────────────────
 

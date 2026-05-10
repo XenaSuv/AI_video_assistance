@@ -304,7 +304,9 @@ class ShortsPipeline:
                 return summary
 
             # 3. Collect deferred analytics from previous run's Shorts
-            exp_engine = ShortsExperimentEngine(data_dir=settings.data_dir)
+            from src.hook_pattern_engine import HookPatternEngine
+            exp_engine     = ShortsExperimentEngine(data_dir=settings.data_dir)
+            pattern_engine = HookPatternEngine(data_dir=settings.data_dir)
             new_results = exp_engine.collect_analytics(min_age_hours=4.0)
             if new_results:
                 analysis = exp_engine.analyze()
@@ -312,17 +314,25 @@ class ShortsPipeline:
                     f"ShortsExperiment: {new_results} new result(s), "
                     f"winners={analysis['winners']}, best={analysis['best_hook_type']!r}"
                 )
-                # Feed analytics into ShortsEngineV2's learning store so
-                # get_top_hooks() / get_best_combination() improve over time.
+                # Feed analytics into ShortsEngineV2's learning store and
+                # HookPatternEngine so both levels of learning improve.
                 prev_scripts = {s.short_id: s for s in engine.load_scripts()}
                 for exp_result in exp_engine._store.load_results():
                     script = prev_scripts.get(exp_result.experiment_id)
                     if script:
-                        engine.learn(script, {
+                        metrics = {
                             "retention_3s": exp_result.retention_3s,
                             "avg_watch":    exp_result.avg_watch_pct,
                             "completion":   exp_result.completion_rate,
-                        })
+                        }
+                        engine.learn(script, metrics)
+                        # Feature-level learning: WHY did this hook work?
+                        pattern_engine.record(
+                            hook_text    = script.hook,
+                            hook_type    = script.hook_type,
+                            retention_3s = exp_result.retention_3s,
+                            short_id     = script.short_id,
+                        )
 
             # 4. Render + upload each Short
             results: list[dict] = []
