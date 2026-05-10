@@ -34,6 +34,7 @@ from src.viral_selector import pick_viral_news
 from src.editorial_brain import EditorialBrain
 from src.humanizer_agent import HumanizerAgent
 from src.micro_hook_agent import MicroHookAgent
+from src.presentation_engine import PresentationEngine
 from src.script_generator import Scene, VideoScript, generate_script
 from src.subtitle_generator import generate_subtitles
 from src.thumbnail_ab import (
@@ -784,6 +785,14 @@ class PipelineOrchestrator:
                         "RetentionCorrectionEngine: forced avatar intro "
                         "(drop at scene 0 detected in prior video)"
                     )
+
+                # Apply presentation direction (voice SSML + visual + pacing)
+                _persona_str = v3_strategy.persona if hasattr(v3_strategy, "persona") else "direct"
+                _pres_strategy: dict[str, str] = {
+                    "format": v3_strategy.packaging_style if hasattr(v3_strategy, "packaging_style") else "long",
+                }
+                script = PresentationEngine().apply(script, _pres_strategy, persona=_persona_str)
+
                 script.save(script_cache)
 
             self._script = script
