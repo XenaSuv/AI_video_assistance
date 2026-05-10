@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import json
 import sys
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -62,6 +63,90 @@ from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+
+
+# ── PerformanceStore ──────────────────────────────────────────────────────────
+
+_DEFAULT_METRICS: dict[str, Any] = {
+    "avg_watch_pct":  0.50,
+    "hook_retention": 0.50,
+    "drop_points":    [],
+    "ctr":            0.04,
+    "recent_trend":   "stable",
+}
+
+
+class PerformanceStore:
+    """Append-only JSON log of channel metrics + strategy used per video.
+
+    Used by DecisionEngineV3 to build channel-level context for decide().
+    """
+
+    def __init__(self, data_dir: Path | None = None) -> None:
+        self._data_dir = data_dir or settings.data_dir
+        self._path = self._data_dir / "performance_store.json"
+
+    def save(
+        self,
+        video_id: str,
+        metrics: dict[str, Any],
+        strategy_mode: str,
+    ) -> None:
+        entries = self._load_raw()
+        entries.append({
+            "video_id":      video_id,
+            "timestamp":     datetime.now(timezone.utc).isoformat(),
+            "metrics":       metrics,
+            "strategy_mode": strategy_mode,
+        })
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._path.write_text(json.dumps(entries, indent=2))
+        logger.debug(f"PerformanceStore: saved entry for {video_id!r}")
+
+    def load_recent(self, n: int = 10) -> list[dict[str, Any]]:
+        return self._load_raw()[-n:]
+
+    def get_channel_metrics(self) -> dict[str, Any]:
+        recent = self.load_recent()
+        if not recent:
+            return dict(_DEFAULT_METRICS)
+        watch_pcts = [e["metrics"].get("avg_watch_pct",  0.5)  for e in recent]
+        hook_rets  = [e["metrics"].get("hook_retention",  0.5)  for e in recent]
+        ctrs       = [e["metrics"].get("ctr",             0.04) for e in recent]
+        trend      = self._compute_trend(watch_pcts)
+        all_drops: list[int] = []
+        for e in recent:
+            all_drops.extend(e["metrics"].get("drop_points", []))
+        common_drops = [p for p, _ in Counter(all_drops).most_common(3)]
+        return {
+            "avg_watch_pct":  round(sum(watch_pcts) / len(watch_pcts), 4),
+            "hook_retention": round(sum(hook_rets)  / len(hook_rets),  4),
+            "drop_points":    common_drops,
+            "ctr":            round(sum(ctrs)        / len(ctrs),       4),
+            "recent_trend":   trend,
+        }
+
+    def _compute_trend(self, values: list[float]) -> str:
+        if len(values) < 2:
+            return "stable"
+        mid        = len(values) // 2
+        recent_avg = sum(values[mid:]) / len(values[mid:])
+        older_avg  = sum(values[:mid]) / len(values[:mid])
+        if recent_avg < older_avg - 0.05:
+            return "down"
+        if recent_avg > older_avg + 0.05:
+            return "up"
+        return "stable"
+
+    def _load_raw(self) -> list[dict[str, Any]]:
+        try:
+            if self._path.exists():
+                data = json.loads(self._path.read_text())
+                if isinstance(data, list):
+                    return data
+        except Exception as exc:
+            logger.warning(f"PerformanceStore: could not read store ({exc})")
+        return []
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────

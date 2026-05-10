@@ -431,7 +431,8 @@ def create_orchestrator(data_dir: Path | None = None) -> SystemOrchestrator:
 
     All components read/write under *data_dir* so every video run is isolated.
     """
-    from src.decision_engine_v2     import DecisionEngineV2
+    from src.decision_engine_v3     import DecisionEngineV3, PerformanceStore
+    from src.shared_types           import ScenePolicy, StrategyConfig
     from src.packaging_engine       import PackagingEngine
     from src.scene_bandit           import SceneBandit
     from src.scene_variety_engine   import SceneVarietyEngineV2
@@ -468,8 +469,51 @@ def create_orchestrator(data_dir: Path | None = None) -> SystemOrchestrator:
             records.append(record)
             self._path.write_text(json.dumps(records, indent=2))
 
+    _v3_mode_map = {
+        "stable":          "safe",
+        "packaging_focus": "growth",
+        "retention_fix":   "safe",
+        "growth":          "growth",
+    }
+
+    class _V3DecisionAdapter:
+        """Wraps DecisionEngineV3 with the decide(metrics, scene_bandit=) interface."""
+        def __init__(self, data_dir: Path) -> None:
+            self._v3    = DecisionEngineV3(data_dir=data_dir)
+            self._store = PerformanceStore(data_dir=data_dir)
+
+        def decide(self, metrics: dict | None = None, scene_bandit=None) -> StrategyConfig:
+            scene_sig: dict[str, Any] = {}
+            if scene_bandit is not None:
+                arm = scene_bandit.select_policy()
+                if arm:
+                    scene_sig = {"scene_mix": getattr(arm, "scene_mix", {})}
+            context: dict[str, Any] = {
+                "metrics":    metrics or self._store.get_channel_metrics(),
+                "bandit":     {"scene": scene_sig, "packaging": {}},
+                "prediction": {"risks": []},
+                "history":    self._v3.load_history(),
+            }
+            unified = self._v3.decide(context)
+            mode    = _v3_mode_map.get(unified.mode, "growth")
+            policy  = ScenePolicy(
+                mix                         = unified.scene_policy,
+                pattern_interrupt_frequency = 2 if mode == "growth" else 4,
+                priority_intents            = (
+                    ["hook", "shock"] if mode == "growth" else ["hook"]
+                ),
+                avoid_repetition            = True,
+            )
+            return StrategyConfig(
+                mode                = mode,
+                pace                = unified.pace if unified.pace in ("fast", "normal", "slow") else "normal",
+                hook_aggressiveness = unified.hook_aggressiveness,
+                scene_policy        = policy,
+                scene_mix           = unified.scene_policy,
+            )
+
     return SystemOrchestrator(
-        decision_engine   = DecisionEngineV2(data_dir=d),
+        decision_engine   = _V3DecisionAdapter(data_dir=d),
         packaging_engine  = PackagingEngine(),
         scene_bandit      = SceneBandit(data_dir=d),
         scene_engine      = scene_engine,
