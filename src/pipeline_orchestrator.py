@@ -24,7 +24,8 @@ from src.deduplicator import SeenStories
 from src.digest_script_generator import save_for_digest
 from src.hook_selector import record_usage
 from src.analytics import get_recommendations
-from src.decision_engine_v2 import DecisionEngineV2, StrategyConfig
+from src.decision_engine_v3 import DecisionEngineV3, UnifiedStrategy
+from src.decision_engine_v2 import PerformanceStore
 from src.shared_types import ContentStrategy
 from src.feedback_analyzer import FeedbackAnalyzer
 from src.hook_mutation_engine import HookMutationEngine
@@ -171,10 +172,10 @@ def _needs_video_rebuild(video_path: Path) -> bool:
     return True
 
 
-def _strategy_config_to_content_strategy(config: StrategyConfig) -> ContentStrategy:
-    """Bridge DecisionEngineV2 StrategyConfig to ContentStrategy for editorial_brain.
+def _unified_strategy_to_content_strategy(strategy: UnifiedStrategy) -> ContentStrategy:
+    """Bridge DecisionEngineV3 UnifiedStrategy to ContentStrategy for editorial_brain.
 
-    v2 operates at channel level (mode, pace, hook_aggressiveness).
+    v3 operates at channel level (mode, pace, hook_aggressiveness, packaging_style).
     ContentStrategy is story-level (angle_weights, format_weights, exploration_rate).
 
     angle_weights and format_weights are left empty — editorial_brain already
@@ -182,11 +183,23 @@ def _strategy_config_to_content_strategy(config: StrategyConfig) -> ContentStrat
 
     exploration_rate is derived from hook_aggressiveness: a more aggressive hook
     posture means less random exploration (we're committing to proven tactics).
-    confidence is tied to mode: safe → high confidence, experimental → low.
+    confidence is tied to mode: retention_fix → high, stable → medium-high,
+    growth → medium, packaging_focus → medium.
     """
-    mode = "balanced" if config.mode == "experimental" else config.mode
-    exploration_rate = round(max(0.1, min(0.4, 0.4 - config.hook_aggressiveness * 0.3)), 2)
-    confidence = {"safe": 0.8, "growth": 0.5, "experimental": 0.3}.get(config.mode, 0.5)
+    mode_map = {
+        "growth":          "growth",
+        "packaging_focus": "growth",    # aggressive posture, same energy as growth
+        "retention_fix":   "safe",      # conservative: fix before pushing
+        "stable":          "balanced",
+    }
+    mode = mode_map.get(strategy.mode, "balanced")
+    exploration_rate = round(max(0.1, min(0.4, 0.4 - strategy.hook_aggressiveness * 0.3)), 2)
+    confidence = {
+        "retention_fix":   0.8,
+        "stable":          0.7,
+        "growth":          0.5,
+        "packaging_focus": 0.6,
+    }.get(strategy.mode, 0.5)
     return ContentStrategy(
         angle_weights={},
         format_weights={},
@@ -373,7 +386,7 @@ class PipelineOrchestrator:
         self._auto_actions: list[dict] = []
         self._auto_insights: list[dict] = []
         self._thompson_preferred_type: str | None = None
-        self._v2_config: StrategyConfig | None = None
+        self._v3_strategy: UnifiedStrategy | None = None
 
         try:
             self._step_scrape()
@@ -491,23 +504,42 @@ class PipelineOrchestrator:
             self._summary["auto_actions"] = self._auto_actions
             self._summary["insights"] = self._auto_insights
 
-            decision_engine = DecisionEngineV2()
-            v2_config: StrategyConfig = decision_engine.decide()
+            # Build context for DecisionEngineV3: channel metrics + bandit signals
+            _perf_store = PerformanceStore(data_dir=settings.data_dir)
+            _v3_engine = DecisionEngineV3(data_dir=settings.data_dir)
+            _v3_context = {
+                "metrics": _perf_store.get_channel_metrics(),
+                "bandit": {
+                    "scene": {},
+                    "packaging": {
+                        "preferred_variant_type": self._thompson_preferred_type or "",
+                    },
+                },
+                "prediction": {"risks": []},
+                "history": _v3_engine.load_history(),
+            }
+            v3_strategy: UnifiedStrategy = _v3_engine.decide(_v3_context)
             # Derive ContentStrategy for editorial_brain (angle/format weights are
             # handled by editorial_brain's own FeedbackAnalyzer, so empty is fine).
-            strategy = _strategy_config_to_content_strategy(v2_config)
-            self._v2_config = v2_config  # kept for record() in deferred feedback
+            strategy = _unified_strategy_to_content_strategy(v3_strategy)
+            self._v3_strategy = v3_strategy  # kept for PerformanceStore in deferred feedback
 
             logger.info(
-                f"Strategic decisions: mode={v2_config.mode}, "
-                f"pace={v2_config.pace}, "
-                f"hook_aggressiveness={v2_config.hook_aggressiveness:.2f}"
+                f"Strategic decisions: mode={v3_strategy.mode}, "
+                f"pace={v3_strategy.pace}, "
+                f"hook_aggressiveness={v3_strategy.hook_aggressiveness:.2f}, "
+                f"packaging={v3_strategy.packaging_style}, "
+                f"persona={v3_strategy.persona}, "
+                f"actions={v3_strategy.actions}"
             )
             self._live.set_strategy({
-                "mode": v2_config.mode,
-                "pace": v2_config.pace,
-                "hook_aggressiveness": round(v2_config.hook_aggressiveness, 2),
-                "video_length": v2_config.video_length,
+                "mode": v3_strategy.mode,
+                "pace": v3_strategy.pace,
+                "hook_aggressiveness": round(v3_strategy.hook_aggressiveness, 2),
+                "packaging_style": v3_strategy.packaging_style,
+                "persona": v3_strategy.persona,
+                "actions": v3_strategy.actions,
+                "mode_locked": v3_strategy.mode_locked,
                 "exploration_rate": round(strategy.exploration_rate, 2),
                 "confidence": round(strategy.confidence, 2),
             })
@@ -533,8 +565,8 @@ class PipelineOrchestrator:
             if _cross_rec:
                 if self._auto_strategy is None:
                     self._auto_strategy = {}
-                self._auto_strategy["pace"]    = _cross_rec.get("pace",    v2_config.pace)
-                self._auto_strategy["persona"] = _cross_rec.get("persona", "balanced")
+                self._auto_strategy["pace"]    = _cross_rec.get("pace",    v3_strategy.pace)
+                self._auto_strategy["persona"] = _cross_rec.get("persona", v3_strategy.persona)
                 # Use cross-learning hook type when Thompson has no preference yet
                 if not self._thompson_preferred_type:
                     self._thompson_preferred_type = _cross_rec.get("hook_type")
@@ -544,11 +576,19 @@ class PipelineOrchestrator:
                     f"persona={_cross_rec.get('persona')!r}  "
                     f"hook_type={_cross_rec.get('hook_type')!r}"
                 )
+            # Fall back to v3's packaging style as hook type signal when neither
+            # Thompson nor cross-engine has accumulated enough data yet.
+            if not self._thompson_preferred_type and v3_strategy.packaging_style:
+                self._thompson_preferred_type = v3_strategy.packaging_style
+                logger.info(
+                    f"DecisionEngineV3: using packaging_style={v3_strategy.packaging_style!r} "
+                    f"as initial Thompson hook type signal"
+                )
 
             self._live.log_event(
-                f"Strategy: {v2_config.mode} mode, "
-                f"pace={v2_config.pace}, "
-                f"hook={v2_config.hook_aggressiveness:.1f}"
+                f"Strategy: {v3_strategy.mode} mode, "
+                f"pace={v3_strategy.pace}, "
+                f"hook={v3_strategy.hook_aggressiveness:.1f}"
             )
 
             top_recs = get_recommendations()
@@ -623,15 +663,15 @@ class PipelineOrchestrator:
             self._cp.mark_done("script", {
                 "title": script.title,
                 "num_scenes": len(script.scenes),
-                "v2_mode": self._v2_config.mode if self._v2_config else "growth",
-                "v2_pace": self._v2_config.pace if self._v2_config else "normal",
+                "v3_mode": self._v3_strategy.mode if self._v3_strategy else "stable",
+                "v3_pace": self._v3_strategy.pace if self._v3_strategy else "normal",
                 # Stored so _collect_thompson_strategy() can feed CrossLearningEngine
                 # with the actual combo that ran once YouTube metrics arrive.
                 "cross_combo": {
                     "hook_type":  _classify_hook_type(script.hook),
                     "scene_type": _dominant_scene_type,
                     "persona":    (self._auto_strategy or {}).get("persona", "balanced"),
-                    "pace":       self._v2_config.pace if self._v2_config else "normal",
+                    "pace":       self._v3_strategy.pace if self._v3_strategy else "normal",
                     "topic":      "AI news",
                 },
             })
@@ -1022,14 +1062,14 @@ class PipelineOrchestrator:
                             )
                             break  # only the active arm needs updating per video
 
-                    # Feed DecisionEngineV2's PerformanceStore with real metrics so
-                    # the next decide() call has accurate channel-level data.
+                    # Feed PerformanceStore with real metrics so DecisionEngineV3's
+                    # next decide() call has accurate channel-level data.
                     prior_mode = (
                         cp_data.get("steps", {})
                         .get("script", {})
-                        .get("v2_mode", "growth")
+                        .get("v3_mode", "stable")
                     )
-                    DecisionEngineV2().record(
+                    PerformanceStore(data_dir=settings.data_dir).save(
                         video_id=video_id,
                         metrics={
                             "avg_watch_pct":  retention,
@@ -1037,10 +1077,10 @@ class PipelineOrchestrator:
                             "ctr":            0.0,   # not available from basic metrics
                             "drop_points":    [],
                         },
-                        strategy=StrategyConfig(mode=prior_mode),
+                        strategy_mode=prior_mode,
                     )
                     logger.info(
-                        f"DecisionEngineV2: recorded metrics for {video_id} "
+                        f"PerformanceStore: recorded metrics for {video_id} "
                         f"(mode={prior_mode!r}, retention={retention:.2f})"
                     )
 
