@@ -1001,6 +1001,19 @@ class PipelineOrchestrator:
                         )
                     except Exception as _mem_exc:
                         logger.debug(f"PersonaMemory record skipped: {_mem_exc}")
+                    try:
+                        from src.narrative_identity_engine import get_narrative_engine
+                        _ep_plan = _ep[0] if _ep else {}
+                        get_narrative_engine().record(
+                            topic      = self._script.title,
+                            content    = self._script.hook,
+                            entry_type = _ep_plan.get("format", "opinion"),
+                            theme      = _ep_plan.get("theme", ""),
+                            arc_key    = _ep_plan.get("arc_key", ""),
+                            video_id   = video_id,
+                        )
+                    except Exception as _narr_exc:
+                        logger.debug(f"NarrativeMemory record skipped: {_narr_exc}")
                     self._live.log_event(f"Uploaded to YouTube EN: {video_id}")
                     self._live.set_metrics({"video_id": video_id, "views": 0, "ctr": 0.0})
                 self._cp.mark_done("upload_en", {k: v for k, v in ids.items()})

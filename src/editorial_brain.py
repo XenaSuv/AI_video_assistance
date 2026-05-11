@@ -188,7 +188,7 @@ class EditorialBrain:
         fmt = format_data["format"]
         scene_plan = self._director_bridge(format_data, angle_data["key"], variation)
 
-        return {
+        plan = {
             "story_id": story.url,
             "angle": angle,
             "conflict": conflict,
@@ -201,6 +201,18 @@ class EditorialBrain:
             "persona": persona,
             "scene_plan": scene_plan,
         }
+        return self._enrich_with_narrative(plan, story)
+
+    def _enrich_with_narrative(
+        self, plan: dict[str, Any], story: "NewsItem"
+    ) -> dict[str, Any]:
+        """Apply NarrativeIdentityEngine to add theme / arc / memory callbacks."""
+        try:
+            from src.narrative_identity_engine import get_narrative_engine
+            return get_narrative_engine().apply(plan, story.title)
+        except Exception as exc:
+            logger.debug(f"NarrativeIdentityEngine skipped: {exc}")
+            return plan
 
     def _story_summary(self, story: NewsItem) -> dict[str, Any]:
         return {
