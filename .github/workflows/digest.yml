@@ -85,7 +85,7 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ vars.SLACK_WEBHOOK_URL }}
           OPENAI_API_KEY:         ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_MODEL:           gpt-4o-mini
+          OPENAI_MODEL:           ${{ vars.OPENAI_MODEL || 'gpt-4o-mini' }}
           ELEVENLABS_API_KEY:     ${{ secrets.ELEVENLABS_API_KEY }}
           ELEVENLABS_VOICE_ID:    ${{ secrets.ELEVENLABS_VOICE_ID }}
           ELEVENLABS_MODEL:       eleven_turbo_v2_5
@@ -108,6 +108,9 @@ jobs:
           RU_ELEVENLABS_MODEL:    eleven_multilingual_v2
           RU_YOUTUBE_CLIENT_SECRETS: config/client_secrets_ru.json
           RU_YOUTUBE_TOKEN_FILE:  config/token_ru.pickle
+          PRESENTER_ENABLED:      ${{ vars.PRESENTER_ENABLED || 'false' }}
+          PRESENTER_AVATAR_PATH:  ${{ vars.PRESENTER_AVATAR_PATH || 'assets/avatar.png' }}
+          RUNWAYML_API_KEY:       ${{ secrets.RUNWAYML_API_KEY }}
         run: |
           ARGS=""
           if [ -n "${{ github.event.inputs.date }}" ]; then
