@@ -210,6 +210,9 @@ def _build_script_from_editorial(
     hook_text: str,
     loop_idx: int = 0,
 ) -> ShortScript:
+    from src.persona_engine import get_default_engine
+    persona_engine = get_default_engine()
+
     topic     = editorial.get("topic", "AI")
     core_fact = editorial.get("core_fact", topic)
     angle     = editorial.get("angle", "")
@@ -222,20 +225,30 @@ def _build_script_from_editorial(
     style   = _STYLE_MAP[hook_type]
     persona = _PERSONA_MAP[hook_type]
 
+    # Opinion-first core: persona's take before the raw fact
+    # Hook → Opinion ("But here's what nobody is saying.") → Fact
+    callback = persona_engine.get_callback(topic)
+    opinion_core = persona_engine.opinionize_core(first_sentence + ".", hook_type)
+    core = (callback + " " + opinion_core).strip() if callback else opinion_core
+
     twist = (
         f"Here's what's actually happening: {first_sentence.lower()}."
         if not angle
         else angle.rstrip(".") + "."
     )
 
+    # Kicker = signature phrase + loop cliffhanger
+    kicker = persona_engine.get_signature("kicker", seed=f"{topic}{hook_type}{loop_idx}")
+    ending = f"{kicker} {loop}"
+
     return ShortScript(
         short_id   = str(uuid.uuid4()),
         topic      = topic,
         hook_type  = hook_type,
         hook       = hook_text,
-        core       = first_sentence + ".",
+        core       = core,
         twist      = twist,
-        ending     = f"The real implication? {loop}",
+        ending     = ending,
         style      = style,
         persona    = persona,
         use_avatar = settings.heygen_enabled,

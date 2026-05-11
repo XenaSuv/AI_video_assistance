@@ -988,6 +988,19 @@ class PipelineOrchestrator:
                         platform="youtube",
                     )
                     self._setup_thompson_variants(video_id)
+                    # Record persona memory so the character can reference this
+                    # opinion in future videos ("I said this before...")
+                    try:
+                        from src.persona_engine import PersonaEngine
+                        _fmt = _ep[0].get("format", "opinion")
+                        PersonaEngine().record(
+                            topic      = self._script.title,
+                            opinion    = self._script.hook,
+                            entry_type = _fmt if _fmt in ("hot_take", "prediction", "reaction", "breakdown") else "opinion",
+                            video_id   = video_id,
+                        )
+                    except Exception as _mem_exc:
+                        logger.debug(f"PersonaMemory record skipped: {_mem_exc}")
                     self._live.log_event(f"Uploaded to YouTube EN: {video_id}")
                     self._live.set_metrics({"video_id": video_id, "views": 0, "ctr": 0.0})
                 self._cp.mark_done("upload_en", {k: v for k, v in ids.items()})
@@ -1146,7 +1159,12 @@ class PipelineOrchestrator:
     # ── Script post-processing helpers ────────────────────────────────────────
 
     def _humanize_script(self, script: VideoScript, persona: dict) -> VideoScript:
-        """Run HumanizerAgent and apply changes back to scene narrations."""
+        """Run HumanizerAgent with PersonaEngine-enriched persona."""
+        from src.persona_engine import PersonaEngine
+        pe = PersonaEngine()
+        story_text = script.title + " " + (script.description or "")
+        enriched_persona = {**persona, **pe.as_humanizer_persona(story_text=story_text)}
+
         SCENE_MARKER = "<<<SCENE_{idx}>>>"
         marked = "\n\n".join(
             f"{SCENE_MARKER.format(idx=s.idx)}\n{s.narration}"
@@ -1156,7 +1174,7 @@ class PipelineOrchestrator:
         humanized = humanizer.run(
             script=marked,
             editorial_plan=self._summary["editorial_plan"],
-            persona=persona,
+            persona=enriched_persona,
         )
         logger.info(
             f"Humanized script with {len(humanized.changes)} changes: {humanized.changes}"
