@@ -80,6 +80,7 @@ def _create_video(
     avatar_id: str,
     audio_url: str,
     aspect: str = "16:9",
+    avatar_style: str = "normal",
 ) -> str:
     """Submit a video generation job and return the video_id."""
     dim = _DIMENSIONS.get(aspect, _DIMENSIONS["16:9"])
@@ -88,7 +89,7 @@ def _create_video(
             "character": {
                 "type":         "avatar",
                 "avatar_id":    avatar_id,
-                "avatar_style": "normal",
+                "avatar_style": avatar_style,
             },
             "voice": {
                 "type":      "audio",
@@ -121,6 +122,7 @@ def _create_video_text(
     voice_id: str,
     text: str,
     aspect: str = "16:9",
+    avatar_style: str = "normal",
 ) -> str:
     """Text-to-speech fallback: create video from narration text."""
     dim = _DIMENSIONS.get(aspect, _DIMENSIONS["16:9"])
@@ -129,7 +131,7 @@ def _create_video_text(
             "character": {
                 "type":         "avatar",
                 "avatar_id":    avatar_id,
-                "avatar_style": "normal",
+                "avatar_style": avatar_style,
             },
             "voice": {
                 "type":       "text",
@@ -203,6 +205,7 @@ def generate_heygen_clip(
     api_key: str,
     avatar_id: str,
     aspect: str = "16:9",
+    avatar_style: str = "normal",
     fallback_text: str = "",
     voice_id: str = "",
 ) -> Path | None:
@@ -211,6 +214,9 @@ def generate_heygen_clip(
     Tries audio-driven mode first (best lip-sync quality).  Falls back to
     text-to-speech mode using *fallback_text* when audio upload fails and
     *voice_id* is provided.
+
+    *avatar_style* — "normal" | "closeup" — controls framing. Pass "closeup"
+    for high-impact intents (shock, twist, hook).
 
     Returns *out_path* on success, None on failure (always non-fatal).
     """
@@ -231,9 +237,9 @@ def generate_heygen_clip(
     try:
         # ── Audio-driven mode ─────────────────────────────────────────────────
         if audio_path.exists():
-            logger.info(f"HeyGen: uploading audio {audio_path.name}")
+            logger.info(f"HeyGen: uploading audio {audio_path.name} (style={avatar_style!r})")
             audio_url = _upload_audio(audio_path, api_key)
-            video_id  = _create_video(api_key, avatar_id, audio_url, aspect=aspect)
+            video_id  = _create_video(api_key, avatar_id, audio_url, aspect=aspect, avatar_style=avatar_style)
             logger.info(f"HeyGen: video generation started — {video_id}")
             result_url = _poll_video(api_key, video_id)
             _download(result_url, out_path)
@@ -243,7 +249,10 @@ def generate_heygen_clip(
         # ── Text-to-speech fallback ───────────────────────────────────────────
         if fallback_text and voice_id:
             logger.info("HeyGen: audio missing, falling back to TTS mode")
-            video_id   = _create_video_text(api_key, avatar_id, voice_id, fallback_text, aspect=aspect)
+            video_id   = _create_video_text(
+                api_key, avatar_id, voice_id, fallback_text,
+                aspect=aspect, avatar_style=avatar_style,
+            )
             result_url = _poll_video(api_key, video_id)
             _download(result_url, out_path)
             logger.info(f"HeyGen: TTS clip saved — {out_path.name}")

@@ -201,6 +201,14 @@ def render(state: dict) -> None:
                 m = entry.get("msg", "")
                 st.markdown(f"`{t}` {m}")
 
+    # ── narrative conflict section ────────────────────────────────────────────
+    st.divider()
+    render_narrative_conflicts()
+
+    # ── narrative identity section ────────────────────────────────────────────
+    st.divider()
+    render_narrative_identity()
+
     # ── hook patterns section ─────────────────────────────────────────────────
     st.divider()
     render_hook_patterns()
@@ -266,6 +274,118 @@ st.set_page_config(
     page_icon="🎬",
     layout="wide",
 )
+
+# ── narrative conflicts ───────────────────────────────────────────────────────
+
+def render_narrative_conflicts() -> None:
+    st.header("Narrative Conflicts")
+
+    try:
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from src.narrative_conflict_engine import (
+            NarrativeConflictEngine, CONFLICT_TYPES,
+        )
+        engine = NarrativeConflictEngine()
+        stats  = engine.stats()
+        recent = engine._memory.load_recent(n=10)
+    except Exception:
+        st.caption("No conflict data yet — builds after the first few videos.")
+        return
+
+    if not stats["total"]:
+        st.caption("No conflict data yet — builds after the first few videos.")
+        return
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total conflicts",   stats["total"])
+    col2.metric("Dominant type",     stats["dominant_type"])
+    col3.metric("Avg intensity",     f"{stats['avg_intensity']:.2f}")
+
+    st.subheader("Conflict type distribution")
+    type_rows = [
+        {"Type": t, "Count": stats["type_counts"].get(t, 0)}
+        for t in CONFLICT_TYPES
+    ]
+    st.dataframe(type_rows, use_container_width=True, hide_index=True)
+
+    if recent:
+        st.subheader("Recent conflicts")
+        rows = [
+            {
+                "Date":      e.recorded_at[:10],
+                "Type":      e.conflict_type,
+                "Intensity": f"{e.intensity:.2f}",
+                "Topic":     e.topic[:50],
+                "Line":      e.line[:80],
+            }
+            for e in reversed(recent)
+        ]
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+
+
+# ── narrative identity ────────────────────────────────────────────────────────
+
+def render_narrative_identity() -> None:
+    st.header("Narrative Identity")
+
+    try:
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from src.narrative_identity_engine import (
+            NarrativeIdentityEngine, BELIEFS, THEMES, ARCS, CALLBACKS,
+        )
+        engine = NarrativeIdentityEngine()
+        arc_data = engine.arc_status()
+        recent   = engine._memory.load_recent(n=10)
+    except Exception:
+        st.caption("Narrative identity data not available yet.")
+        return
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("Core Beliefs")
+        for belief, stance in BELIEFS.items():
+            st.write(f"**{belief.replace('_', ' ')}** → {stance.replace('_', ' ')}")
+
+    with col2:
+        st.subheader("Recurring Themes")
+        for theme in THEMES:
+            st.write(f"• {theme.replace('_', ' ')}")
+
+    st.subheader("Narrative Arcs")
+    arc_rows = []
+    for arc_key, info in arc_data.items():
+        arc_rows.append({
+            "Arc":      info["label"],
+            "Status":   info["status"],
+            "Episodes": info["episode_count"],
+            "Last":     (info["last_episode"] or "")[:10],
+            "Summary":  info["summary"],
+        })
+    st.dataframe(arc_rows, use_container_width=True, hide_index=True)
+
+    if recent:
+        st.subheader("Recent Memory (last 10 entries)")
+        mem_rows = [
+            {
+                "Date":  e.recorded_at[:10],
+                "Type":  e.entry_type,
+                "Topic": e.topic[:60],
+                "Theme": e.theme,
+                "Arc":   e.arc_key,
+            }
+            for e in reversed(recent)
+        ]
+        st.dataframe(mem_rows, use_container_width=True, hide_index=True)
+    else:
+        st.caption("No narrative memory yet — builds after the first few videos are published.")
+
+    with st.expander("Signature Callbacks"):
+        for cb in CALLBACKS:
+            st.write(f"• {cb}")
+
 
 state = _load_state()
 render(state)

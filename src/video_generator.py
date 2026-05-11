@@ -295,6 +295,7 @@ def build_video(
     use_presenter: bool = False,
     editorial_plan: object | None = None,
     strategy_config: object | None = None,
+    persona: str = "direct",
 ) -> Path:
     """End-to-end video creation.
 
@@ -363,27 +364,26 @@ def build_video(
             logger.warning(f"Presenter hook generation failed (non-fatal): {exc}")
 
     # ── HeyGen avatar scenes ──────────────────────────────────────────────────
-    # Replace clips for scenes with scene_type == "avatar" with HeyGen clips.
+    # AvatarEngine selects avatar_style per scene_intent and adds subtitles.
     if settings.heygen_enabled:
+        from src.avatar_engine import AvatarEngine
+        avatar_engine = AvatarEngine()
         assembled_dir = out_dir / "assembled"
         assembled_dir.mkdir(parents=True, exist_ok=True)
         for scene in script.scenes:
             if scene.scene_type != "avatar":
                 continue
             audio_path = out_dir / "audio" / f"scene_{scene.idx:02d}.mp3"
-            heygen_path = assembled_dir / f"heygen_scene_{scene.idx:02d}.mp4"
-            clip = generate_heygen_clip(
+            clip = avatar_engine.render_for_scene(
+                scene,
                 audio_path,
-                heygen_path,
-                api_key=settings.heygen_api_key,
-                avatar_id=settings.heygen_avatar_id,
+                assembled_dir,
+                persona=persona,
                 aspect=settings.heygen_aspect,
-                fallback_text=scene.narration,
-                voice_id=settings.heygen_voice_id,
             )
             if clip is not None:
                 clip_paths_by_scene[scene.idx] = [clip]
-                logger.info(f"HeyGen: avatar clip ready for scene {scene.idx}")
+                logger.info(f"AvatarEngine: clip ready for scene {scene.idx}")
 
     output_path = out_dir / "final_video.mp4"
     return assemble_video(

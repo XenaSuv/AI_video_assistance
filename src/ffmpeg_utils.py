@@ -689,6 +689,41 @@ def make_vertical(
     return output
 
 
+def zoom_clip(
+    video: Path,
+    output: Path,
+    *,
+    scale: float = 1.15,
+) -> Path:
+    """Scale up and centre-crop a rendered video to create a zoom-in effect.
+
+    Used by AvatarEngine for Shorts mode to push the face closer to the viewer.
+    scale=1.15 → 15% tighter crop; safe default that avoids quality loss.
+    Non-fatal: returns *video* unchanged on error.
+    """
+    if output.exists():
+        return output
+    output.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        w, h = video_size(video)
+        crop_w = int(w / scale)
+        crop_h = int(h / scale)
+        x = (w - crop_w) // 2
+        y = (h - crop_h) // 2
+        _run([
+            "ffmpeg", "-y",
+            "-i", str(video),
+            "-vf", f"crop={crop_w}:{crop_h}:{x}:{y},scale={w}:{h}",
+            "-c:v", "libx264", "-crf", "18", "-preset", "fast",
+            "-c:a", "copy",
+            str(output),
+        ])
+    except Exception as exc:
+        logger.warning(f"zoom_clip failed (non-fatal): {exc}")
+        return video
+    return output
+
+
 def loop_and_trim(
     video: Path,
     output: Path,

@@ -133,7 +133,8 @@ class TestBuildScriptFromEditorial:
         ed = _editorial()
         ed["core_fact"] = "x" * 200 + "."
         s = _build_script_from_editorial(ed, "conflict", "H")
-        assert len(s.core) <= 130   # 120 chars + source tag + "."
+        # PersonaEngine prepends an opinion prefix (~25-60 chars); core_fact portion is ≤120
+        assert len(s.core) <= 200
 
 
 # ── ShortsEngineV2: generate ──────────────────────────────────────────────────
