@@ -213,9 +213,61 @@ def render(state: dict) -> None:
     st.divider()
     render_narrative_identity()
 
+    # ── emotional arc section ─────────────────────────────────────────────────
+    st.divider()
+    render_emotional_arcs()
+
     # ── hook patterns section ─────────────────────────────────────────────────
     st.divider()
     render_hook_patterns()
+
+
+# ── emotional arc ────────────────────────────────────────────────────────────
+
+def render_emotional_arcs() -> None:
+    st.header("Emotional Arc Engine")
+
+    try:
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from src.emotional_arc_engine import (
+            EmotionalArcEngine, EMOTIONAL_ARCS,
+        )
+        engine = EmotionalArcEngine()
+        history = engine.load_stats(n=10)
+        distribution = engine.arc_type_distribution()
+    except Exception:
+        st.caption("No arc data yet — builds after the first video is published.")
+        return
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("Arc type distribution")
+        dist_rows = [{"Arc": arc, "Used": count} for arc, count in distribution.items()]
+        st.dataframe(dist_rows, use_container_width=True, hide_index=True)
+
+    with col2:
+        st.subheader("Arc definitions")
+        for arc_name, steps in EMOTIONAL_ARCS.items():
+            step_labels = " → ".join(f"{emo}({int(intensity*100)}%)" for emo, intensity in steps)
+            st.write(f"**{arc_name}**: {step_labels}")
+
+    if history:
+        st.subheader("Recent arc runs")
+        rows = [
+            {
+                "Date":      s.recorded_at[:10],
+                "Arc":       s.arc_type,
+                "Scenes":    s.scene_count,
+                "Avg intens":f"{s.avg_intensity:.2f}",
+                "Emotions":  " → ".join(s.emotion_sequence[:6]),
+            }
+            for s in reversed(history)
+        ]
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+    else:
+        st.caption("No arc history yet — records after each video upload.")
 
 
 # ── hook patterns ────────────────────────────────────────────────────────────
