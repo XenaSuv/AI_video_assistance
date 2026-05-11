@@ -102,24 +102,24 @@ def _render_avatar_short(
     audio_path: Path | None,
     out_dir: Path,
 ) -> Path | None:
-    """Render a HeyGen avatar clip if HEYGEN_ENABLED, else None."""
+    """Render a HeyGen avatar clip via AvatarEngine (intent-aware, with subtitles and zoom)."""
     if not settings.heygen_enabled:
         return None
     try:
-        from src.heygen_presenter import generate_heygen_clip
+        from src.avatar_engine import AvatarEngine
+        engine   = AvatarEngine()
         out_path = out_dir / f"avatar_{script.short_id}.mp4"
-        # Audio-driven (lip-sync). If audio is missing, falls back to TTS mode.
-        clip = generate_heygen_clip(
+        clip = engine.render(
             audio_path or Path("/dev/null"),
             out_path,
-            api_key=settings.heygen_api_key,
-            avatar_id=settings.heygen_avatar_id,
-            aspect="9:16",
-            fallback_text=script.full_narration,
-            voice_id=settings.heygen_voice_id,
+            intent       = script.hook_type,   # conflict/curiosity/mistake/warning/insider
+            persona      = script.persona,      # direct/serious/curious
+            is_shorts    = True,
+            subtitle_text= script.full_narration,
+            aspect       = "9:16",
         )
         if clip:
-            logger.info(f"Avatar clip ready: {clip.name}")
+            logger.info(f"AvatarEngine: Short clip ready — {clip.name}")
         return clip
     except Exception as exc:
         logger.warning(f"Avatar render failed (non-fatal): {exc}")
