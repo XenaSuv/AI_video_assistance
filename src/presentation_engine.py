@@ -58,6 +58,9 @@ INTENT_MAP: dict[str, dict[str, str]] = {
     "twist":     {"voice": "drop",     "visual": "cut_fast",       "pause": "short", "subtitle": "bold_highlight"},
     "data":      {"voice": "neutral",  "visual": "subtitle_focus", "pause": "none",  "subtitle": "normal"},
     "reaction":  {"voice": "curious",  "visual": "zoom_in",        "pause": "short", "subtitle": "bold_highlight"},
+    "conflict":  {"voice": "strong",   "visual": "cut_fast",       "pause": "short", "subtitle": "bold_highlight"},
+    "mistake":   {"voice": "drop",     "visual": "cut_fast",       "pause": "short", "subtitle": "bold_highlight"},
+    "insider":   {"voice": "pause",    "visual": "slow_zoom",      "pause": "none",  "subtitle": "bold_highlight"},
 }
 
 _FALLBACK_INTENT = INTENT_MAP["explain"]

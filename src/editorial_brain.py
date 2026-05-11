@@ -206,13 +206,18 @@ class EditorialBrain:
     def _enrich_with_narrative(
         self, plan: dict[str, Any], story: "NewsItem"
     ) -> dict[str, Any]:
-        """Apply NarrativeIdentityEngine to add theme / arc / memory callbacks."""
+        """Apply NarrativeIdentityEngine + NarrativeConflictEngine."""
         try:
             from src.narrative_identity_engine import get_narrative_engine
-            return get_narrative_engine().apply(plan, story.title)
+            plan = get_narrative_engine().apply(plan, story.title)
         except Exception as exc:
             logger.debug(f"NarrativeIdentityEngine skipped: {exc}")
-            return plan
+        try:
+            from src.narrative_conflict_engine import get_conflict_engine
+            plan = get_conflict_engine().apply(plan)
+        except Exception as exc:
+            logger.debug(f"NarrativeConflictEngine skipped: {exc}")
+        return plan
 
     def _story_summary(self, story: NewsItem) -> dict[str, Any]:
         return {

@@ -1014,6 +1014,22 @@ class PipelineOrchestrator:
                         )
                     except Exception as _narr_exc:
                         logger.debug(f"NarrativeMemory record skipped: {_narr_exc}")
+                    try:
+                        from src.narrative_conflict_engine import get_conflict_engine
+                        _ep_plan = _ep[0] if _ep else {}
+                        _ctype = _ep_plan.get("conflict_type", "external")
+                        _cline = _ep_plan.get("conflict_line", "")
+                        _cint  = _ep_plan.get("conflict_intensity", 0.5)
+                        if _cline:
+                            get_conflict_engine().record(
+                                topic         = self._script.title,
+                                conflict_type = _ctype,
+                                intensity     = _cint,
+                                line          = _cline,
+                                video_id      = video_id,
+                            )
+                    except Exception as _conf_exc:
+                        logger.debug(f"ConflictMemory record skipped: {_conf_exc}")
                     self._live.log_event(f"Uploaded to YouTube EN: {video_id}")
                     self._live.set_metrics({"video_id": video_id, "views": 0, "ctr": 0.0})
                 self._cp.mark_done("upload_en", {k: v for k, v in ids.items()})

@@ -225,11 +225,19 @@ def _build_script_from_editorial(
     style   = _STYLE_MAP[hook_type]
     persona = _PERSONA_MAP[hook_type]
 
-    # Opinion-first core: persona's take before the raw fact
-    # Hook → Opinion ("But here's what nobody is saying.") → Fact
-    callback = persona_engine.get_callback(topic)
-    opinion_core = persona_engine.opinionize_core(first_sentence + ".", hook_type)
-    core = (callback + " " + opinion_core).strip() if callback else opinion_core
+    # Conflict-first core: Hook → Conflict → Fact
+    # If the editorial has a NarrativeConflictEngine line, use it as the tension
+    # opener; otherwise fall back to PersonaEngine's opinion injection.
+    conflict_line = editorial.get("conflict_line", "")
+    callback      = persona_engine.get_callback(topic)
+    opinion_core  = persona_engine.opinionize_core(first_sentence + ".", hook_type)
+
+    if conflict_line:
+        # Shorts structure: CONFLICT → FACT (callback prepended if available)
+        fact_part = (callback + " " + first_sentence + ".").strip() if callback else first_sentence + "."
+        core = f"{conflict_line} {fact_part}".strip()
+    else:
+        core = (callback + " " + opinion_core).strip() if callback else opinion_core
 
     twist = (
         f"Here's what's actually happening: {first_sentence.lower()}."
