@@ -201,6 +201,10 @@ def render(state: dict) -> None:
                 m = entry.get("msg", "")
                 st.markdown(f"`{t}` {m}")
 
+    # ── emotion engine section ────────────────────────────────────────────────
+    st.divider()
+    render_emotion_engine()
+
     # ── narrative conflict section ────────────────────────────────────────────
     st.divider()
     render_narrative_conflicts()
@@ -274,6 +278,64 @@ st.set_page_config(
     page_icon="🎬",
     layout="wide",
 )
+
+# ── emotion engine ───────────────────────────────────────────────────────────
+
+def render_emotion_engine() -> None:
+    st.header("Emotion Engine")
+
+    try:
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from src.emotion_engine import (
+            EmotionEngine, EMOTIONS, EMOTION_MAP, SHORT_EMOTION_FLOW,
+        )
+        engine = EmotionEngine()
+        history = engine.load_stats(n=10)
+    except Exception:
+        st.caption("No emotion data yet — builds after the first video is published.")
+        return
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("Intent → Emotion map")
+        rows = [
+            {"Intent": intent, "Emotion": emo, "Base intensity": f"{intensity:.0%}"}
+            for intent, (emo, intensity) in EMOTION_MAP.items()
+        ]
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+
+    with col2:
+        st.subheader("Shorts emotion arc")
+        for i, emo in enumerate(SHORT_EMOTION_FLOW):
+            st.write(f"{i+1}. **{emo}**")
+
+    if history:
+        st.subheader("Emotion curve — recent videos")
+        # Build intensity curves for the last runs
+        chart_data: dict[str, list[float]] = {}
+        for stat in history[-5:]:
+            label = stat.title[:30]
+            # Reconstruct intensity from sequence length (no per-scene intensities stored)
+            chart_data[label] = [0.0] * stat.scene_count
+
+        # Show summary table instead (per-scene intensity isn't stored in stats)
+        stat_rows = [
+            {
+                "Title":     s.title[:50],
+                "Scenes":    s.scene_count,
+                "Dominant":  s.dominant_emotion,
+                "Avg intens":f"{s.avg_intensity:.2f}",
+                "Arc":       " → ".join(s.emotion_sequence[:6]),
+                "Date":      s.recorded_at[:10],
+            }
+            for s in reversed(history)
+        ]
+        st.dataframe(stat_rows, use_container_width=True, hide_index=True)
+    else:
+        st.caption("No emotion history yet — records after each video upload.")
+
 
 # ── narrative conflicts ───────────────────────────────────────────────────────
 
