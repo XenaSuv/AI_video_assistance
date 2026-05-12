@@ -49,7 +49,10 @@ from collections import defaultdict
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from src.shorts_beat_engine import ShortBeatPlan
 
 from loguru import logger
 
@@ -523,7 +526,7 @@ class ShortsEngineV2:
 
     # ── beat execution layer ──────────────────────────────────────────────────
 
-    def plan(self, script: ShortScript) -> "ShortBeatPlan":  # type: ignore[name-defined]
+    def plan(self, script: ShortScript) -> ShortBeatPlan:
         """Return the 5-beat execution plan for a ShortScript.
 
         Delegates to ShortsBeatEngine — imported lazily to avoid circular
