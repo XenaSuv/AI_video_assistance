@@ -1073,6 +1073,8 @@ class PipelineOrchestrator:
                         })
                     except Exception as _edm_exc:
                         logger.debug(f"EditorialMemory record skipped: {_edm_exc}")
+                    # AudienceProfile is updated by the feedback loop (feedback_analyzer /
+                    # youtube_analytics) once real retention data is available — not here.
                     self._live.log_event(f"Uploaded to YouTube EN: {video_id}")
                     self._live.set_metrics({"video_id": video_id, "views": 0, "ctr": 0.0})
                 self._cp.mark_done("upload_en", {k: v for k, v in ids.items()})

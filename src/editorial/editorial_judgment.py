@@ -98,10 +98,42 @@ class EditorialJudgment:
     def judge(self, story: dict[str, Any]) -> dict[str, Any]:
         """Return a full editorial judgment for a single story dict.
 
+        When an AudienceProfile has accumulated data, delegates to
+        AudienceAwareJudgment for angle + persona selection so that
+        audience taste modulates the purely identity-driven defaults.
+
         story signals consumed:
             hype, risk, tool, controversy, importance, seen_recently,
             misconception, impact
         """
+        # Attempt audience-aware judgment first (preferred path once profile has data)
+        try:
+            from src.editorial.audience_judgment import AudienceAwareJudgment
+            from src.editorial.audience_profile import AudienceProfile
+            from src.editorial.editorial_memory import EditorialMemory
+            _audience = AudienceProfile(data_dir=self._dir)
+            _memory   = EditorialMemory(data_dir=self._dir)
+            # Only activate if the audience profile has learned something
+            _has_data = any(
+                bool(_audience._p.get(k))
+                for k in ("preferred_angles", "persona_affinity", "retention_patterns")
+            )
+            if _has_data:
+                _aaj = AudienceAwareJudgment(
+                    identity=self.identity,
+                    audience=_audience,
+                    memory=_memory,
+                )
+                judgment = _aaj.judge(story)
+                logger.debug(
+                    f"EditorialJudgment: audience-aware path "
+                    f"angle={judgment['angle']!r}"
+                )
+                return judgment
+        except Exception as _aaj_exc:
+            logger.debug(f"AudienceAwareJudgment skipped: {_aaj_exc}")
+
+        # Fallback: deterministic identity-only path
         angle  = self._angles.select(story, self.identity)
         intent = self._angles.intent(angle)
         judgment: dict[str, Any] = {
@@ -122,7 +154,6 @@ class EditorialJudgment:
                 if callback:
                     judgment["callback"] = callback
                     logger.debug(f"EditorialJudgment: callback injected for topic={topic!r}")
-                # Penalise recently covered topics
                 if memory.topic_is_recent(topic):
                     judgment["topic_is_recent"] = True
                     logger.debug(f"EditorialJudgment: topic marked recent: {topic!r}")
@@ -186,6 +217,24 @@ class EditorialJudgment:
                 )
                 if persist:
                     self.identity.save(self._dir)
+
+        # Update audience profile with real retention data
+        try:
+            from src.editorial.audience_profile import AudienceProfile
+            _persona     = feedback.get("persona", "")
+            _format_type = feedback.get("format", "")
+            _hook_pattern= feedback.get("hook_pattern", "")
+            _emotions    = feedback.get("emotions") or []
+            AudienceProfile(data_dir=self._dir).update_from_feedback(
+                angle,
+                retention,
+                format_type=_format_type,
+                persona=_persona,
+                hook_pattern=_hook_pattern,
+                emotions=_emotions,
+            )
+        except Exception as _ap_exc:
+            logger.debug(f"AudienceProfile update skipped: {_ap_exc}")
 
     def load_feedback(self, n: int = 50) -> list[JudgmentFeedback]:
         """Load the last n feedback records."""

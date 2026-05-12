@@ -221,6 +221,10 @@ def render(state: dict) -> None:
     st.divider()
     render_emotional_arcs()
 
+    # ── audience profile section ──────────────────────────────────────────────
+    st.divider()
+    render_audience_profile()
+
     # ── editorial memory section ──────────────────────────────────────────────
     st.divider()
     render_editorial_memory()
@@ -321,6 +325,104 @@ def render_emotional_arcs() -> None:
         st.dataframe(rows, use_container_width=True, hide_index=True)
     else:
         st.caption("No arc history yet — records after each video upload.")
+
+
+# ── audience profile ─────────────────────────────────────────────────────────
+
+def render_audience_profile() -> None:
+    st.header("Audience Profile")
+    st.caption("Learned audience preferences — what angles, personas, and emotions resonate.")
+
+    try:
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from src.editorial.audience_profile import AudienceProfile
+        from src.editorial.audience_judgment import IDENTITY_WEIGHT, AUDIENCE_WEIGHT, RETENTION_WEIGHT
+        profile = AudienceProfile()
+        p = profile.as_dict()
+    except Exception:
+        st.caption("No audience profile yet — builds after retention feedback is processed.")
+        return
+
+    has_data = any(bool(p.get(k)) for k in ("preferred_angles", "persona_affinity"))
+    if not has_data:
+        st.caption("No audience profile yet — builds after retention feedback is processed.")
+        st.caption(
+            f"Scoring weights: identity×{IDENTITY_WEIGHT} "
+            f"audience×{AUDIENCE_WEIGHT} retention×{RETENTION_WEIGHT}"
+        )
+        return
+
+    st.caption(
+        f"Scoring weights: identity×{IDENTITY_WEIGHT} · "
+        f"audience×{AUDIENCE_WEIGHT} · retention×{RETENTION_WEIGHT}"
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.subheader("Preferred angles")
+        top_a = profile.top_angles(n=6)
+        if top_a:
+            st.dataframe(
+                [{"Angle": a, "Score": f"{s:.2f}"} for a, s in top_a],
+                use_container_width=True, hide_index=True,
+            )
+        else:
+            st.caption("—")
+
+        st.subheader("Avg retention by angle")
+        rp = p.get("retention_patterns", {})
+        if rp:
+            rows = sorted(
+                [{"Angle": a, "Avg": f"{v['avg']:.2f}", "N": v['count']}
+                 for a, v in rp.items()],
+                key=lambda r: r["Avg"], reverse=True,
+            )
+            st.dataframe(rows, use_container_width=True, hide_index=True)
+        else:
+            st.caption("No retention data yet.")
+
+    with col2:
+        st.subheader("Persona affinity")
+        top_p = profile.top_personas(n=6)
+        if top_p:
+            st.dataframe(
+                [{"Persona": p_name, "Affinity": f"{s:.2f}"} for p_name, s in top_p],
+                use_container_width=True, hide_index=True,
+            )
+        else:
+            st.caption("—")
+
+        st.subheader("Preferred formats")
+        fmts = sorted(p.get("preferred_formats", {}).items(), key=lambda x: x[1], reverse=True)
+        if fmts:
+            st.dataframe(
+                [{"Format": f, "Score": f"{s:.2f}"} for f, s in fmts],
+                use_container_width=True, hide_index=True,
+            )
+        else:
+            st.caption("—")
+
+    with col3:
+        st.subheader("Emotion preferences")
+        top_e = profile.top_emotions(n=6)
+        if top_e:
+            st.dataframe(
+                [{"Emotion": e, "Score": f"{s:.2f}"} for e, s in top_e],
+                use_container_width=True, hide_index=True,
+            )
+        else:
+            st.caption("—")
+
+        disliked = p.get("disliked_patterns", {})
+        if disliked:
+            st.subheader("Disliked patterns")
+            rows = sorted(disliked.items(), key=lambda x: x[1], reverse=True)
+            st.dataframe(
+                [{"Pattern": k, "Score": f"{v:.2f}"} for k, v in rows],
+                use_container_width=True, hide_index=True,
+            )
 
 
 # ── editorial memory ─────────────────────────────────────────────────────────
