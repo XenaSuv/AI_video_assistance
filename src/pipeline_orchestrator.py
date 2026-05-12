@@ -793,6 +793,22 @@ class PipelineOrchestrator:
                 }
                 script = PresentationEngine().apply(script, _pres_strategy, persona=_persona_str)
 
+                try:
+                    from src.emotion_engine import EmotionEngine
+                    script = EmotionEngine().apply(script, conflict_intensity=0.0)
+                except Exception as _emo_exc:
+                    logger.debug(f"EmotionEngine skipped: {_emo_exc}")
+
+                try:
+                    from src.emotional_arc_engine import EmotionalArcEngine
+                    _arc_engine = EmotionalArcEngine()
+                    _arc_type   = _arc_engine.select_arc_from_editorial(
+                        self._editorial if hasattr(self, "_editorial") else {}
+                    )
+                    script = _arc_engine.apply(script, arc_type=_arc_type)
+                except Exception as _arc_exc:
+                    logger.debug(f"EmotionalArcEngine skipped: {_arc_exc}")
+
                 script.save(script_cache)
 
             self._script = script
@@ -1030,6 +1046,20 @@ class PipelineOrchestrator:
                             )
                     except Exception as _conf_exc:
                         logger.debug(f"ConflictMemory record skipped: {_conf_exc}")
+                    try:
+                        from src.emotion_engine import EmotionEngine
+                        EmotionEngine().log_stats(self._script, video_id)
+                    except Exception as _emo_exc:
+                        logger.debug(f"EmotionEngine log_stats skipped: {_emo_exc}")
+                    try:
+                        from src.emotional_arc_engine import EmotionalArcEngine
+                        _arc_eng  = EmotionalArcEngine()
+                        _arc_type = _arc_eng.select_arc_from_editorial(
+                            self._editorial if hasattr(self, "_editorial") else {}
+                        )
+                        _arc_eng.log_stats(self._script, _arc_type, video_id)
+                    except Exception as _arc_exc:
+                        logger.debug(f"EmotionalArcEngine log_stats skipped: {_arc_exc}")
                     self._live.log_event(f"Uploaded to YouTube EN: {video_id}")
                     self._live.set_metrics({"video_id": video_id, "views": 0, "ctr": 0.0})
                 self._cp.mark_done("upload_en", {k: v for k, v in ids.items()})

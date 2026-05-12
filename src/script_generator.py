@@ -45,6 +45,10 @@ class Scene:
     visual_direction: str = ""           # zoom_in | slow_zoom | cut_fast | subtitle_focus
     pause_after: str = ""               # short | long | none
     subtitle_style: str = ""            # bold_highlight | normal | none
+    # Emotion Engine fields (filled by EmotionEngine.apply())
+    emotion: str = "neutral"            # shock | curiosity | doubt | surprise | excitement | fear | calm | neutral
+    emotion_intensity: float = 0.0      # 0.0 → 1.0; damped on consecutive same emotions
+    avatar_style: str = "normal"        # normal | energetic | thinking | serious
 
 
 @dataclass
