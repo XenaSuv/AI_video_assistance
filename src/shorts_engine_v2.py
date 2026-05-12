@@ -270,6 +270,7 @@ class ShortsEngineV2:
 
     Public interface:
         generate(editorial)         → list[ShortScript]
+        plan(script)                → ShortBeatPlan  5-beat execution layer
         learn(short, metrics)       → None
         get_top_hooks(n)            → list[LearningRecord]  sorted by retention_3s
         get_best_combination()      → dict | None  best {hook_type, style, persona}
@@ -519,3 +520,14 @@ class ShortsEngineV2:
             except Exception:
                 pass
         return records
+
+    # ── beat execution layer ──────────────────────────────────────────────────
+
+    def plan(self, script: ShortScript) -> "ShortBeatPlan":  # type: ignore[name-defined]
+        """Return the 5-beat execution plan for a ShortScript.
+
+        Delegates to ShortsBeatEngine — imported lazily to avoid circular
+        imports at module load time.
+        """
+        from src.shorts_beat_engine import ShortsBeatEngine, ShortBeatPlan  # noqa: F401
+        return ShortsBeatEngine().plan(script)
