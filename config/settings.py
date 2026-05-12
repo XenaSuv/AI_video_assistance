@@ -98,6 +98,14 @@ class Settings:
     tiktok_token_file:    Path = ROOT / _env("TIKTOK_TOKEN_FILE", "config/tiktok_token.json")
     tiktok_privacy:       str  = _env("TIKTOK_PRIVACY", "PUBLIC_TO_EVERYONE")
 
+    # Telegram RSS (via RSSHub or any RSS proxy — comma-separated for multiple channels)
+    # Default: t.me/ai_for_devs via the public RSSHub instance.
+    # Override with TELEGRAM_RSS_URLS=https://your-rsshub/telegram/channel/name,...
+    telegram_rss_urls: str = _env(
+        "TELEGRAM_RSS_URLS",
+        "https://rsshub.app/telegram/channel/ai_for_devs",
+    )
+
     # Pipeline
     script_target_words: int = int(_env("SCRIPT_TARGET_WORDS", "2200"))
     daily_run_hour_utc: int  = int(_env("DAILY_RUN_HOUR_UTC", "8"))

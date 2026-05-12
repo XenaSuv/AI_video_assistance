@@ -86,6 +86,7 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ vars.SLACK_WEBHOOK_URL }}
           OPENAI_API_KEY:         ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL:           ${{ vars.OPENAI_MODEL || 'gpt-4o-mini' }}
+          TELEGRAM_RSS_URLS:      ${{ vars.TELEGRAM_RSS_URLS }}
           ELEVENLABS_API_KEY:     ${{ secrets.ELEVENLABS_API_KEY }}
           ELEVENLABS_VOICE_ID:    ${{ secrets.ELEVENLABS_VOICE_ID }}
           ELEVENLABS_MODEL:       eleven_turbo_v2_5
