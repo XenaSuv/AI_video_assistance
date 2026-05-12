@@ -206,17 +206,48 @@ class EditorialBrain:
     def _enrich_with_narrative(
         self, plan: dict[str, Any], story: "NewsItem"
     ) -> dict[str, Any]:
-        """Apply NarrativeIdentityEngine + NarrativeConflictEngine."""
+        """Apply EditorialJudgment → NarrativeIdentityEngine → NarrativeConflictEngine.
+
+        Pipeline:  judgment (angle/persona/format/intent)
+                 → narrative identity (theme/arc/belief)
+                 → narrative conflict (conflict_type/conflict_line)
+        """
+        # 1. Editorial judgment — deterministic angle + persona + format + intent
+        try:
+            from src.editorial.editorial_judgment import get_judgment_engine
+            story_signals = {
+                "hype":          plan.get("novelty_score", 0) > 0.7,
+                "risk":          any(w in (plan.get("angle") or "").lower()
+                                     for w in ("risk", "threat", "danger", "warn")),
+                "tool":          any(w in (plan.get("angle") or "").lower()
+                                     for w in ("tool", "misuse", "wrong", "mistake")),
+                "controversy":   plan.get("controversy_score", 0) > 0.5,
+                "misconception": any(w in (plan.get("angle") or "").lower()
+                                     for w in ("myth", "wrong", "actually", "misunder")),
+                "importance":    plan.get("novelty_score", 0),
+            }
+            judgment = get_judgment_engine().judge(story_signals)
+            plan["editorial_angle"]   = judgment["angle"]
+            plan["editorial_persona"] = judgment["persona"]["style"]
+            plan["editorial_format"]  = judgment["format"]["type"]
+            plan["editorial_intent"]  = judgment["editorial_intent"]
+        except Exception as exc:
+            logger.debug(f"EditorialJudgment skipped: {exc}")
+
+        # 2. Narrative identity (theme / arc / belief)
         try:
             from src.narrative_identity_engine import get_narrative_engine
             plan = get_narrative_engine().apply(plan, story.title)
         except Exception as exc:
             logger.debug(f"NarrativeIdentityEngine skipped: {exc}")
+
+        # 3. Narrative conflict (conflict_type / conflict_line)
         try:
             from src.narrative_conflict_engine import get_conflict_engine
             plan = get_conflict_engine().apply(plan)
         except Exception as exc:
             logger.debug(f"NarrativeConflictEngine skipped: {exc}")
+
         return plan
 
     def _story_summary(self, story: NewsItem) -> dict[str, Any]:

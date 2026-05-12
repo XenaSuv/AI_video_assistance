@@ -163,6 +163,15 @@ jobs:
           RU_YOUTUBE_TOKEN_FILE:     config/token_ru.pickle
           PRESENTER_ENABLED:         ${{ vars.PRESENTER_ENABLED || 'false' }}
           PRESENTER_AVATAR_PATH:     ${{ vars.PRESENTER_AVATAR_PATH || 'assets/avatar.png' }}
+          HEYGEN_ENABLED:            ${{ vars.HEYGEN_ENABLED || 'false' }}
+          HEYGEN_API_KEY:            ${{ secrets.HEYGEN_API_KEY }}
+          HEYGEN_AVATAR_ID:          ${{ secrets.HEYGEN_AVATAR_ID }}
+          HEYGEN_AVATAR_ID_DIRECT:          ${{ secrets.HEYGEN_AVATAR_ID_DIRECT }}
+          HEYGEN_AVATAR_ID_SERIOUS:         ${{ secrets.HEYGEN_AVATAR_ID_SERIOUS }}
+          HEYGEN_AVATAR_ID_CURIOUS:         ${{ secrets.HEYGEN_AVATAR_ID_CURIOUS }}
+          HEYGEN_AVATAR_ID_PROFESSIONAL:    ${{ secrets.HEYGEN_AVATAR_ID_PROFESSIONAL }}
+          HEYGEN_AVATAR_ID_CASUAL:          ${{ secrets.HEYGEN_AVATAR_ID_CASUAL }}
+          HEYGEN_VOICE_ID:           ${{ secrets.HEYGEN_VOICE_ID }}
           RUNWAYML_API_KEY:          ${{ secrets.RUNWAYML_API_KEY }}
         run: |
           ARGS="--item data/breaking_current.json"
