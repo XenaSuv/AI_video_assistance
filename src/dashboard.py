@@ -213,6 +213,10 @@ def render(state: dict) -> None:
     st.divider()
     render_narrative_identity()
 
+    # ── shorts beat template section ─────────────────────────────────────────
+    st.divider()
+    render_shorts_beat_template()
+
     # ── emotional arc section ─────────────────────────────────────────────────
     st.divider()
     render_emotional_arcs()
@@ -220,6 +224,51 @@ def render(state: dict) -> None:
     # ── hook patterns section ─────────────────────────────────────────────────
     st.divider()
     render_hook_patterns()
+
+
+# ── shorts beat template ─────────────────────────────────────────────────────
+
+def render_shorts_beat_template() -> None:
+    st.header("Shorts Beat Template")
+    st.caption("Golden rule: every 2–3 seconds → change (frame / emotion / text / pace)")
+
+    try:
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from src.shorts_beat_engine import (
+            BEAT_ROLES, BEAT_DURATIONS, BEAT_EMOTIONS,
+            BEAT_AVATAR_MODE, BEAT_VISUAL_TYPE,
+            _BEAT_SSML_PREFIX, _BEAT_SSML_SUFFIX,
+        )
+    except Exception:
+        st.caption("Shorts beat engine not available.")
+        return
+
+    rows = []
+    offset = 0.0
+    for role in BEAT_ROLES:
+        dur     = BEAT_DURATIONS[role]
+        emotion, intensity = BEAT_EMOTIONS[role]
+        prefix  = _BEAT_SSML_PREFIX.get(role, "—") or "—"
+        suffix  = _BEAT_SSML_SUFFIX.get(role, "—") or "—"
+        rows.append({
+            "Beat":         role.upper(),
+            "Time":         f"{offset:.0f}–{offset + dur:.0f}s",
+            "Duration":     f"{dur:.0f}s",
+            "Emotion":      emotion,
+            "Intensity":    f"{intensity:.0%}",
+            "Avatar/Broll": BEAT_AVATAR_MODE[role],
+            "Visual":       BEAT_VISUAL_TYPE[role],
+            "SSML prefix":  prefix,
+        })
+        offset += dur
+
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+
+    st.caption(
+        "Emotion flow: **shock → doubt → neutral → surprise → curiosity**  "
+        "— never the same emotion twice in a row."
+    )
 
 
 # ── emotional arc ────────────────────────────────────────────────────────────
