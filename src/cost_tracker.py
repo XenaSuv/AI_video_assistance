@@ -9,7 +9,7 @@ In any module:
     from src.cost_tracker import get_ledger
     get_ledger().record_llm("script", "gpt-4o-mini", prompt_tokens, completion_tokens)
     get_ledger().record_tts("tts-en", char_count, "eleven_turbo_v2_5")
-    get_ledger().record_image("image-scene_01", "dall-e-3")
+    get_ledger().record_image("image-scene_01", "gpt-image-1")
 
 At pipeline end:
     report = get_ledger().save(run_dir / "cost_report.json")
@@ -48,7 +48,8 @@ _DEFAULT_TTS_PRICES: dict[str, float] = {
 
 _DEFAULT_IMAGE_PRICES: dict[str, float] = {
     # model → USD per image
-    "dall-e-3":               0.080,   # HD 1024×1024
+    "gpt-image-1":            0.040,   # high quality 1536×1024
+    "dall-e-3":               0.080,   # legacy; kept for historical cost records
     "dall-e-2":               0.020,
     "stable-image-core":      0.003,   # Stability AI
 }
