@@ -221,6 +221,10 @@ def render(state: dict) -> None:
     st.divider()
     render_emotional_arcs()
 
+    # ── editorial memory section ──────────────────────────────────────────────
+    st.divider()
+    render_editorial_memory()
+
     # ── hook patterns section ─────────────────────────────────────────────────
     st.divider()
     render_hook_patterns()
@@ -317,6 +321,81 @@ def render_emotional_arcs() -> None:
         st.dataframe(rows, use_container_width=True, hide_index=True)
     else:
         st.caption("No arc history yet — records after each video upload.")
+
+
+# ── editorial memory ─────────────────────────────────────────────────────────
+
+def render_editorial_memory() -> None:
+    st.header("Editorial Memory")
+    st.caption("Cross-video memory: what we said, what we predicted, what worked.")
+
+    try:
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from src.editorial.editorial_memory import EditorialMemory
+        memory = EditorialMemory()
+    except Exception:
+        st.caption("No editorial memory yet — builds after the first video is published.")
+        return
+
+    if not memory._entries:
+        st.caption("No editorial memory yet — builds after the first video is published.")
+        return
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("Top angles used")
+        top = memory.top_angles(n=6)
+        if top:
+            rows = [{"Angle": a, "Videos": c} for a, c in top]
+            st.dataframe(rows, use_container_width=True, hide_index=True)
+        else:
+            st.caption("—")
+
+    with col2:
+        st.subheader("Avg retention by angle")
+        avg = memory.avg_retention_by_angle()
+        if avg:
+            rows = [
+                {"Angle": a, "Avg retention": f"{v:.2f}"}
+                for a, v in sorted(avg.items(), key=lambda x: x[1], reverse=True)
+            ]
+            st.dataframe(rows, use_container_width=True, hide_index=True)
+        else:
+            st.caption("No retention data yet.")
+
+    preds = memory.recent_predictions(n=10)
+    if preds:
+        st.subheader("Recent predictions")
+        pred_rows = [
+            {
+                "Date":    p.get("date", ""),
+                "Topic":   p.get("topic", "")[:60],
+                "Angle":   p.get("angle", ""),
+                "Prediction": p.get("prediction", "")[:80],
+                "Status":  p.get("prediction_status", "pending"),
+                "Retention": f"{p.get('retention', 0.0):.2f}" if p.get("retention") else "—",
+            }
+            for p in reversed(preds)
+        ]
+        st.dataframe(pred_rows, use_container_width=True, hide_index=True)
+
+    recent = memory._entries[-10:]
+    if recent:
+        st.subheader("Recent entries")
+        r_rows = [
+            {
+                "Date":    e.get("date", ""),
+                "Topic":   e.get("topic", "")[:50],
+                "Angle":   e.get("angle", ""),
+                "Format":  e.get("format", ""),
+                "Persona": e.get("persona", ""),
+                "Retention": f"{e.get('retention', 0.0):.2f}" if e.get("retention") else "—",
+            }
+            for e in reversed(recent)
+        ]
+        st.dataframe(r_rows, use_container_width=True, hide_index=True)
 
 
 # ── hook patterns ────────────────────────────────────────────────────────────

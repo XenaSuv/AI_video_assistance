@@ -104,13 +104,32 @@ class EditorialJudgment:
         """
         angle  = self._angles.select(story, self.identity)
         intent = self._angles.intent(angle)
-        return {
+        judgment: dict[str, Any] = {
             "story":            story,
             "angle":            angle,
             "persona":          self._personas.map(angle),
             "format":           self._formats.select(angle),
             "editorial_intent": intent,
         }
+
+        # Inject narrative callback from editorial memory when prior prediction exists
+        topic = str(story.get("title", story.get("topic", "")))
+        if topic:
+            try:
+                from src.editorial.editorial_memory import get_editorial_memory
+                memory = get_editorial_memory()
+                callback = memory.get_callback_line(topic)
+                if callback:
+                    judgment["callback"] = callback
+                    logger.debug(f"EditorialJudgment: callback injected for topic={topic!r}")
+                # Penalise recently covered topics
+                if memory.topic_is_recent(topic):
+                    judgment["topic_is_recent"] = True
+                    logger.debug(f"EditorialJudgment: topic marked recent: {topic!r}")
+            except Exception as _mem_exc:
+                logger.debug(f"EditorialMemory lookup skipped: {_mem_exc}")
+
+        return judgment
 
     def process(self, stories: list[dict[str, Any]]) -> dict[str, Any]:
         """Rank stories and return a judgment for the top-scoring one.

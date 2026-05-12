@@ -20,6 +20,7 @@ _CONTROVERSY_BONUS:  float = 2.0
 _ANTI_HYPE_BONUS:    float = 1.5
 _PRIORITY_BONUS:     float = 1.0
 _SEEN_PENALTY:       float = 2.0
+_MEMORY_REPEAT_PENALTY: float = 1.5   # extra penalty if topic appears in editorial memory
 
 # Map story signal keys → identity priority names they satisfy
 _SIGNAL_TO_PRIORITY: dict[str, str] = {
@@ -77,5 +78,15 @@ class StoryRanker:
         # 5. Dedup penalty
         if story.get("seen_recently"):
             score -= _SEEN_PENALTY
+
+        # 6. Editorial memory repeat penalty — avoid topics we've already covered
+        topic = str(story.get("title", story.get("topic", "")))
+        if topic:
+            try:
+                from src.editorial.editorial_memory import get_editorial_memory
+                if get_editorial_memory().topic_is_recent(topic):
+                    score -= _MEMORY_REPEAT_PENALTY
+            except Exception:
+                pass
 
         return score

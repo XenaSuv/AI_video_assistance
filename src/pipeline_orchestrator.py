@@ -1060,6 +1060,19 @@ class PipelineOrchestrator:
                         _arc_eng.log_stats(self._script, _arc_type, video_id)
                     except Exception as _arc_exc:
                         logger.debug(f"EmotionalArcEngine log_stats skipped: {_arc_exc}")
+                    try:
+                        from src.editorial.editorial_memory import get_editorial_memory
+                        _ep_plan = _ep[0] if _ep else {}
+                        get_editorial_memory().add_entry({
+                            "topic":    self._script.title,
+                            "angle":    _ep_plan.get("editorial_angle") or _ep_plan.get("angle", ""),
+                            "persona":  _ep_plan.get("editorial_persona") or _ep_plan.get("persona", ""),
+                            "format":   _ep_plan.get("editorial_format") or _ep_plan.get("format", ""),
+                            "prediction": self._script.hook,
+                            "video_id": video_id,
+                        })
+                    except Exception as _edm_exc:
+                        logger.debug(f"EditorialMemory record skipped: {_edm_exc}")
                     self._live.log_event(f"Uploaded to YouTube EN: {video_id}")
                     self._live.set_metrics({"video_id": video_id, "views": 0, "ctr": 0.0})
                 self._cp.mark_done("upload_en", {k: v for k, v in ids.items()})
