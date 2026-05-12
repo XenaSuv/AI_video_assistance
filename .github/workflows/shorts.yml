@@ -63,6 +63,7 @@ jobs:
         env:
           OPENAI_API_KEY:                  ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL:                    ${{ vars.OPENAI_MODEL || 'gpt-4o-mini' }}
+          TELEGRAM_RSS_URLS:               ${{ vars.TELEGRAM_RSS_URLS }}
           ELEVENLABS_API_KEY:              ${{ secrets.ELEVENLABS_API_KEY }}
           HEYGEN_API_KEY:                  ${{ secrets.HEYGEN_API_KEY }}
           HEYGEN_AVATAR_ID:                ${{ secrets.HEYGEN_AVATAR_ID }}

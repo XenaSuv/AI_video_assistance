@@ -429,12 +429,34 @@ def _scrape_blog(name: str, url: str, score: float) -> list[NewsItem]:
     return items
 
 
+def scrape_telegram_channels() -> list[NewsItem]:
+    """Scrape Telegram channels configured in settings.telegram_rss_urls.
+
+    Requires an RSS proxy such as RSSHub (https://rsshub.app/telegram/channel/<name>).
+    Returns an empty list silently when the setting is blank.
+    Items are scored at 4.5 so they can trigger breaking-news detection.
+    """
+    raw = (settings.telegram_rss_urls or "").strip()
+    if not raw:
+        return []
+    items: list[NewsItem] = []
+    for url in [u.strip() for u in raw.split(",") if u.strip()]:
+        channel_name = url.rstrip("/").split("/")[-1]
+        source_name  = f"Telegram/{channel_name}"
+        items.extend(_scrape_rss(source_name, url, score=4.5))
+    return items
+
+
 def scrape_official_sources() -> list[NewsItem]:
-    """Fetch official AI company news via Google News RSS. Items score ≥4.5."""
+    """Fetch official AI company news via Google News RSS + Telegram channels.
+
+    All items score ≥4.5 and are eligible for breaking-news detection.
+    """
     all_items: list[NewsItem] = []
     for name, query, score in _COMPANY_GN_FEEDS:
         url = _GN_BASE + _url_quote(query)
         all_items.extend(_scrape_rss(name, url, score))
+    all_items.extend(scrape_telegram_channels())
     return all_items
 
 

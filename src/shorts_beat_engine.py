@@ -33,7 +33,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, asdict
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from src.shorts_engine_v2 import ShortScript
 
 
 # ── Beat role ordering ────────────────────────────────────────────────────────
@@ -175,7 +178,7 @@ class ShortsBeatEngine:
         the EXPLAIN beat and the TWIST beat.
     """
 
-    def plan(self, script: "ShortScript") -> ShortBeatPlan:  # type: ignore[name-defined]
+    def plan(self, script: ShortScript) -> ShortBeatPlan:
         """Return the 5-beat execution plan for a ShortScript."""
         raw_beats = self._split_into_beats(script)
         beats     = [self._build_beat(role, text) for role, text in raw_beats]
@@ -183,7 +186,7 @@ class ShortsBeatEngine:
 
     # ── text splitting ────────────────────────────────────────────────────────
 
-    def _split_into_beats(self, script: "ShortScript") -> list[tuple[str, str]]:  # type: ignore[name-defined]
+    def _split_into_beats(self, script: ShortScript) -> list[tuple[str, str]]:
         """Map ShortScript's 4 fields to 5 (role, text) pairs.
 
         ShortScript sections → beats:
