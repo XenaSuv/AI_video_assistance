@@ -4,11 +4,11 @@ Image source selection (cheapest-first):
   1. image_cache      — cosine-similar prompt found in previous runs  (~$0.000006)
   2. stock_photo      — Unsplash / Pexels photo for generic real-world scenes  (free)
   3. stable_diffusion — Stability AI stable-image-core for breaking-news clips  (~$0.003)
-  4. gpt_image_1      — gpt-image-1 for all other scenes                       (~$0.040)
+  4. gpt_image_1      — gpt-image-2 for all other scenes                       (~$0.040)
 
 Cost at ~8 scenes/episode (daily), 5 scenes (breaking):
-  Daily   — with cache + stock photo: expect 40-60 % reduction vs gpt-image-1 for all
-  Breaking — Stability AI replaces gpt-image-1 entirely: ~$0.015 vs ~$0.20/episode
+  Daily   — with cache + stock photo: expect 40-60 % reduction vs gpt-image-2 for all
+  Breaking — Stability AI replaces gpt-image-2 entirely: ~$0.015 vs ~$0.20/episode
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ import src.image_cache as image_cache
 OUT_W, OUT_H = 1280, 720
 
 
-# ── gpt-image-1 ──────────────────────────────────────────────────────────────
+# ── gpt-image-2 ──────────────────────────────────────────────────────────────
 
 def _is_retryable_dalle(exc: BaseException) -> bool:
     if isinstance(exc, BadRequestError):
@@ -49,14 +49,14 @@ def _is_retryable_dalle(exc: BaseException) -> bool:
 
 
 def _log_dalle_retry(retry_state) -> None:
-    logger.warning(f"gpt-image-1 retry {retry_state.attempt_number}: {retry_state.outcome.exception()}")
+    logger.warning(f"gpt-image-2 retry {retry_state.attempt_number}: {retry_state.outcome.exception()}")
 
 
 @openai_breaker
 def _call_dalle(client: OpenAI, prompt: str) -> bytes:
     import base64
     response = client.images.generate(
-        model="gpt-image-1",
+        model="gpt-image-2",
         prompt=prompt,
         size="1536x1024",
         quality="high",
@@ -106,16 +106,16 @@ def _normalize_visual_prompt(prompt: str) -> str:
 
 
 def generate_dalle_image(prompt: str, out_path: Path) -> Path:
-    """Call gpt-image-1 and save the image. Cached if already exists."""
+    """Call gpt-image-2 and save the image. Cached if already exists."""
     prompt = _normalize_visual_prompt(prompt)
     if out_path.exists():
         logger.info(f"Reusing cached image: {out_path.name}")
         return out_path
     client = make_openai_client()
-    logger.info(f"gpt-image-1: {prompt[:80]}…")
+    logger.info(f"gpt-image-2: {prompt[:80]}…")
     data = _call_dalle(client, prompt)
     out_path.write_bytes(data)
-    get_ledger().record_image(f"image-{out_path.stem}", "gpt-image-1")
+    get_ledger().record_image(f"image-{out_path.stem}", "gpt-image-2")
     logger.info(f"  → {out_path.name} ({len(data)//1024} KB)")
     return out_path
 
@@ -444,7 +444,7 @@ def generate_scene_clip(
       4. image_cache      — cosine-similar prompt from a previous run   (~$0.000006)
       5. stock_photo      — Unsplash / Pexels photo for generic scenes   (free)
       6. stable_diffusion — Stability AI for breaking-news clips          (~$0.003)
-      7. gpt_image_1      — gpt-image-1 for all other scenes               (~$0.040)
+      7. gpt_image_1      — gpt-image-2 for all other scenes               (~$0.040)
       8. placeholder      — solid dark frame if everything fails
 
     *is_breaking* activates Stable Diffusion as the default generator (step 6).
@@ -523,10 +523,10 @@ def generate_scene_clip(
                             generated = True
                         except Exception as exc:
                             logger.warning(
-                                f"Scene {scene.idx}: SD failed ({exc}) — falling back to gpt-image-1"
+                                f"Scene {scene.idx}: SD failed ({exc}) — falling back to gpt-image-2"
                             )
 
-                    # 7. gpt-image-1 — universal fallback
+                    # 7. gpt-image-2 — universal fallback
                     if not generated:
                         prompt = visual_prompt
                         if getattr(scene, "scene_type", None) == "diagram":
