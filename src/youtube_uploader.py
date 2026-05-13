@@ -9,6 +9,7 @@ import argparse
 import pickle
 import sys
 import os
+import time
 from pathlib import Path
 
 from google.auth.transport.requests import Request
@@ -171,16 +172,27 @@ def upload_video(
 
     logger.info(f"Uploading {video_path.name} ({video_path.stat().st_size / 1e6:.1f} MB)")
     response = None
+    _chunk_retries = 0
+    _MAX_CHUNK_RETRIES = 5
     while response is None:
         try:
             status, response = request.next_chunk()
+            _chunk_retries = 0
             if status:
                 logger.info(f"  {int(status.progress() * 100)}%")
         except HttpError as e:
             if e.resp.status in (500, 502, 503, 504):
-                logger.warning(f"Retryable error {e.resp.status}, retrying...")
+                logger.warning(f"Retryable HTTP error {e.resp.status}, retrying...")
                 continue
             raise
+        except (TimeoutError, OSError) as e:
+            _chunk_retries += 1
+            if _chunk_retries > _MAX_CHUNK_RETRIES:
+                logger.error(f"Upload chunk timed out {_MAX_CHUNK_RETRIES} times, giving up: {e}")
+                raise
+            wait = 2 ** _chunk_retries
+            logger.warning(f"Upload chunk network error ({type(e).__name__}), retry {_chunk_retries}/{_MAX_CHUNK_RETRIES} in {wait}s...")
+            time.sleep(wait)
 
     video_id = response["id"]
     logger.info(f"Uploaded: https://youtu.be/{video_id}")
