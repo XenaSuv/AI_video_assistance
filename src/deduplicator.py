@@ -36,10 +36,19 @@ class SeenStories:
     # --------------------- internal ---------------------
 
     def _connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(str(self.db_path))
+        conn = sqlite3.connect(str(self.db_path), timeout=30)
+        # busy_timeout makes SQLite retry on SQLITE_BUSY at the C level
+        # (complements Python-level timeout which retries the initial open).
+        conn.execute("PRAGMA busy_timeout=10000")
+        return conn
 
     def _init_db(self) -> None:
         with self._connect() as conn:
+            # WAL allows concurrent readers while a writer is active.
+            # Without it, any writer exclusively locks the file, causing
+            # SQLITE_BUSY when daily and breaking-news pipelines overlap.
+            # journal_mode is persistent in the DB file — only needs setting once.
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS seen_stories (
                     url           TEXT PRIMARY KEY,
