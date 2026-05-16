@@ -610,3 +610,99 @@ class TestNewsItem:
         item = NewsItem(source="x", title="t", url="u", summary="s",
                         authors=[], published="2025-01-01")
         assert item.score == 0.0
+
+
+# ── Concurrent scraping ───────────────────────────────────────────────────────
+
+class TestScrapeAllConcurrent:
+    """Verify that scrape_all() fetches all sources and assembles results correctly
+    when sources run in parallel via ThreadPoolExecutor."""
+
+    def _item(self, title: str, score: float = 1.0) -> NewsItem:
+        return NewsItem(source="Test", title=title, url=f"https://x.com/{title[:8]}",
+                        summary="", authors=[], published=dt.date.today().isoformat(),
+                        score=score)
+
+    def test_all_sources_are_called(self):
+        """Each source function must be called exactly once."""
+        calls: list[str] = []
+
+        def _src(name):
+            def inner():
+                calls.append(name)
+                return []
+            return inner
+
+        with patch("src.scraper.scrape_official_sources", side_effect=_src("official")), \
+             patch("src.scraper.scrape_huggingface",       side_effect=_src("hf")), \
+             patch("src.scraper.scrape_arxiv",             side_effect=_src("arxiv")), \
+             patch("src.scraper.scrape_hackernews",        side_effect=_src("hn")):
+            scrape_all(cache_dir=False)
+
+        assert sorted(calls) == ["arxiv", "hf", "hn", "official"]
+
+    def test_results_from_all_sources_included(self):
+        official   = [self._item("Official AI story", score=5.0)]
+        hf_items   = [self._item("HuggingFace paper", score=2.0)]
+        arxiv_items = [self._item("arXiv preprint X", score=1.5)]
+        hn_items   = [self._item("HackerNews thread", score=1.0)]
+
+        with patch("src.scraper.scrape_official_sources", return_value=official), \
+             patch("src.scraper.scrape_huggingface",       return_value=hf_items), \
+             patch("src.scraper.scrape_arxiv",             return_value=arxiv_items), \
+             patch("src.scraper.scrape_hackernews",        return_value=hn_items):
+            result = scrape_all(top_n=10, cache_dir=False)
+
+        titles = {r.title for r in result}
+        assert "Official AI story" in titles
+        assert "HuggingFace paper" in titles
+        assert "arXiv preprint X" in titles
+        assert "HackerNews thread" in titles
+
+    def test_failing_source_does_not_abort_others(self):
+        """A source that raises must not prevent other sources from returning data."""
+        good_item = self._item("Good community item")
+
+        with patch("src.scraper.scrape_official_sources", side_effect=RuntimeError("network")), \
+             patch("src.scraper.scrape_huggingface",       return_value=[good_item]), \
+             patch("src.scraper.scrape_arxiv",             return_value=[]), \
+             patch("src.scraper.scrape_hackernews",        return_value=[]):
+            result = scrape_all(top_n=10, cache_dir=False)
+
+        assert any(r.title == "Good community item" for r in result)
+
+    def test_concurrent_cache_writes_are_safe(self, tmp_path):
+        """Multiple threads writing different keys to the same ScraperCache
+        must not corrupt each other's files."""
+        import threading
+
+        cache = ScraperCache(tmp_path)
+        errors: list[Exception] = []
+
+        def write(key: str, n: int) -> None:
+            items = [self._item(f"{key} item {i}") for i in range(n)]
+            try:
+                cache.set(key, items)
+            except Exception as exc:
+                errors.append(exc)
+
+        keys = ["official_sources", "huggingface", "arxiv", "hackernews"]
+        threads = [threading.Thread(target=write, args=(k, 3)) for k in keys]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert errors == [], f"Cache writes raised: {errors}"
+        for key in keys:
+            result = cache.get(key)
+            assert result is not None, f"Key '{key}' missing after concurrent write"
+            assert len(result) == 3
+
+    def test_all_sources_fail_returns_empty(self):
+        with patch("src.scraper.scrape_official_sources", side_effect=Exception("err")), \
+             patch("src.scraper.scrape_huggingface",       side_effect=Exception("err")), \
+             patch("src.scraper.scrape_arxiv",             side_effect=Exception("err")), \
+             patch("src.scraper.scrape_hackernews",        side_effect=Exception("err")):
+            result = scrape_all(top_n=10, cache_dir=False)
+        assert result == []
