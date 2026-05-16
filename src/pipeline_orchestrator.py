@@ -107,12 +107,14 @@ def _load_audio_durations(script: VideoScript, audio_dir: Path) -> None:
 
 
 def _setup_logging(run_dir: Path) -> None:
+    from src.log_filter import scrub
     logger.remove()
     logger.add(
         sys.stderr, level="INFO",
         format="<green>{time:HH:mm:ss}</green> | <level>{level:<7}</level> | {message}",
+        filter=scrub,
     )
-    logger.add(run_dir / "run.log", level="DEBUG", rotation="10 MB")
+    logger.add(run_dir / "run.log", level="DEBUG", rotation="10 MB", filter=scrub)
 
 
 def _needs_video_rebuild(video_path: Path) -> bool:
