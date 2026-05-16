@@ -42,7 +42,7 @@ class TestUploadAudio:
         assert url == "https://cdn.heygen.com/audio/abc.mp3"
         mock_post.assert_called_once()
         args, kwargs = mock_post.call_args
-        assert "v1/asset" in args[0]
+        assert "v2/asset" in args[0]
 
     def test_raises_when_no_url_returned(self, tmp_path):
         audio = tmp_path / "hook.mp3"

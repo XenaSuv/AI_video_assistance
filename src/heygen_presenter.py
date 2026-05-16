@@ -58,12 +58,14 @@ def _upload_audio(audio_path: Path, api_key: str) -> str:
 
     HeyGen requires a public URL for audio-driven clips; this endpoint
     hosts the file and returns a CDN URL valid for the video generation call.
+
+    Uses /v2/asset (the /v1/asset endpoint was removed).
     """
     with open(audio_path, "rb") as f:
         audio_bytes = f.read()
 
     resp = http_post(
-        f"{_API_BASE}/v1/asset",
+        f"{_API_BASE}/v2/asset",
         headers={"X-Api-Key": api_key},
         files={"file": (audio_path.name, audio_bytes, "audio/mpeg")},
         timeout=60,
