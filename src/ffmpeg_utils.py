@@ -36,13 +36,25 @@ def _run(args: list[str]) -> subprocess.CompletedProcess:
 def _esc(text: str) -> str:
     """Escape *text* for use inside an ffmpeg drawtext filter value.
 
-    Order matters: backslash first, then the others.
+    Applies two layers of escaping (order matters):
+
+    1. Strip control characters — newlines, null bytes, and other non-printable
+       chars would silently corrupt the filter string passed to ffmpeg.
+    2. FFmpeg filter-graph escaping — backslash, colon, square brackets, and
+       the shell-convention single-quote escape (FFmpeg mirrors POSIX here).
+    3. drawtext printf expansion — `%` introduces `%{pts}`, `%{expr:…}` etc.;
+       must be doubled to produce a literal percent sign.
     """
+    # Strip control characters (keep normal spaces)
+    text = "".join(ch for ch in text if ch == " " or ch.isprintable())
+    # FFmpeg filter-graph level (backslash must come first)
     text = text.replace("\\", "\\\\")
     text = text.replace("'",  r"'\''")
     text = text.replace(":",  r"\:")
     text = text.replace("[",  r"\[")
     text = text.replace("]",  r"\]")
+    # drawtext printf expansion — must be after backslash escaping
+    text = text.replace("%",  "%%")
     return text
 
 
