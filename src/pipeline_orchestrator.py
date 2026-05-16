@@ -394,9 +394,31 @@ def _run_language_variant(
     return summary
 
 
-# ── Orchestrator ──────────────────────────────────────────────────────────────
+def _build_v3_context(
+    perf_store: "PerformanceStore",
+    v3_engine: "DecisionEngineV3",
+    thompson_preferred_type: str | None,
+    predicted_risks: list[dict],
+) -> dict:
+    """Assemble the context dict passed to DecisionEngineV3.decide().
 
-class PipelineOrchestrator:
+    Separated from _step_script so it can be tested without standing up a full
+    PipelineOrchestrator instance.
+    """
+    return {
+        "metrics": perf_store.get_channel_metrics(),
+        "bandit": {
+            "scene": {},
+            "packaging": {
+                "preferred_variant_type": thompson_preferred_type or "",
+            },
+        },
+        "prediction": {"risks": predicted_risks},
+        "history": v3_engine.load_history(),
+    }
+
+
+
     """Orchestrates the full daily AI news pipeline end-to-end.
 
     Per-run state is stored as instance attributes so step methods share context
@@ -584,17 +606,10 @@ class PipelineOrchestrator:
             # Build context for DecisionEngineV3: channel metrics + bandit signals
             _perf_store = PerformanceStore(data_dir=settings.data_dir)
             _v3_engine = DecisionEngineV3(data_dir=settings.data_dir)
-            _v3_context = {
-                "metrics": _perf_store.get_channel_metrics(),
-                "bandit": {
-                    "scene": {},
-                    "packaging": {
-                        "preferred_variant_type": self._thompson_preferred_type or "",
-                    },
-                },
-                "prediction": {"risks": _predicted_risks},
-                "history": _v3_engine.load_history(),
-            }
+            _v3_context = _build_v3_context(
+                _perf_store, _v3_engine,
+                self._thompson_preferred_type, _predicted_risks,
+            )
             v3_strategy: UnifiedStrategy = _v3_engine.decide(_v3_context)
             # Derive ContentStrategy for editorial_brain (angle/format weights are
             # handled by editorial_brain's own FeedbackAnalyzer, so empty is fine).
