@@ -36,7 +36,7 @@ class Settings:
 
     # YouTube
     youtube_client_secrets: Path = ROOT / _env("YOUTUBE_CLIENT_SECRETS", "config/client_secrets.json")
-    youtube_token_file: Path = ROOT / _env("YOUTUBE_TOKEN_FILE", "config/token.pickle")
+    youtube_token_file: Path = ROOT / _env("YOUTUBE_TOKEN_FILE", "config/token.json")
     youtube_category_id: str = _env("YOUTUBE_CATEGORY_ID", "28")
     youtube_privacy: str = _env("YOUTUBE_PRIVACY", "public")
 
@@ -45,7 +45,7 @@ class Settings:
     ru_elevenlabs_voice_id:      str  = _env("RU_ELEVENLABS_VOICE_ID",  "TUQNWEvVPBLzMBSVDPUA")
     ru_elevenlabs_model:         str  = _env("RU_ELEVENLABS_MODEL",     "eleven_multilingual_v2")
     ru_youtube_client_secrets:   Path = ROOT / _env("RU_YOUTUBE_CLIENT_SECRETS", "config/client_secrets_ru.json")
-    ru_youtube_token_file:       Path = ROOT / _env("RU_YOUTUBE_TOKEN_FILE",     "config/token_ru.pickle")
+    ru_youtube_token_file:       Path = ROOT / _env("RU_YOUTUBE_TOKEN_FILE",     "config/token_ru.json")
 
     # Stock B-roll video (Pexels primary, Pixabay fallback)
     pexels_api_key:  str = _env("PEXELS_API_KEY",  "")

@@ -1,13 +1,28 @@
 """YouTube Analytics client for retrieving video performance metrics."""
+import json
+from pathlib import Path
+
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-import pickle
 
 
-def get_analytics_service(token_file="config/token.pickle"):
+def get_analytics_service(token_file: str = "config/token.json") -> object:
     """Build and return YouTube Analytics service using stored credentials."""
-    with open(token_file, "rb") as f:
-        credentials = pickle.load(f)
+    path = Path(token_file)
 
+    # Auto-migrate legacy pickle token if present.
+    if path.suffix == ".pickle" or not path.exists():
+        pickle_path = path if path.suffix == ".pickle" else path.with_suffix(".pickle")
+        if pickle_path.exists():
+            import pickle as _pickle
+            json_path = pickle_path.with_suffix(".json")
+            with open(pickle_path, "rb") as f:
+                creds = _pickle.load(f)
+            json_path.write_text(creds.to_json())
+            pickle_path.unlink()
+            path = json_path
+
+    credentials = Credentials.from_authorized_user_info(json.loads(path.read_text()))
     return build("youtubeAnalytics", "v2", credentials=credentials)
 
 
