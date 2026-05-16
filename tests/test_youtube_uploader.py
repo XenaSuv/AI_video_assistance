@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch, call, PropertyMock
 
 import pytest
 
@@ -16,8 +16,251 @@ for _m in (
 ):
     sys.modules.setdefault(_m, MagicMock())
 
-from src.youtube_uploader import _migrate_pickle, _fill_timestamps
+from src.youtube_uploader import _migrate_pickle, _fill_timestamps, _upload_with_retry
 from src.script_generator import Scene, VideoScript
+
+
+# ── _upload_with_retry ────────────────────────────────────────────────────────
+
+class _FakeHttpError(Exception):
+    """Real exception class that stands in for googleapiclient.errors.HttpError."""
+
+    def __init__(self, status: int, retry_after: str | None = None) -> None:
+        self.resp = MagicMock()
+        self.resp.status = status
+        self.resp.get = MagicMock(return_value=retry_after)
+        super().__init__(f"HTTP {status}")
+
+
+def _make_http_error(status: int, retry_after: str | None = None) -> _FakeHttpError:
+    return _FakeHttpError(status, retry_after)
+
+
+def _make_request(chunks: list) -> MagicMock:
+    """Return a mock request whose next_chunk() yields each item in *chunks*.
+
+    Items may be:
+      - (status, response) tuple → returned as-is
+      - a BaseException instance  → raised
+    """
+    req = MagicMock()
+    req.resumable_uri      = "https://upload.googleapis.com/fake-uri"
+    req.resumable_progress = 0
+
+    side_effects: list = []
+    for item in chunks:
+        if isinstance(item, BaseException):
+            side_effects.append(item)
+        else:
+            side_effects.append(item)   # already a (status, response) tuple
+
+    req.next_chunk.side_effect = side_effects
+    return req
+
+
+class TestUploadWithRetry:
+    @pytest.fixture(autouse=True)
+    def _patch_env(self, monkeypatch):
+        """Replace the stub HttpError with our real exception class and suppress sleeps."""
+        monkeypatch.setattr("src.youtube_uploader.HttpError", _FakeHttpError)
+        monkeypatch.setattr("src.youtube_uploader.time.sleep", lambda _: None)
+
+    # ── happy path ──────────────────────────────────────────────────────────────
+
+    def test_returns_response_on_success(self, tmp_path):
+        video = tmp_path / "video.mp4"
+        video.write_bytes(b"fake")
+        req = _make_request([(None, {"id": "abc123"})])
+        result = _upload_with_retry(req, video, max_retries=3)
+        assert result == {"id": "abc123"}
+
+    def test_state_file_deleted_on_success(self, tmp_path):
+        video = tmp_path / "video.mp4"
+        video.write_bytes(b"fake")
+        req = _make_request([(None, {"id": "abc123"})])
+        _upload_with_retry(req, video, max_retries=3)
+        assert not (tmp_path / "video.mp4.upload_state.json").exists()
+
+    def test_multi_chunk_upload(self, tmp_path):
+        video = tmp_path / "video.mp4"
+        video.write_bytes(b"fake")
+        status_mid = MagicMock()
+        status_mid.progress.return_value = 0.5
+        req = _make_request([
+            (status_mid, None),
+            (None, {"id": "done42"}),
+        ])
+        result = _upload_with_retry(req, video, max_retries=3)
+        assert result["id"] == "done42"
+
+    # ── 5xx retry with backoff ──────────────────────────────────────────────────
+
+    def test_5xx_retries_and_succeeds(self, tmp_path):
+        video = tmp_path / "video.mp4"
+        video.write_bytes(b"fake")
+        req = _make_request([
+            _make_http_error(503),
+            _make_http_error(500),
+            (None, {"id": "ok"}),
+        ])
+        result = _upload_with_retry(req, video, max_retries=5)
+        assert result["id"] == "ok"
+
+    def test_5xx_raises_after_max_retries(self, tmp_path):
+        video = tmp_path / "video.mp4"
+        video.write_bytes(b"fake")
+        req = _make_request([_make_http_error(503)] * 6)
+        with pytest.raises(_FakeHttpError):
+            _upload_with_retry(req, video, max_retries=5)
+
+    def test_5xx_state_file_deleted_on_fatal_error(self, tmp_path):
+        video = tmp_path / "video.mp4"
+        video.write_bytes(b"fake")
+        req = _make_request([_make_http_error(503)] * 6)
+        try:
+            _upload_with_retry(req, video, max_retries=5)
+        except Exception:
+            pass
+        assert not (tmp_path / "video.mp4.upload_state.json").exists()
+
+    def test_5xx_sleep_doubles_each_retry(self, tmp_path, monkeypatch):
+        sleep_calls: list[float] = []
+        monkeypatch.setattr("src.youtube_uploader.time.sleep", sleep_calls.append)
+        video = tmp_path / "video.mp4"
+        video.write_bytes(b"fake")
+        req = _make_request([
+            _make_http_error(500),
+            _make_http_error(500),
+            (None, {"id": "x"}),
+        ])
+        _upload_with_retry(req, video, max_retries=5)
+        assert sleep_calls == [2, 4]  # 2**1, 2**2
+
+    # ── 429 rate limit ──────────────────────────────────────────────────────────
+
+    def test_429_retries_and_succeeds(self, tmp_path):
+        video = tmp_path / "video.mp4"
+        video.write_bytes(b"fake")
+        req = _make_request([
+            _make_http_error(429),
+            (None, {"id": "ok"}),
+        ])
+        result = _upload_with_retry(req, video, max_retries=3)
+        assert result["id"] == "ok"
+
+    def test_429_respects_retry_after_header(self, tmp_path, monkeypatch):
+        sleep_calls: list[float] = []
+        monkeypatch.setattr("src.youtube_uploader.time.sleep", sleep_calls.append)
+        video = tmp_path / "video.mp4"
+        video.write_bytes(b"fake")
+
+        err = _make_http_error(429, retry_after="30")  # Retry-After: 30s
+        req = _make_request([err, (None, {"id": "ok"})])
+        _upload_with_retry(req, video, max_retries=3)
+        assert sleep_calls == [30]
+
+    def test_429_raises_after_max_retries(self, tmp_path):
+        video = tmp_path / "video.mp4"
+        video.write_bytes(b"fake")
+        req = _make_request([_make_http_error(429)] * 4)
+        with pytest.raises(_FakeHttpError):
+            _upload_with_retry(req, video, max_retries=3)
+
+    # ── non-retryable 4xx ───────────────────────────────────────────────────────
+
+    def test_403_raises_immediately(self, tmp_path):
+        video = tmp_path / "video.mp4"
+        video.write_bytes(b"fake")
+        req = _make_request([_make_http_error(403)])
+        with pytest.raises(_FakeHttpError):
+            _upload_with_retry(req, video, max_retries=5)
+        assert req.next_chunk.call_count == 1  # no retry
+
+    def test_400_raises_immediately(self, tmp_path):
+        video = tmp_path / "video.mp4"
+        video.write_bytes(b"fake")
+        req = _make_request([_make_http_error(400)])
+        with pytest.raises(_FakeHttpError):
+            _upload_with_retry(req, video, max_retries=5)
+        assert req.next_chunk.call_count == 1
+
+    # ── network errors ──────────────────────────────────────────────────────────
+
+    def test_network_error_retries_and_succeeds(self, tmp_path):
+        video = tmp_path / "video.mp4"
+        video.write_bytes(b"fake")
+        req = _make_request([
+            TimeoutError("timed out"),
+            (None, {"id": "ok"}),
+        ])
+        result = _upload_with_retry(req, video, max_retries=3)
+        assert result["id"] == "ok"
+
+    def test_network_error_raises_after_max_retries(self, tmp_path):
+        video = tmp_path / "video.mp4"
+        video.write_bytes(b"fake")
+        req = _make_request([OSError("network gone")] * 4)
+        with pytest.raises(OSError):
+            _upload_with_retry(req, video, max_retries=3)
+
+    # ── resumable state persistence ─────────────────────────────────────────────
+
+    def test_state_file_written_after_chunk(self, tmp_path):
+        video = tmp_path / "video.mp4"
+        video.write_bytes(b"fake")
+        status_mid = MagicMock()
+        status_mid.progress.return_value = 0.4
+        req = _make_request([
+            (status_mid, None),
+            (None, {"id": "done"}),
+        ])
+        req.resumable_uri      = "https://upload.googleapis.com/uri123"
+        req.resumable_progress = 4_000_000
+
+        state_path = tmp_path / "video.mp4.upload_state.json"
+        # patch write_text to capture what was written after first chunk
+        written: list[str] = []
+        original_next_chunk = req.next_chunk.side_effect
+
+        call_count = [0]
+        responses = [(status_mid, None), (None, {"id": "done"})]
+
+        def patched_next_chunk():
+            result = responses[call_count[0]]
+            call_count[0] += 1
+            if isinstance(result, BaseException):
+                raise result
+            return result
+
+        req.next_chunk.side_effect = patched_next_chunk
+
+        _upload_with_retry(req, video, max_retries=3)
+        # state file should be cleaned up on success
+        assert not state_path.exists()
+
+    def test_resumes_from_existing_state_file(self, tmp_path):
+        video = tmp_path / "video.mp4"
+        video.write_bytes(b"fake")
+        state_path = tmp_path / "video.mp4.upload_state.json"
+        state_path.write_text(json.dumps({
+            "resumable_uri":      "https://upload.googleapis.com/saved-uri",
+            "resumable_progress": 8_000_000,
+        }))
+        req = _make_request([(None, {"id": "resumed"})])
+        result = _upload_with_retry(req, video, max_retries=3)
+        assert result["id"] == "resumed"
+        # URI must have been restored onto the request
+        assert req.resumable_uri == "https://upload.googleapis.com/saved-uri"
+        assert req.resumable_progress == 8_000_000
+
+    def test_corrupted_state_file_starts_fresh(self, tmp_path):
+        video = tmp_path / "video.mp4"
+        video.write_bytes(b"fake")
+        state_path = tmp_path / "video.mp4.upload_state.json"
+        state_path.write_text("not valid json {{")
+        req = _make_request([(None, {"id": "fresh"})])
+        result = _upload_with_retry(req, video, max_retries=3)
+        assert result["id"] == "fresh"
 
 
 # ── _fill_timestamps ──────────────────────────────────────────────────────────

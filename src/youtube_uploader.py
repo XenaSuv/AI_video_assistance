@@ -11,6 +11,7 @@ import sys
 import os
 import time
 from pathlib import Path
+from typing import Any
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -181,6 +182,103 @@ def _youtube_client(
     )
 
 
+# --------------------- Upload helpers ---------------------
+
+_RETRYABLE_STATUS = (500, 502, 503, 504)
+_MAX_RETRIES = 5
+
+
+def _upload_with_retry(request: "Any", video_path: Path, max_retries: int = _MAX_RETRIES) -> dict:
+    """Execute a resumable upload with exponential backoff and cross-run state persistence.
+
+    State (upload URI + byte offset) is written to *video_path*.upload_state.json
+    after every successful chunk so the upload can be resumed if the process is
+    restarted mid-way.  The state file is deleted on success or fatal error.
+    """
+    state_path = video_path.with_name(video_path.name + ".upload_state.json")
+
+    # Restore a previous partial upload if one exists.
+    if state_path.exists():
+        try:
+            saved = json.loads(state_path.read_text())
+            request.resumable_uri      = saved["resumable_uri"]
+            request.resumable_progress = int(saved.get("resumable_progress", 0))
+            logger.info(
+                f"Resuming upload from {request.resumable_progress / 1e6:.1f} MB "
+                f"(saved URI found)"
+            )
+        except Exception as exc:
+            logger.warning(f"Could not restore upload state, starting fresh: {exc}")
+            state_path.unlink(missing_ok=True)
+
+    http_retries = 0
+    net_retries  = 0
+    response     = None
+
+    while response is None:
+        try:
+            status, response = request.next_chunk()
+            http_retries = 0
+            net_retries  = 0
+
+            # Persist URI + progress so we can resume after a crash.
+            if getattr(request, "resumable_uri", None):
+                state_path.write_text(json.dumps({
+                    "resumable_uri":      request.resumable_uri,
+                    "resumable_progress": getattr(request, "resumable_progress", 0),
+                }))
+
+            if status:
+                pct = int(status.progress() * 100)
+                mb  = getattr(request, "resumable_progress", 0) / 1e6
+                logger.info(f"  Upload {pct}% ({mb:.0f} MB)")
+
+        except HttpError as exc:
+            code = exc.resp.status
+            if code in _RETRYABLE_STATUS:
+                http_retries += 1
+                if http_retries > max_retries:
+                    logger.error(
+                        f"Upload failed after {max_retries} retries (HTTP {code})"
+                    )
+                    state_path.unlink(missing_ok=True)
+                    raise
+                wait = 2 ** http_retries
+                logger.warning(
+                    f"HTTP {code} from YouTube, retry {http_retries}/{max_retries} in {wait}s"
+                )
+                time.sleep(wait)
+
+            elif code == 429:
+                http_retries += 1
+                if http_retries > max_retries:
+                    state_path.unlink(missing_ok=True)
+                    raise
+                retry_after = exc.resp.get("retry-after")
+                wait = int(retry_after) if retry_after else min(2 ** http_retries, 64)
+                logger.warning(f"Rate-limited by YouTube (429), waiting {wait}s")
+                time.sleep(wait)
+
+            else:
+                # 4xx (auth, quota exceeded, etc.) — not retryable.
+                state_path.unlink(missing_ok=True)
+                raise
+
+        except (TimeoutError, ConnectionError, OSError) as exc:
+            net_retries += 1
+            if net_retries > max_retries:
+                logger.error(f"Upload failed after {max_retries} network errors")
+                raise
+            wait = 2 ** net_retries
+            logger.warning(
+                f"Network error ({type(exc).__name__}), retry {net_retries}/{max_retries} in {wait}s"
+            )
+            time.sleep(wait)
+
+    state_path.unlink(missing_ok=True)
+    return response
+
+
 # --------------------- Upload ---------------------
 
 @youtube_breaker
@@ -232,29 +330,7 @@ def upload_video(
     )
 
     logger.info(f"Uploading {video_path.name} ({video_path.stat().st_size / 1e6:.1f} MB)")
-    response = None
-    _chunk_retries = 0
-    _MAX_CHUNK_RETRIES = 5
-    while response is None:
-        try:
-            status, response = request.next_chunk()
-            _chunk_retries = 0
-            if status:
-                logger.info(f"  {int(status.progress() * 100)}%")
-        except HttpError as e:
-            if e.resp.status in (500, 502, 503, 504):
-                logger.warning(f"Retryable HTTP error {e.resp.status}, retrying...")
-                continue
-            raise
-        except (TimeoutError, OSError) as e:
-            _chunk_retries += 1
-            if _chunk_retries > _MAX_CHUNK_RETRIES:
-                logger.error(f"Upload chunk timed out {_MAX_CHUNK_RETRIES} times, giving up: {e}")
-                raise
-            wait = 2 ** _chunk_retries
-            logger.warning(f"Upload chunk network error ({type(e).__name__}), retry {_chunk_retries}/{_MAX_CHUNK_RETRIES} in {wait}s...")
-            time.sleep(wait)
-
+    response = _upload_with_retry(request, video_path)
     video_id = response["id"]
     logger.info(f"Uploaded: https://youtu.be/{video_id}")
     return video_id
