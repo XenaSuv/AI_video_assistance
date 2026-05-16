@@ -16,11 +16,18 @@ def get_analytics_service(token_file: str = "config/token.json") -> Any:
     if path.suffix == ".pickle" or not path.exists():
         pickle_path = path if path.suffix == ".pickle" else path.with_suffix(".pickle")
         if pickle_path.exists():
-            import pickle as _pickle
             json_path = pickle_path.with_suffix(".json")
-            with open(pickle_path, "rb") as f:
-                creds = _pickle.load(f)
-            json_path.write_text(creds.to_json())
+            raw = pickle_path.read_bytes()
+            try:
+                import pickle as _pickle
+                import io
+                creds = _pickle.load(io.BytesIO(raw))
+                token_json = creds.to_json()
+            except Exception:
+                # File was saved as JSON with a .pickle extension.
+                token_json = raw.decode()
+                json.loads(token_json)  # validate — raises if truly corrupt
+            json_path.write_text(token_json)
             pickle_path.unlink()
             path = json_path
 

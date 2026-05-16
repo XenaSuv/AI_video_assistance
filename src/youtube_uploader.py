@@ -47,14 +47,20 @@ _CAPTION_TRACK_NAMES: dict[str, str] = {
 
 def _migrate_pickle(pickle_path: Path, json_path: Path) -> None:
     """One-time migration from legacy pickle token to JSON. Deletes the pickle file."""
-    import pickle as _pickle  # scoped import — only used during migration
     logger.warning(
         "Migrating legacy pickle token %s → %s",
         pickle_path.name, json_path.name,
     )
-    with open(pickle_path, "rb") as f:
-        creds = _pickle.load(f)
-    json_path.write_text(creds.to_json())
+    raw = pickle_path.read_bytes()
+    try:
+        import pickle as _pickle  # scoped import — only used during migration
+        creds = _pickle.load(__import__("io").BytesIO(raw))
+        token_json = creds.to_json()
+    except Exception:
+        # File was already written as JSON (e.g. saved with wrong extension).
+        token_json = raw.decode()
+        json.loads(token_json)  # validate — raises if truly corrupt
+    json_path.write_text(token_json)
     pickle_path.unlink()
     logger.info("Token migration complete. Update YOUTUBE_TOKEN_FILE to %s in your env.", json_path.name)
 
