@@ -32,6 +32,8 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     # Required for thumbnails.set and captions.insert
     "https://www.googleapis.com/auth/youtube.force-ssl",
+    # Required for YouTube Analytics API (retention curves, view metrics)
+    "https://www.googleapis.com/auth/yt-analytics.readonly",
 ]
 
 _CAPTION_TRACK_NAMES: dict[str, str] = {
