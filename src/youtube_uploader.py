@@ -6,13 +6,14 @@ This does the OAuth2 desktop flow once and caches the refresh token.
 from __future__ import annotations
 
 import argparse
-import pickle
+import json
 import sys
 import os
 import time
 from pathlib import Path
 
 from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -42,21 +43,53 @@ _CAPTION_TRACK_NAMES: dict[str, str] = {
 }
 
 
+def _migrate_pickle(pickle_path: Path, json_path: Path) -> None:
+    """One-time migration from legacy pickle token to JSON. Deletes the pickle file."""
+    import pickle as _pickle  # scoped import — only used during migration
+    logger.warning(
+        "Migrating legacy pickle token %s → %s",
+        pickle_path.name, json_path.name,
+    )
+    with open(pickle_path, "rb") as f:
+        creds = _pickle.load(f)
+    json_path.write_text(creds.to_json())
+    pickle_path.unlink()
+    logger.info("Token migration complete. Update YOUTUBE_TOKEN_FILE to %s in your env.", json_path.name)
+
+
 def _get_creds(
     client_secrets: Path | None = None,
     token_file: Path | None = None,
     force_browser: bool = False,
-):
+) -> Credentials:
     client_secrets = client_secrets or settings.youtube_client_secrets
     token_file     = token_file     or settings.youtube_token_file
 
-    creds = None
+    # Auto-migrate: env var still points to .pickle → switch to .json sibling.
+    if token_file.suffix == ".pickle":
+        json_path = token_file.with_suffix(".json")
+        if token_file.exists():
+            _migrate_pickle(token_file, json_path)
+        token_file = json_path
+    elif not token_file.exists():
+        # Expected .json but not found — check for legacy .pickle sibling.
+        pickle_sibling = token_file.with_suffix(".pickle")
+        if pickle_sibling.exists():
+            _migrate_pickle(pickle_sibling, token_file)
+
+    creds: Credentials | None = None
     if token_file.exists():
-        with open(token_file, "rb") as f:
-            creds = pickle.load(f)
+        try:
+            creds = Credentials.from_authorized_user_info(
+                json.loads(token_file.read_text()), SCOPES
+            )
+        except Exception as exc:
+            logger.warning("Failed to load token from %s: %s. Will re-authenticate.", token_file, exc)
+
     if creds and creds.expired and creds.refresh_token:
         try:
             creds.refresh(Request())
+            token_file.write_text(creds.to_json())
         except RefreshError as exc:
             headless = (
                 os.getenv("CI", "").lower() in ("1", "true")
@@ -67,7 +100,7 @@ def _get_creds(
                 raise RuntimeError(
                     "YouTube refresh token expired and cannot re-authorize in headless CI environment. "
                     "Please update the token manually by running 'python src/youtube_uploader.py --auth --force' locally, "
-                    "then commit the updated config/token.pickle to the repository."
+                    "then update the YOUTUBE_TOKEN_JSON_B64 GitHub secret."
                 ) from exc
             logger.warning(
                 "Existing YouTube token refresh failed: {}. "
@@ -79,6 +112,7 @@ def _get_creds(
                 token_file.unlink()
             except OSError:
                 pass
+
     if not creds or not creds.valid:
         if not client_secrets.exists():
             raise FileNotFoundError(
@@ -104,8 +138,7 @@ def _get_creds(
                     exc,
                 )
                 creds = flow.run_local_server(port=0, open_browser=False)
-        with open(token_file, "wb") as f:
-            pickle.dump(creds, f)
+        token_file.write_text(creds.to_json())
     return creds
 
 

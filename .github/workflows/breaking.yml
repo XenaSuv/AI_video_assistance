@@ -108,10 +108,30 @@ jobs:
             set -e
           fi
 
+      - name: Migrate pickle tokens to JSON
+        run: |
+          python3 - <<'EOF'
+          import pickle, json, pathlib
+
+          def migrate(src, dst):
+              s, d = pathlib.Path(src), pathlib.Path(dst)
+              if not s.exists():
+                  return
+              with open(s, "rb") as f:
+                  creds = pickle.load(f)
+              d.write_text(creds.to_json())
+              s.unlink()
+              print(f"  Migrated {s.name} → {d.name}")
+
+          migrate("config/token.pickle",    "config/token.json")
+          migrate("config/token_ru.pickle", "config/token_ru.json")
+          EOF
+
       - name: Validate credentials
         run: |
           python3 - <<'EOF'
-          import pickle, json, sys, pathlib
+          import json, sys, pathlib
+          from google.oauth2.credentials import Credentials
 
           def check(label, path, loader):
               p = pathlib.Path(path)
@@ -125,12 +145,15 @@ jobs:
                   print(f"  {label}: INVALID - {e}", file=sys.stderr)
                   sys.exit(1)
 
+          def load_token(p):
+              return Credentials.from_authorized_user_info(json.loads(p.read_text()))
+
           print("English channel:")
-          check("token.pickle",       "config/token.pickle",       lambda p: pickle.load(p.open("rb")))
-          check("client_secrets.json","config/client_secrets.json",lambda p: json.load(p.open()))
+          check("token.json",          "config/token.json",          load_token)
+          check("client_secrets.json", "config/client_secrets.json", lambda p: json.load(p.open()))
 
           print("Russian channel:")
-          check("token_ru.pickle",        "config/token_ru.pickle",        lambda p: pickle.load(p.open("rb")))
+          check("token_ru.json",          "config/token_ru.json",          load_token)
           check("client_secrets_ru.json", "config/client_secrets_ru.json", lambda p: json.load(p.open()))
           EOF
 
@@ -146,7 +169,7 @@ jobs:
           PEXELS_API_KEY:            ${{ secrets.PEXELS_API_KEY }}
           PIXABAY_API_KEY:           ${{ secrets.PIXABAY_API_KEY }}
           YOUTUBE_CLIENT_SECRETS:    config/client_secrets.json
-          YOUTUBE_TOKEN_FILE:        config/token.pickle
+          YOUTUBE_TOKEN_FILE:        config/token.json
           YOUTUBE_CATEGORY_ID:       "28"
           YOUTUBE_PRIVACY:           public
           SCRIPT_TARGET_WORDS:       "600"
@@ -160,7 +183,7 @@ jobs:
           RU_ELEVENLABS_VOICE_ID:    ${{ secrets.RU_ELEVENLABS_VOICE_ID }}
           RU_ELEVENLABS_MODEL:       eleven_multilingual_v2
           RU_YOUTUBE_CLIENT_SECRETS: config/client_secrets_ru.json
-          RU_YOUTUBE_TOKEN_FILE:     config/token_ru.pickle
+          RU_YOUTUBE_TOKEN_FILE:     config/token_ru.json
           PRESENTER_ENABLED:         ${{ vars.PRESENTER_ENABLED || 'false' }}
           PRESENTER_AVATAR_PATH:     ${{ vars.PRESENTER_AVATAR_PATH || 'assets/avatar.png' }}
           HEYGEN_ENABLED:            ${{ vars.HEYGEN_ENABLED || 'false' }}

@@ -59,6 +59,18 @@ jobs:
           YOUTUBE_TOKEN_PICKLE_B64: ${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}
           YOUTUBE_CLIENT_SECRETS_B64: ${{ secrets.YOUTUBE_CLIENT_SECRETS_B64 }}
 
+      - name: Migrate pickle token to JSON
+        run: |
+          python3 -c "
+          import pickle, pathlib
+          s = pathlib.Path('config/token.pickle')
+          if not s.exists(): exit(0)
+          with open(s, 'rb') as f: creds = pickle.load(f)
+          pathlib.Path('config/token.json').write_text(creds.to_json())
+          s.unlink()
+          print('Migrated token.pickle -> token.json')
+          "
+
       - name: Run Shorts Pipeline
         env:
           OPENAI_API_KEY:                  ${{ secrets.OPENAI_API_KEY }}
