@@ -1,17 +1,19 @@
 """Validation helpers for LLM (OpenAI) JSON responses.
 
 Two entry points:
-  parse_llm_json(content, context)         — parse JSON, strip markdown fences
+  parse_llm_json(content, context)           — parse JSON, strip markdown fences
   validate_llm_response(data, keys, context) — assert required keys present
 
-Both raise ValueError with a human-readable message that names the caller
-context and the missing/malformed fields, replacing the cryptic KeyError /
-JSONDecodeError that would otherwise surface from deep inside a pipeline step.
+Both raise ScriptGenerationError with a human-readable message that names the
+caller context and the missing/malformed fields, replacing the cryptic KeyError
+/ JSONDecodeError that would otherwise surface from deep inside a pipeline step.
 """
 from __future__ import annotations
 
 import json
 import re
+
+from src.exceptions import ScriptGenerationError
 
 
 def parse_llm_json(content: str | None, context: str = "") -> dict:
@@ -33,7 +35,7 @@ def parse_llm_json(content: str | None, context: str = "") -> dict:
     """
     ctx = f" [{context}]" if context else ""
     if not content or not content.strip():
-        raise ValueError(f"LLM returned empty content{ctx}")
+        raise ScriptGenerationError(f"LLM returned empty content{ctx}")
 
     text = content.strip()
     # Strip optional opening fence: ```json or ```
@@ -45,7 +47,7 @@ def parse_llm_json(content: str | None, context: str = "") -> dict:
         return json.loads(text)
     except json.JSONDecodeError as exc:
         snippet = text[:200] + ("…" if len(text) > 200 else "")
-        raise ValueError(
+        raise ScriptGenerationError(
             f"LLM returned invalid JSON{ctx}: {exc}. "
             f"Content snippet: {snippet!r}"
         ) from exc
@@ -69,7 +71,7 @@ def validate_llm_response(
     ctx = f" [{context}]" if context else ""
     missing = [k for k in required_keys if k not in data or data[k] is None]
     if missing:
-        raise ValueError(
+        raise ScriptGenerationError(
             f"LLM response{ctx} missing required keys: {missing}. "
             f"Present keys: {sorted(data.keys())}"
         )

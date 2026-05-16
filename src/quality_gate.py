@@ -15,10 +15,15 @@ from loguru import logger
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import src.ffmpeg_utils as ffmpeg_utils
+from src.exceptions import QualityCheckError
 
 
-class QualityGateError(RuntimeError):
-    """Raised when a hard quality check fails."""
+class QualityGateError(QualityCheckError):
+    """Raised when a hard quality check fails.
+
+    Extends QualityCheckError so callers can catch either name.
+    The name QualityGateError is kept for backward compatibility.
+    """
 
 
 @dataclass

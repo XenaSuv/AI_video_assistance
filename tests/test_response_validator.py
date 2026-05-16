@@ -6,6 +6,7 @@ import json
 import pytest
 
 from src.response_validator import parse_llm_json, validate_llm_response
+from src.exceptions import ScriptGenerationError, AIVideoError
 
 
 # ── parse_llm_json ────────────────────────────────────────────────────────────
@@ -31,28 +32,32 @@ class TestParseLlmJson:
         assert result["title"] == "test"
 
     def test_raises_on_none_content(self):
-        with pytest.raises(ValueError, match="empty content"):
+        with pytest.raises(ScriptGenerationError, match="empty content"):
             parse_llm_json(None)
 
     def test_raises_on_empty_string(self):
-        with pytest.raises(ValueError, match="empty content"):
+        with pytest.raises(ScriptGenerationError, match="empty content"):
             parse_llm_json("")
 
     def test_raises_on_whitespace_only(self):
-        with pytest.raises(ValueError, match="empty content"):
+        with pytest.raises(ScriptGenerationError, match="empty content"):
             parse_llm_json("   ")
 
     def test_raises_on_invalid_json(self):
-        with pytest.raises(ValueError, match="invalid JSON"):
+        with pytest.raises(ScriptGenerationError, match="invalid JSON"):
             parse_llm_json('{"title": missing_quotes}')
 
     def test_context_appears_in_error_message(self):
-        with pytest.raises(ValueError, match="generate_script"):
+        with pytest.raises(ScriptGenerationError, match="generate_script"):
             parse_llm_json(None, context="generate_script")
 
     def test_invalid_json_shows_snippet(self):
-        with pytest.raises(ValueError, match="not-json"):
+        with pytest.raises(ScriptGenerationError, match="not-json"):
             parse_llm_json("not-json")
+
+    def test_error_is_ai_video_error_subclass(self):
+        with pytest.raises(AIVideoError):
+            parse_llm_json(None)
 
     def test_nested_dict_parsed_correctly(self):
         payload = {"scenes": [{"idx": 0, "heading": "Intro"}], "title": "T"}
@@ -76,11 +81,11 @@ class TestValidateLlmResponse:
         validate_llm_response(data, ["title", "scenes"])  # no raise
 
     def test_raises_on_missing_key(self):
-        with pytest.raises(ValueError, match="missing required keys"):
+        with pytest.raises(ScriptGenerationError, match="missing required keys"):
             validate_llm_response({"title": "T"}, ["title", "scenes"])
 
     def test_raises_listing_all_missing_keys(self):
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ScriptGenerationError) as exc_info:
             validate_llm_response({}, ["title", "description", "scenes"])
         msg = str(exc_info.value)
         assert "title" in msg
@@ -88,8 +93,12 @@ class TestValidateLlmResponse:
         assert "scenes" in msg
 
     def test_none_value_treated_as_missing(self):
-        with pytest.raises(ValueError, match="missing required keys"):
+        with pytest.raises(ScriptGenerationError, match="missing required keys"):
             validate_llm_response({"title": None}, ["title"])
+
+    def test_error_is_ai_video_error_subclass(self):
+        with pytest.raises(AIVideoError):
+            validate_llm_response({}, ["title"])
 
     def test_empty_string_is_not_missing(self):
         # Empty string is a valid value — only None / absent counts as missing
@@ -102,11 +111,11 @@ class TestValidateLlmResponse:
         validate_llm_response({"enabled": False}, ["enabled"])  # no raise
 
     def test_context_appears_in_error_message(self):
-        with pytest.raises(ValueError, match="generate_digest_script"):
+        with pytest.raises(ScriptGenerationError, match="generate_digest_script"):
             validate_llm_response({}, ["title"], context="generate_digest_script")
 
     def test_error_shows_present_keys(self):
-        with pytest.raises(ValueError, match="existing_key"):
+        with pytest.raises(ScriptGenerationError, match="existing_key"):
             validate_llm_response({"existing_key": "val"}, ["missing_key"])
 
     def test_empty_required_keys_always_passes(self):
