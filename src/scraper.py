@@ -7,10 +7,12 @@ prioritised over community/research sources in the final selection.
 """
 from __future__ import annotations
 
+import concurrent.futures
 import datetime as dt
 import json
 import re
 import sys
+import threading
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -19,7 +21,6 @@ from urllib.parse import urljoin, quote as _url_quote
 import xml.etree.ElementTree as ET
 
 import arxiv
-import requests
 from bs4 import BeautifulSoup
 from src.retry_utils import http_get
 from loguru import logger
@@ -58,37 +59,40 @@ class ScraperCache:
     def __init__(self, cache_dir: Path) -> None:
         self._dir   = cache_dir
         self._today = dt.date.today().isoformat()
+        self._lock  = threading.Lock()
 
     def get(self, key: str) -> list[NewsItem] | None:
         """Return cached items if fresh, else None."""
-        path = self._dir / f"{key}.json"
-        if not path.exists():
-            return None
-        try:
-            data = json.loads(path.read_text())
-        except Exception as exc:
-            logger.warning(f"ScraperCache: unreadable cache for '{key}': {exc}")
-            return None
-        if data.get("date") != self._today:
-            return None
-        items = [NewsItem(**it) for it in data.get("items", [])]
-        logger.debug(f"ScraperCache: hit '{key}' — {len(items)} items")
-        return items
+        with self._lock:
+            path = self._dir / f"{key}.json"
+            if not path.exists():
+                return None
+            try:
+                data = json.loads(path.read_text())
+            except Exception as exc:
+                logger.warning(f"ScraperCache: unreadable cache for '{key}': {exc}")
+                return None
+            if data.get("date") != self._today:
+                return None
+            items = [NewsItem(**it) for it in data.get("items", [])]
+            logger.debug(f"ScraperCache: hit '{key}' — {len(items)} items")
+            return items
 
     def set(self, key: str, items: list[NewsItem]) -> None:
         """Persist *items* to cache."""
         self._dir.mkdir(parents=True, exist_ok=True)
         path = self._dir / f"{key}.json"
         tmp  = path.with_suffix(".tmp")
-        try:
-            tmp.write_text(json.dumps(
-                {"date": self._today, "items": [i.to_dict() for i in items]},
-                indent=2,
-            ))
-            tmp.replace(path)
-            logger.debug(f"ScraperCache: saved '{key}' — {len(items)} items")
-        except Exception as exc:
-            logger.warning(f"ScraperCache: could not write cache for '{key}': {exc}")
+        with self._lock:
+            try:
+                tmp.write_text(json.dumps(
+                    {"date": self._today, "items": [i.to_dict() for i in items]},
+                    indent=2,
+                ))
+                tmp.replace(path)
+                logger.debug(f"ScraperCache: saved '{key}' — {len(items)} items")
+            except Exception as exc:
+                logger.warning(f"ScraperCache: could not write cache for '{key}': {exc}")
 
 
 # ─────────────────── helpers ───────────────────
@@ -489,12 +493,21 @@ def scrape_all(top_n: int = 10, cache_dir: Path | None = None) -> list[NewsItem]
             cache.set(key, result)
         return result
 
-    official  = _cached("official_sources", scrape_official_sources)
-    community = (
-        _cached("huggingface",  scrape_huggingface)
-        + _cached("arxiv",      scrape_arxiv)
-        + _cached("hackernews", scrape_hackernews)
-    )
+    sources = {
+        "official_sources": scrape_official_sources,
+        "huggingface":      scrape_huggingface,
+        "arxiv":            scrape_arxiv,
+        "hackernews":       scrape_hackernews,
+    }
+    results: dict[str, list[NewsItem]] = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(sources)) as pool:
+        futures = {pool.submit(_cached, key, fn): key for key, fn in sources.items()}
+        for fut in concurrent.futures.as_completed(futures):
+            key = futures[fut]
+            results[key] = fut.result()
+
+    official  = results["official_sources"]
+    community = results["huggingface"] + results["arxiv"] + results["hackernews"]
     all_items = official + community
 
     # Dedupe by lowercased title prefix

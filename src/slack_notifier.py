@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import datetime as dt
 
-import requests
 from loguru import logger
 
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.log_filter import scrub_message
 from src.retry_utils import http_post as _http_post
 
 
@@ -102,7 +102,7 @@ def notify_failure(
 ) -> None:
     """Post a red failure alert with error message and traceback tail."""
     date = (summary or {}).get("date", dt.date.today().isoformat())
-    err  = str(exc)[:400]
+    err  = scrub_message(str(exc))[:400]
 
     lines: list[str] = [
         f"*🚨 {pipeline.capitalize()} pipeline FAILED — {date}*",
@@ -110,7 +110,7 @@ def notify_failure(
     ]
 
     if traceback_str:
-        tb_lines = [l for l in traceback_str.strip().splitlines() if l.strip()]
+        tb_lines = [l for l in scrub_message(traceback_str).strip().splitlines() if l.strip()]
         snippet  = "\n".join(tb_lines[-5:])
         lines.append(f"```{snippet}```")
 

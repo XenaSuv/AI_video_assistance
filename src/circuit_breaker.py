@@ -28,11 +28,17 @@ import time
 from enum import Enum
 from typing import Any, Callable
 
+from src.exceptions import ServiceUnavailableError
+
 
 # ── Public exception ──────────────────────────────────────────────────────────
 
-class CircuitOpenError(RuntimeError):
-    """Raised when a call is rejected because the circuit is OPEN."""
+class CircuitOpenError(ServiceUnavailableError):
+    """Raised when a call is rejected because the circuit is OPEN.
+
+    Extends ServiceUnavailableError so callers can catch either name.
+    The name CircuitOpenError is kept for backward compatibility.
+    """
 
     def __init__(self, name: str, retry_after: float) -> None:
         self.service = name

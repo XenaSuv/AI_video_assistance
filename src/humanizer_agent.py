@@ -1,8 +1,6 @@
 """Humanizer agent for making AI-generated scripts sound more human-like."""
 from __future__ import annotations
 
-import json
-import re
 from typing import Any
 
 from loguru import logger
@@ -10,7 +8,6 @@ from openai import OpenAI
 from src.retry_utils import make_openai_client
 
 sys_path_insert = __import__("sys").path.insert
-from pathlib import Path
 from pathlib import Path as _Path
 
 import sys

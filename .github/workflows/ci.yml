@@ -44,4 +44,4 @@ jobs:
           # Dummy values — conftest.py also sets these, but explicit is safer
           OPENAI_API_KEY: test-key-openai
           ELEVENLABS_API_KEY: test-key-elevenlabs
-        run: python -m pytest tests/ -v --tb=short --cov=src --cov-report=term-missing --cov-fail-under=35
+        run: python -m pytest tests/ -v --tb=short --cov=src --cov-report=term-missing --cov-fail-under=52

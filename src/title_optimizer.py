@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-from openai import OpenAI
 from src.retry_utils import make_openai_client
 from loguru import logger
 

@@ -21,6 +21,7 @@ from src.cost_tracker import get_ledger
 from src.analytics import get_proven_hooks, get_proven_titles, top_keywords
 from src.scraper import NewsItem
 from src.editorial_brain import editorial_plan_to_prompt, EditorialPlan
+from src.response_validator import validate_llm_response
 
 
 @dataclass
@@ -463,6 +464,7 @@ def generate_script(
 
     raw = resp.choices[0].message.content or "{}"
     data = json.loads(raw)
+    validate_llm_response(data, ["title", "scenes"], "generate_script")
 
     scenes = []
     for i, s in enumerate(data.get("scenes", [])):
@@ -481,8 +483,8 @@ def generate_script(
         visual_prompt = visual_prompt or "A cinematic AI newsroom scene"
         scenes.append(Scene(
             idx=i,
-            heading=s["heading"],
-            narration=s["narration"],
+            heading=s.get("heading") or f"Scene {i}",
+            narration=s.get("narration") or "",
             visual_prompt=visual_prompt,
             infographic_data=infographic,
             video_query=video_q,
@@ -511,7 +513,7 @@ def generate_script(
 
     script = VideoScript(
         title=data["title"],
-        description=data["description"],
+        description=data.get("description", ""),
         tags=data.get("tags", []),
         hook=chosen_hook,
         hook_variants=hook_variants,

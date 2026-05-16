@@ -10,12 +10,10 @@ The breaking script is tight and urgent: 5 scenes, ~550-600 words total
 """
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
 from loguru import logger
-from openai import OpenAI
 from src.retry_utils import make_openai_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -23,6 +21,7 @@ from config import settings
 from src.cost_tracker import get_ledger
 from src.scraper import NewsItem
 from src.script_generator import Scene, VideoScript
+from src.response_validator import parse_llm_json, validate_llm_response
 
 _LONG_SYSTEM_PROMPT = """\
 You are a senior technology journalist specializing in artificial intelligence.
@@ -270,7 +269,8 @@ def generate_breaking_script(item: NewsItem) -> VideoScript:
     )
     _log_usage(resp.usage, "breaking")
 
-    raw = json.loads(resp.choices[0].message.content)
+    raw = parse_llm_json(resp.choices[0].message.content, "generate_breaking_script")
+    validate_llm_response(raw, ["title", "description", "tags", "hook", "scenes"], "generate_breaking_script")
     scenes = [
         Scene(
             idx=i,
@@ -319,7 +319,7 @@ def generate_breaking_short_script(item: NewsItem) -> VideoScript:
     )
     _log_usage(resp.usage, "breaking-short")
 
-    raw = json.loads(resp.choices[0].message.content)
+    raw = parse_llm_json(resp.choices[0].message.content, "generate_breaking_short_script")
     scene = Scene(
         idx=0,
         heading="Breaking Short",

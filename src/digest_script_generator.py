@@ -17,13 +17,13 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from loguru import logger
-from openai import OpenAI
 from src.retry_utils import make_openai_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.cost_tracker import get_ledger
 from src.script_generator import Scene, VideoScript
+from src.response_validator import parse_llm_json, validate_llm_response
 
 # Target word count for the digest (vs ~2200 for daily full episode)
 _DIGEST_WORDS = 950
@@ -259,13 +259,14 @@ def generate_digest_script(
     )
     _log_usage(resp.usage, "digest")
 
-    raw = json.loads(resp.choices[0].message.content)
+    raw = parse_llm_json(resp.choices[0].message.content, "generate_digest_script")
+    validate_llm_response(raw, ["title", "description", "tags", "scenes"], "generate_digest_script")
     scenes = [
         Scene(
             idx=i,
-            heading=s["heading"],
-            narration=s["narration"],
-            visual_prompt=s["visual_prompt"],
+            heading=s.get("heading") or f"Scene {i}",
+            narration=s.get("narration") or "",
+            visual_prompt=s.get("visual_prompt") or s.get("heading") or "AI news digest",
             source_quote=(s.get("source_quote") or "").strip() or None,
             quote_attribution=(s.get("quote_attribution") or "").strip() or None,
         )

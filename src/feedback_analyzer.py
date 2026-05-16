@@ -8,8 +8,6 @@ from pathlib import Path
 from typing import Any
 
 from loguru import logger
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 
 sys_path_insert = __import__("sys").path.insert
 from pathlib import Path as _Path

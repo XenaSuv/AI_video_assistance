@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from typing import Iterable
 
-from openai import OpenAI
 from src.retry_utils import make_openai_client
 from loguru import logger
 

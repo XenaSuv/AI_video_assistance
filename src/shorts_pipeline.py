@@ -38,7 +38,7 @@ from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
-from src.scraper import scrape_all, NewsItem
+from src.scraper import scrape_all
 from src.viral_selector import pick_viral_news
 from src.shorts_engine_v2 import ShortsEngineV2, ShortScript, ShortResult
 from src.shorts_experiment_engine import ShortsExperimentEngine
@@ -438,12 +438,14 @@ class ShortsPipeline:
 
 
 def _setup_logging(run_dir: Path) -> None:
+    from src.log_filter import scrub
     logger.remove()
     logger.add(
         sys.stderr, level="INFO",
         format="<green>{time:HH:mm:ss}</green> | <level>{level:<7}</level> | {message}",
+        filter=scrub,
     )
-    logger.add(run_dir / "shorts_run.log", level="DEBUG", rotation="10 MB")
+    logger.add(run_dir / "shorts_run.log", level="DEBUG", rotation="10 MB", filter=scrub)
 
 
 def _save_summary(run_dir: Path, summary: dict) -> None:

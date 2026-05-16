@@ -34,7 +34,6 @@ from src.pipeline_orchestrator import (
     _needs_video_rebuild,
     _setup_logging,
 )
-from src.script_generator import VideoScript
 from src.shorts_generator import build_short
 from src.subtitle_generator import generate_subtitles
 from src.thumbnail_ab import (
@@ -42,7 +41,6 @@ from src.thumbnail_ab import (
     pick_thumbnail,
     record_thumbnail_usage,
 )
-from src.thumbnail_generator import generate_thumbnail
 from src.video_generator import build_video
 from src.voice_generator import synthesize_script
 from src.youtube_uploader import publish_episode

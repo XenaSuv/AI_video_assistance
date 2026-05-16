@@ -11,7 +11,7 @@ from typing import Any
 from loguru import logger
 
 from config import settings
-from src.performance_tracker import _load_db, _save_db
+from src.performance_tracker import _load_db
 
 
 def _strategy_path() -> Path:

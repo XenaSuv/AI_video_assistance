@@ -28,14 +28,12 @@ from config import settings
 from src.hook_selector import record_usage
 from src.pipeline_orchestrator import _get_shared_outro, _load_audio_durations, _load_cached_script, _needs_video_rebuild, _run_language_variant, _setup_logging
 from src.subtitle_generator import generate_subtitles
-from src.script_generator import VideoScript
 from src.shorts_generator import build_short
 from src.thumbnail_ab import (
     generate_thumbnail_variants,
     pick_thumbnail,
     record_thumbnail_usage,
 )
-from src.thumbnail_generator import generate_thumbnail
 from src.video_generator import build_video
 from src.voice_generator import synthesize_script
 from src.weekly_script_generator import (
