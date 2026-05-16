@@ -7,7 +7,7 @@ silently skipped — the pipeline is never blocked by Slack being down.
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any
+from typing import Any, Optional
 
 from loguru import logger
 
@@ -187,6 +187,34 @@ def notify_slow_steps(slow: list[dict], pipeline: str, date: str) -> None:
     _post({
         "attachments": [{
             "color": "#ffa500",
+            "text": "\n".join(lines),
+            "mrkdwn_in": ["text"],
+        }]
+    })
+
+
+def notify_watchdog_alert(
+    last_run_at: Optional[dt.datetime],
+    hours_since: float,
+    pipeline: str,
+) -> None:
+    """Post a red alert when the pipeline hasn't produced a successful run recently."""
+    if last_run_at is None:
+        desc = "No successful run found in the output directory."
+    else:
+        h = int(hours_since)
+        last_str = last_run_at.strftime("%Y-%m-%d %H:%M UTC")
+        desc = f"Last success: *{last_str}* ({h}h ago)"
+
+    lines: list[str] = [
+        f"*🚨 Watchdog: {pipeline.capitalize()} pipeline stalled — {dt.date.today().isoformat()}*",
+        desc,
+        "_Check GitHub Actions logs and re-trigger manually if needed._",
+    ]
+
+    _post({
+        "attachments": [{
+            "color": "#e01e5a",
             "text": "\n".join(lines),
             "mrkdwn_in": ["text"],
         }]

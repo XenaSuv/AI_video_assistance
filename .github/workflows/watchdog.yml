@@ -1,0 +1,43 @@
+name: Pipeline Watchdog
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"   # every 6 hours
+  workflow_dispatch:          # manual trigger
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      # Restore output/ artifacts cached from the last successful daily run so
+      # the watchdog can find pipeline_trace.json without downloading the full
+      # run artifacts (which may be large).  A cache miss is fine — the watchdog
+      # will treat it as "no successful run found" and alert accordingly.
+      - name: Restore pipeline traces cache
+        uses: actions/cache@v4
+        with:
+          path: output/
+          key: pipeline-traces-${{ github.run_id }}
+          restore-keys: pipeline-traces-
+
+      - name: Run watchdog
+        env:
+          SLACK_WEBHOOK_URL: ${{ vars.SLACK_WEBHOOK_URL }}
+          OPENAI_API_KEY: placeholder          # required by settings import
+          ELEVENLABS_API_KEY: placeholder
+          OUTPUT_DIR: output
+          DATA_DIR: data
+        run: |
+          python src/watchdog.py \
+            --pipeline daily \
+            --max-hours 36
