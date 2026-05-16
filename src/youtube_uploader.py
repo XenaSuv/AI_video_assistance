@@ -26,7 +26,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src import ffmpeg_utils
 from src.circuit_breaker import youtube_breaker
+from src.exceptions import QuotaExhaustedError
 from src.script_generator import VideoScript
+from src.youtube_quota_guard import YouTubeQuotaGuard
 
 
 SCOPES = [
@@ -292,8 +294,20 @@ def upload_video(
     is_short: bool = False,
     client_secrets: Path | None = None,
     token_file: Path | None = None,
+    quota_guard: YouTubeQuotaGuard | None = None,
 ) -> str:
     """Upload a video. Returns the YouTube video id."""
+    guard = quota_guard or YouTubeQuotaGuard(settings.data_dir)
+    op    = "videos.insert"
+
+    if not guard.can_afford(op):
+        used = guard.used_today()
+        logger.error(
+            f"YouTube daily quota exhausted ({used}/{guard.daily_limit} units). "
+            "Skipping upload."
+        )
+        raise QuotaExhaustedError(used, guard.daily_limit)
+
     if not is_short and not ffmpeg_utils.has_audio_stream(video_path):
         raise ValueError(f"Refusing to upload video without audio stream: {video_path}")
 
@@ -330,7 +344,20 @@ def upload_video(
     )
 
     logger.info(f"Uploading {video_path.name} ({video_path.stat().st_size / 1e6:.1f} MB)")
-    response = _upload_with_retry(request, video_path)
+    try:
+        response = _upload_with_retry(request, video_path)
+    except Exception as exc:
+        if YouTubeQuotaGuard.is_quota_error(exc):
+            guard.mark_exhausted()
+            raise QuotaExhaustedError(guard.used_today(), guard.daily_limit) from exc
+        raise
+
+    guard.charge(op)
+    if guard.near_limit():
+        logger.warning(
+            f"YouTube quota nearly exhausted: {guard.used_today()}/{guard.daily_limit} units used."
+        )
+
     video_id = response["id"]
     logger.info(f"Uploaded: https://youtu.be/{video_id}")
     return video_id
@@ -363,14 +390,23 @@ def set_thumbnail(
     thumbnail_path: Path,
     client_secrets: Path | None = None,
     token_file: Path | None = None,
+    quota_guard: YouTubeQuotaGuard | None = None,
 ) -> None:
     """Upload a custom thumbnail for an already-uploaded video."""
+    guard = quota_guard or YouTubeQuotaGuard(settings.data_dir)
+    if not guard.can_afford("thumbnails.set"):
+        logger.warning("Skipping thumbnail upload: YouTube quota exhausted.")
+        return
+
     youtube = _youtube_client(client_secrets, token_file)
     media = MediaFileUpload(str(thumbnail_path), mimetype="image/jpeg")
     try:
         youtube.thumbnails().set(videoId=video_id, media_body=media).execute()
+        guard.charge("thumbnails.set")
         logger.info(f"Thumbnail set for {video_id}")
-    except HttpError as e:
+    except Exception as e:
+        if YouTubeQuotaGuard.is_quota_error(e):
+            guard.mark_exhausted()
         # 403 means the channel isn't verified for custom thumbnails (>100 subs)
         logger.warning(f"Could not set thumbnail (skipping): {e}")
 
@@ -381,12 +417,18 @@ def upload_captions(
     language: str = "en",
     client_secrets: Path | None = None,
     token_file: Path | None = None,
+    quota_guard: YouTubeQuotaGuard | None = None,
 ) -> None:
     """Upload an SRT caption track for an already-uploaded video.
 
     Fails silently with a warning — captions are a nice-to-have and should
     never block the main publish flow.
     """
+    guard = quota_guard or YouTubeQuotaGuard(settings.data_dir)
+    if not guard.can_afford("captions.insert"):
+        logger.warning("Skipping caption upload: YouTube quota exhausted.")
+        return
+
     youtube = _youtube_client(client_secrets, token_file)
     name = _CAPTION_TRACK_NAMES.get(language, language.upper())
     media = MediaFileUpload(str(srt_path), mimetype="text/plain", resumable=False)
@@ -403,8 +445,11 @@ def upload_captions(
             },
             media_body=media,
         ).execute()
+        guard.charge("captions.insert")
         logger.info(f"Captions [{language}] uploaded for {video_id}")
-    except HttpError as e:
+    except Exception as e:
+        if YouTubeQuotaGuard.is_quota_error(e):
+            guard.mark_exhausted()
         logger.warning(f"Caption upload failed (non-fatal): {e}")
 
 

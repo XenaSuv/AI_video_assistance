@@ -276,6 +276,40 @@ class TestNotifyBudgetSummary:
         assert "123.45" in text
 
 
+class TestNotifyQuotaAlert:
+    def _run(self, used: int, limit: int):
+        from src.slack_notifier import notify_quota_alert
+        with patch("src.slack_notifier._http_post") as mock_post:
+            with patch("src.slack_notifier.settings") as mock_settings:
+                mock_settings.slack_webhook_url = "https://hooks.slack.com/test"
+                notify_quota_alert(used=used, limit=limit, pipeline="daily")
+        return mock_post
+
+    def test_posts_when_webhook_set(self):
+        assert self._run(8500, 10_000).called
+
+    def test_orange_when_near_limit(self):
+        color = self._run(8500, 10_000).call_args[1]["json"]["attachments"][0]["color"]
+        assert color == "#ffa500"
+
+    def test_red_when_fully_exhausted(self):
+        color = self._run(10_000, 10_000).call_args[1]["json"]["attachments"][0]["color"]
+        assert color == "#e01e5a"
+
+    def test_message_contains_usage(self):
+        text = self._run(8500, 10_000).call_args[1]["json"]["attachments"][0]["text"]
+        assert "8,500" in text
+        assert "10,000" in text
+
+    def test_no_post_when_no_webhook(self):
+        from src.slack_notifier import notify_quota_alert
+        with patch("src.slack_notifier._http_post") as mock_post:
+            with patch("src.slack_notifier.settings") as mock_settings:
+                mock_settings.slack_webhook_url = ""
+                notify_quota_alert(used=9000, limit=10_000, pipeline="daily")
+        mock_post.assert_not_called()
+
+
 class TestNotifyFailure:
     def test_payload_color_is_red(self):
         with patch("src.slack_notifier._http_post") as mock_post:

@@ -193,6 +193,28 @@ def notify_slow_steps(slow: list[dict], pipeline: str, date: str) -> None:
     })
 
 
+def notify_quota_alert(used: int, limit: int, pipeline: str) -> None:
+    """Post a warning when YouTube API quota is nearly or fully exhausted."""
+    pct   = int(used / limit * 100) if limit else 0
+    full  = used >= limit
+    color = "#e01e5a" if full else "#ffa500"
+    label = "exhausted" if full else "nearly exhausted"
+
+    lines: list[str] = [
+        f"*⚠️ YouTube quota {label} — {pipeline.capitalize()} — {dt.date.today().isoformat()}*",
+        f"• Used: *{used:,}* / {limit:,} units ({pct}%)",
+        "_Uploads will be skipped until midnight UTC when the quota resets._",
+    ]
+
+    _post({
+        "attachments": [{
+            "color": color,
+            "text": "\n".join(lines),
+            "mrkdwn_in": ["text"],
+        }]
+    })
+
+
 def notify_watchdog_alert(
     last_run_at: Optional[dt.datetime],
     hours_since: float,

@@ -77,6 +77,23 @@ class UploadError(AIVideoError):
     """Publishing a video to YouTube or TikTok failed."""
 
 
+class QuotaExhaustedError(UploadError):
+    """YouTube daily API quota is exhausted.
+
+    Raised before an upload attempt when the quota tracker predicts the call
+    would exceed the daily limit, or after receiving a 403 quotaExceeded
+    response from the YouTube Data API.
+    """
+
+    def __init__(self, used: int, limit: int) -> None:
+        self.used  = used
+        self.limit = limit
+        super().__init__(
+            f"YouTube daily quota exhausted: {used:,}/{limit:,} units used. "
+            "Uploads resume after midnight UTC."
+        )
+
+
 class AuthenticationError(UploadError):
     """OAuth token has expired or credentials are invalid.
 
