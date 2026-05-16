@@ -9,7 +9,12 @@ import pytest
 # Stub requests so import succeeds without installing
 sys.modules.setdefault("requests", MagicMock())
 
-from src.slack_notifier import _duration_str, _yt_url, notify_success, notify_failure
+from src.slack_notifier import (
+    _duration_str, _yt_url, _spend_bar,
+    notify_success, notify_failure, notify_slow_steps,
+    notify_budget_alert, notify_budget_summary,
+)
+from src.budget_guard import BudgetStatus
 
 
 # ── Pure helpers ──────────────────────────────────────────────────────────────
@@ -104,6 +109,171 @@ class TestNotifySuccess:
         payload = mock_post.call_args[1]["json"]
         text = payload["attachments"][0]["text"]
         assert "2m 5s" in text
+
+
+class TestNotifySuccessWithTimings:
+    def _run(self, step_timings):
+        with patch("src.slack_notifier._http_post") as mock_post:
+            with patch("src.slack_notifier.settings") as mock_settings:
+                mock_settings.slack_webhook_url = "https://hooks.slack.com/test"
+                notify_success({"date": "2026-01-01"}, "daily", step_timings=step_timings)
+        return mock_post.call_args[1]["json"]["attachments"][0]["text"]
+
+    def test_step_timing_block_included(self):
+        timings = [{"name": "scrape", "duration_str": "45s", "slow": False}]
+        text = self._run(timings)
+        assert "scrape" in text
+        assert "45s" in text
+
+    def test_slow_step_shows_warning_emoji(self):
+        timings = [{"name": "video", "duration_str": "18m 0s", "slow": True}]
+        text = self._run(timings)
+        assert "⚠️" in text
+
+    def test_fast_step_shows_ok_emoji(self):
+        timings = [{"name": "scrape", "duration_str": "30s", "slow": False}]
+        text = self._run(timings)
+        assert "✅" in text
+
+    def test_no_timing_block_when_none(self):
+        with patch("src.slack_notifier._http_post") as mock_post:
+            with patch("src.slack_notifier.settings") as mock_settings:
+                mock_settings.slack_webhook_url = "https://hooks.slack.com/test"
+                notify_success({"date": "2026-01-01"}, "daily", step_timings=None)
+        text = mock_post.call_args[1]["json"]["attachments"][0]["text"]
+        assert "Step timing" not in text
+
+
+class TestNotifySlowSteps:
+    def _run(self, slow):
+        with patch("src.slack_notifier._http_post") as mock_post:
+            with patch("src.slack_notifier.settings") as mock_settings:
+                mock_settings.slack_webhook_url = "https://hooks.slack.com/test"
+                notify_slow_steps(slow, pipeline="daily", date="2026-01-01")
+        return mock_post
+
+    def test_no_post_when_empty(self):
+        mock_post = self._run([])
+        mock_post.assert_not_called()
+
+    def test_posts_when_slow_steps_present(self):
+        slow = [{"name": "video", "duration_sec": 1200, "threshold_sec": 900, "p95_sec": None}]
+        mock_post = self._run(slow)
+        mock_post.assert_called_once()
+
+    def test_payload_color_is_orange(self):
+        slow = [{"name": "video", "duration_sec": 1200, "threshold_sec": 900, "p95_sec": None}]
+        mock_post = self._run(slow)
+        payload = mock_post.call_args[1]["json"]
+        assert payload["attachments"][0]["color"] == "#ffa500"
+
+    def test_step_name_in_message(self):
+        slow = [{"name": "voice", "duration_sec": 700, "threshold_sec": 600, "p95_sec": None}]
+        mock_post = self._run(slow)
+        text = mock_post.call_args[1]["json"]["attachments"][0]["text"]
+        assert "voice" in text
+
+    def test_p95_included_when_available(self):
+        slow = [{"name": "video", "duration_sec": 1200, "threshold_sec": 900, "p95_sec": 800.0}]
+        mock_post = self._run(slow)
+        text = mock_post.call_args[1]["json"]["attachments"][0]["text"]
+        assert "P95" in text or "13m" in text  # 800s = 13m 20s
+
+
+class TestSpendBar:
+    def test_empty_when_no_limit(self):
+        assert _spend_bar(100.0, 0) == ""
+
+    def test_full_bar_at_100_pct(self):
+        assert _spend_bar(50.0, 50.0) == "█" * 10
+
+    def test_empty_bar_at_0_pct(self):
+        assert _spend_bar(0.0, 50.0) == "░" * 10
+
+    def test_half_bar_at_50_pct(self):
+        bar = _spend_bar(25.0, 50.0)
+        assert bar.count("█") == 5
+        assert bar.count("░") == 5
+
+    def test_caps_at_100_pct_when_over_budget(self):
+        bar = _spend_bar(999.0, 50.0)
+        assert bar == "█" * 10
+
+
+def _budget_status(day_usd=5.0, month_usd=50.0, day_limit=50.0, month_limit=500.0):
+    return BudgetStatus(
+        date="2026-05-16",
+        day_usd=day_usd, month_usd=month_usd,
+        day_limit=day_limit, month_limit=month_limit,
+    )
+
+
+class TestNotifyBudgetAlert:
+    def _run(self, status):
+        with patch("src.slack_notifier._http_post") as mock_post:
+            with patch("src.slack_notifier.settings") as mock_settings:
+                mock_settings.slack_webhook_url = "https://hooks.slack.com/test"
+                notify_budget_alert(status, pipeline="daily")
+        return mock_post
+
+    def test_posts_when_day_exceeded(self):
+        mock_post = self._run(_budget_status(day_usd=60.0))
+        mock_post.assert_called_once()
+
+    def test_posts_when_month_exceeded(self):
+        mock_post = self._run(_budget_status(month_usd=600.0))
+        mock_post.assert_called_once()
+
+    def test_color_is_red(self):
+        mock_post = self._run(_budget_status(day_usd=60.0))
+        color = mock_post.call_args[1]["json"]["attachments"][0]["color"]
+        assert color == "#e01e5a"
+
+    def test_day_spend_in_message(self):
+        mock_post = self._run(_budget_status(day_usd=75.5))
+        text = mock_post.call_args[1]["json"]["attachments"][0]["text"]
+        assert "75.50" in text
+
+    def test_month_spend_in_message_when_exceeded(self):
+        mock_post = self._run(_budget_status(month_usd=550.0))
+        text = mock_post.call_args[1]["json"]["attachments"][0]["text"]
+        assert "550.00" in text
+
+    def test_no_post_when_no_webhook(self):
+        with patch("src.slack_notifier._http_post") as mock_post:
+            with patch("src.slack_notifier.settings") as mock_settings:
+                mock_settings.slack_webhook_url = ""
+                notify_budget_alert(_budget_status(day_usd=99.0), "daily")
+        mock_post.assert_not_called()
+
+
+class TestNotifyBudgetSummary:
+    def _run(self, status):
+        with patch("src.slack_notifier._http_post") as mock_post:
+            with patch("src.slack_notifier.settings") as mock_settings:
+                mock_settings.slack_webhook_url = "https://hooks.slack.com/test"
+                notify_budget_summary(status, pipeline="daily")
+        return mock_post
+
+    def test_always_posts_even_when_under_budget(self):
+        mock_post = self._run(_budget_status(day_usd=5.0, month_usd=50.0))
+        mock_post.assert_called_once()
+
+    def test_green_when_under_budget(self):
+        mock_post = self._run(_budget_status(day_usd=5.0))
+        color = mock_post.call_args[1]["json"]["attachments"][0]["color"]
+        assert color == "#2eb886"
+
+    def test_red_when_exceeded(self):
+        mock_post = self._run(_budget_status(day_usd=99.0))
+        color = mock_post.call_args[1]["json"]["attachments"][0]["color"]
+        assert color == "#e01e5a"
+
+    def test_shows_day_and_month_spend(self):
+        mock_post = self._run(_budget_status(day_usd=12.34, month_usd=123.45))
+        text = mock_post.call_args[1]["json"]["attachments"][0]["text"]
+        assert "12.34" in text
+        assert "123.45" in text
 
 
 class TestNotifyFailure:

@@ -7,6 +7,7 @@ silently skipped — the pipeline is never blocked by Slack being down.
 from __future__ import annotations
 
 import datetime as dt
+from typing import Any, Optional
 
 from loguru import logger
 
@@ -45,7 +46,7 @@ def _yt_url(video_id: str | None) -> str | None:
     return f"https://youtu.be/{video_id}" if video_id else None
 
 
-def notify_success(summary: dict, pipeline: str) -> None:
+def notify_success(summary: dict, pipeline: str, step_timings: list[dict] | None = None) -> None:
     """Post a green success card with key run stats."""
     emoji = _PIPELINE_EMOJI.get(pipeline, "🎬")
     date  = summary.get("date", dt.date.today().isoformat())
@@ -85,9 +86,135 @@ def notify_success(summary: dict, pipeline: str) -> None:
         ru_title  = ru.get("title", "")
         lines.append(f"🇷🇺 RU: {ru_status}" + (f" — {ru_title}" if ru_title else ""))
 
+    if step_timings:
+        timing_rows = "\n".join(
+            f"  {'⚠️' if row['slow'] else '✅'} `{row['name']:<12}` {row['duration_str']}"
+            for row in step_timings
+        )
+        lines.append(f"⏲ *Step timing:*\n{timing_rows}")
+
     _post({
         "attachments": [{
             "color": "#2eb886",
+            "text": "\n".join(lines),
+            "mrkdwn_in": ["text"],
+        }]
+    })
+
+
+def notify_budget_alert(status: "Any", pipeline: str) -> None:
+    """Post a red alert when daily or monthly API budget is exceeded."""
+    from src.budget_guard import BudgetStatus  # local import to avoid circular
+    assert isinstance(status, BudgetStatus)
+
+    lines: list[str] = [
+        f"*🚨 Budget limit exceeded — {pipeline.capitalize()} — {status.date}*"
+    ]
+
+    if status.day_exceeded:
+        pct = f" ({status.day_pct}%)" if status.day_pct is not None else ""
+        lines.append(
+            f"• Today: *${status.day_usd:.2f}* of ${status.day_limit:.0f} limit{pct}"
+        )
+    if status.month_exceeded:
+        pct = f" ({status.month_pct}%)" if status.month_pct is not None else ""
+        lines.append(
+            f"• This month: *${status.month_usd:.2f}* of ${status.month_limit:.0f} limit{pct}"
+        )
+    lines.append("_Review API usage and adjust thresholds via DAILY_BUDGET_USD / MONTHLY_BUDGET_USD._")
+
+    _post({
+        "attachments": [{
+            "color": "#e01e5a",
+            "text": "\n".join(lines),
+            "mrkdwn_in": ["text"],
+        }]
+    })
+
+
+def notify_budget_summary(status: "Any", pipeline: str) -> None:
+    """Post a daily spend summary to Slack (informational, always sent)."""
+    from src.budget_guard import BudgetStatus
+    assert isinstance(status, BudgetStatus)
+
+    day_bar   = _spend_bar(status.day_usd,   status.day_limit)
+    month_bar = _spend_bar(status.month_usd, status.month_limit)
+
+    day_pct   = f" {status.day_pct}%"   if status.day_pct   is not None else ""
+    month_pct = f" {status.month_pct}%" if status.month_pct is not None else ""
+
+    lines = [
+        f"*💰 API spend — {pipeline.capitalize()} — {status.date}*",
+        f"• Today:  ${status.day_usd:.2f} / ${status.day_limit:.0f}{day_pct}   {day_bar}",
+        f"• Month:  ${status.month_usd:.2f} / ${status.month_limit:.0f}{month_pct}   {month_bar}",
+    ]
+    color = "#e01e5a" if status.any_exceeded else "#2eb886"
+    _post({
+        "attachments": [{
+            "color": color,
+            "text": "\n".join(lines),
+            "mrkdwn_in": ["text"],
+        }]
+    })
+
+
+def _spend_bar(spent: float, limit: float, width: int = 10) -> str:
+    """Return a simple ASCII progress bar: ████░░░░░░ 42%"""
+    if limit <= 0:
+        return ""
+    pct = min(spent / limit, 1.0)
+    filled = round(pct * width)
+    return "█" * filled + "░" * (width - filled)
+
+
+def notify_slow_steps(slow: list[dict], pipeline: str, date: str) -> None:
+    """Post a yellow warning when one or more steps exceeded their latency threshold."""
+    if not slow:
+        return
+
+    lines: list[str] = [f"*⚠️ {pipeline.capitalize()} pipeline — slow steps detected — {date}*"]
+    for entry in slow:
+        name     = entry["name"]
+        dur      = entry["duration_sec"]
+        limit    = entry["threshold_sec"]
+        p95      = entry.get("p95_sec")
+        label    = "total" if name == "_total" else name
+        p95_note = f"  _(P95 baseline: {_duration_str(int(p95))})_" if p95 else ""
+        lines.append(
+            f"• `{label}` took *{_duration_str(int(dur))}* — threshold {_duration_str(int(limit))}{p95_note}"
+        )
+
+    _post({
+        "attachments": [{
+            "color": "#ffa500",
+            "text": "\n".join(lines),
+            "mrkdwn_in": ["text"],
+        }]
+    })
+
+
+def notify_watchdog_alert(
+    last_run_at: Optional[dt.datetime],
+    hours_since: float,
+    pipeline: str,
+) -> None:
+    """Post a red alert when the pipeline hasn't produced a successful run recently."""
+    if last_run_at is None:
+        desc = "No successful run found in the output directory."
+    else:
+        h = int(hours_since)
+        last_str = last_run_at.strftime("%Y-%m-%d %H:%M UTC")
+        desc = f"Last success: *{last_str}* ({h}h ago)"
+
+    lines: list[str] = [
+        f"*🚨 Watchdog: {pipeline.capitalize()} pipeline stalled — {dt.date.today().isoformat()}*",
+        desc,
+        "_Check GitHub Actions logs and re-trigger manually if needed._",
+    ]
+
+    _post({
+        "attachments": [{
+            "color": "#e01e5a",
             "text": "\n".join(lines),
             "mrkdwn_in": ["text"],
         }]
