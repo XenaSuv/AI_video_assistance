@@ -47,8 +47,9 @@ from src.translator import translate_script
 from src.video_generator import assemble_video, build_video
 from src.voice_generator import synthesize_script
 from src.youtube_uploader import publish_episode
-from src.slack_notifier import notify_success, notify_failure, notify_slow_steps
+from src.slack_notifier import notify_success, notify_failure, notify_slow_steps, notify_budget_summary, notify_budget_alert
 from src.latency_tracker import LatencyTracker
+from src.budget_guard import BudgetGuard
 from src.checkpoint import PipelineCheckpoint
 from src.quality_gate import run_gate, QualityGateError
 from src.cost_tracker import reset_ledger
@@ -1210,6 +1211,12 @@ class PipelineOrchestrator:
         slow = tracker.slow_steps(trace)
         if slow:
             notify_slow_steps(slow, pipeline="daily", date=self._summary.get("date", ""))
+
+        guard = BudgetGuard(settings.output_dir, settings.daily_budget_usd, settings.monthly_budget_usd)
+        budget_status = guard.check()
+        notify_budget_summary(budget_status, pipeline="daily")
+        if budget_status.any_exceeded:
+            notify_budget_alert(budget_status, pipeline="daily")
 
         step_timings = tracker.step_summary(trace)
         notify_success(self._summary, "daily", step_timings=step_timings)

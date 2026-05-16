@@ -106,6 +106,11 @@ class Settings:
         "https://rsshub.app/telegram/channel/ai_for_devs",
     )
 
+    # Budget alerts — Slack notification when daily or monthly spend exceeds limit.
+    # Set to 0 to disable a threshold.
+    daily_budget_usd:   float = float(_env("DAILY_BUDGET_USD",   "50.0"))
+    monthly_budget_usd: float = float(_env("MONTHLY_BUDGET_USD", "500.0"))
+
     # Pipeline
     script_target_words: int = int(_env("SCRIPT_TARGET_WORDS", "2200"))
     daily_run_hour_utc: int  = int(_env("DAILY_RUN_HOUR_UTC", "8"))

@@ -7,6 +7,7 @@ silently skipped — the pipeline is never blocked by Slack being down.
 from __future__ import annotations
 
 import datetime as dt
+from typing import Any
 
 from loguru import logger
 
@@ -99,6 +100,71 @@ def notify_success(summary: dict, pipeline: str, step_timings: list[dict] | None
             "mrkdwn_in": ["text"],
         }]
     })
+
+
+def notify_budget_alert(status: "Any", pipeline: str) -> None:
+    """Post a red alert when daily or monthly API budget is exceeded."""
+    from src.budget_guard import BudgetStatus  # local import to avoid circular
+    assert isinstance(status, BudgetStatus)
+
+    lines: list[str] = [
+        f"*🚨 Budget limit exceeded — {pipeline.capitalize()} — {status.date}*"
+    ]
+
+    if status.day_exceeded:
+        pct = f" ({status.day_pct}%)" if status.day_pct is not None else ""
+        lines.append(
+            f"• Today: *${status.day_usd:.2f}* of ${status.day_limit:.0f} limit{pct}"
+        )
+    if status.month_exceeded:
+        pct = f" ({status.month_pct}%)" if status.month_pct is not None else ""
+        lines.append(
+            f"• This month: *${status.month_usd:.2f}* of ${status.month_limit:.0f} limit{pct}"
+        )
+    lines.append("_Review API usage and adjust thresholds via DAILY_BUDGET_USD / MONTHLY_BUDGET_USD._")
+
+    _post({
+        "attachments": [{
+            "color": "#e01e5a",
+            "text": "\n".join(lines),
+            "mrkdwn_in": ["text"],
+        }]
+    })
+
+
+def notify_budget_summary(status: "Any", pipeline: str) -> None:
+    """Post a daily spend summary to Slack (informational, always sent)."""
+    from src.budget_guard import BudgetStatus
+    assert isinstance(status, BudgetStatus)
+
+    day_bar   = _spend_bar(status.day_usd,   status.day_limit)
+    month_bar = _spend_bar(status.month_usd, status.month_limit)
+
+    day_pct   = f" {status.day_pct}%"   if status.day_pct   is not None else ""
+    month_pct = f" {status.month_pct}%" if status.month_pct is not None else ""
+
+    lines = [
+        f"*💰 API spend — {pipeline.capitalize()} — {status.date}*",
+        f"• Today:  ${status.day_usd:.2f} / ${status.day_limit:.0f}{day_pct}   {day_bar}",
+        f"• Month:  ${status.month_usd:.2f} / ${status.month_limit:.0f}{month_pct}   {month_bar}",
+    ]
+    color = "#e01e5a" if status.any_exceeded else "#2eb886"
+    _post({
+        "attachments": [{
+            "color": color,
+            "text": "\n".join(lines),
+            "mrkdwn_in": ["text"],
+        }]
+    })
+
+
+def _spend_bar(spent: float, limit: float, width: int = 10) -> str:
+    """Return a simple ASCII progress bar: ████░░░░░░ 42%"""
+    if limit <= 0:
+        return ""
+    pct = min(spent / limit, 1.0)
+    filled = round(pct * width)
+    return "█" * filled + "░" * (width - filled)
 
 
 def notify_slow_steps(slow: list[dict], pipeline: str, date: str) -> None:
