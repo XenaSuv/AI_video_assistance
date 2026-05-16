@@ -22,15 +22,30 @@ from loguru import logger
 # Font used for on-screen text
 _FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
+# Per-operation subprocess timeouts (seconds).
+# ffmpeg can hang indefinitely on corrupted/truncated media; without a timeout
+# the GitHub Actions job consumes its full 180-min budget before failing.
+_PROBE_TIMEOUT = 30    # ffprobe metadata reads
+_CLIP_TIMEOUT  = 300   # per-clip encoding (title card, ken burns, short clips)
+_LONG_TIMEOUT  = 600   # full-video operations (concat, mix_music, frames_to_video)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Internal helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _run(args: list[str]) -> subprocess.CompletedProcess:
+def _run(args: list[str], timeout: int = _CLIP_TIMEOUT) -> subprocess.CompletedProcess:
     """Run an ffmpeg/ffprobe command.  Logs at DEBUG; raises on non-zero exit."""
     logger.debug("ffmpeg cmd: " + " ".join(str(a) for a in args))
-    return subprocess.run(args, capture_output=True, text=True, check=True)
+    try:
+        return subprocess.run(
+            args, capture_output=True, text=True, check=True, timeout=timeout
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"ffmpeg timed out after {timeout}s — possible corrupted input or hung encoder. "
+            f"Command: {' '.join(str(a) for a in args[:4])}…"
+        ) from exc
 
 
 def _esc(text: str) -> str:
@@ -69,7 +84,7 @@ def probe(path: Path) -> dict:
         "-print_format", "json",
         "-show_streams", "-show_format",
         str(path),
-    ])
+    ], timeout=_PROBE_TIMEOUT)
     return json.loads(result.stdout)
 
 
@@ -130,19 +145,25 @@ def ensure_audio_stream(path: Path, output: Path) -> Path:
 def get_frame(video: Path, t: float) -> np.ndarray:
     """Extract a single RGB frame at time *t* seconds. Returns H×W×3 uint8 array."""
     w, h = video_size(video)
-    result = subprocess.run(
-        [
-            "ffmpeg", "-v", "quiet",
-            "-ss", str(t),
-            "-i", str(video),
-            "-frames:v", "1",
-            "-f", "rawvideo",
-            "-pix_fmt", "rgb24",
-            "pipe:1",
-        ],
-        capture_output=True,
-        check=True,
-    )
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg", "-v", "quiet",
+                "-ss", str(t),
+                "-i", str(video),
+                "-frames:v", "1",
+                "-f", "rawvideo",
+                "-pix_fmt", "rgb24",
+                "pipe:1",
+            ],
+            capture_output=True,
+            check=True,
+            timeout=_PROBE_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"get_frame timed out after {_PROBE_TIMEOUT}s extracting frame at t={t} from {video}"
+        ) from exc
     arr = np.frombuffer(result.stdout, dtype=np.uint8)
     return arr.reshape((h, w, 3))
 
@@ -220,7 +241,7 @@ def concat(paths: list[Path], output: Path, *, video_only: bool = False) -> Path
         else:
             cmd += ["-c:a", "aac"]
         cmd.append(str(output))
-        _run(cmd)
+        _run(cmd, timeout=_LONG_TIMEOUT)
     finally:
         list_file.unlink(missing_ok=True)
     return output
@@ -608,7 +629,15 @@ def frames_to_video(
             )
         proc.stdin.write(frame.astype(np.uint8).tobytes())
     proc.stdin.close()
-    proc.wait()
+    try:
+        proc.wait(timeout=_LONG_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        raise RuntimeError(
+            f"frames_to_video ffmpeg timed out after {_LONG_TIMEOUT}s — "
+            f"{len(frames)} frames at {fps}fps"
+        )
     if proc.returncode != 0:
         err = proc.stderr.read().decode(errors="replace") if proc.stderr else ""
         raise RuntimeError(f"frames_to_video ffmpeg failed: {err}")
@@ -655,7 +684,7 @@ def mix_music(
             "-map", "[aout]",
             "-c:v", "copy", "-c:a", "aac",
             str(output),
-        ])
+        ], timeout=_LONG_TIMEOUT)
     except Exception as exc:
         logger.warning(f"mix_music failed (non-fatal): {exc} — returning source video")
         return video

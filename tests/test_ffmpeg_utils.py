@@ -1,12 +1,12 @@
-"""Tests for ffmpeg_utils._esc() — the drawtext filter text escaper."""
+"""Tests for ffmpeg_utils — _esc() escaping and subprocess timeout handling."""
+import subprocess
 import sys
 import unittest.mock as mock
 
 # Stub numpy before importing the module (heavy dep not needed for these tests)
-import sys
 sys.modules.setdefault("numpy", mock.MagicMock())
 
-from src.ffmpeg_utils import _esc
+from src.ffmpeg_utils import _esc, _run, _PROBE_TIMEOUT, _CLIP_TIMEOUT, _LONG_TIMEOUT
 
 
 class TestEsc:
@@ -91,3 +91,34 @@ class TestEsc:
         assert r"\]" in result
         # Newline stripped — no literal newline in output
         assert "\n" not in result
+
+
+class TestRunTimeout:
+    def test_timeout_constants_are_ordered(self):
+        # Probe must be shortest; long operations get the most time.
+        assert _PROBE_TIMEOUT < _CLIP_TIMEOUT < _LONG_TIMEOUT
+
+    def test_run_raises_runtime_error_on_timeout(self):
+        # Simulate TimeoutExpired from subprocess and verify _run() wraps it.
+        with mock.patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd=["ffmpeg"], timeout=5)):
+            try:
+                _run(["ffmpeg", "-i", "fake.mp4"], timeout=5)
+                assert False, "Expected RuntimeError"
+            except RuntimeError as exc:
+                assert "timed out" in str(exc).lower()
+                assert "5s" in str(exc)
+
+    def test_run_default_timeout_is_clip_timeout(self):
+        # _run() must forward the timeout to subprocess.run.
+        with mock.patch("subprocess.run") as mock_run:
+            mock_run.return_value = mock.MagicMock(returncode=0)
+            _run(["ffmpeg", "-version"])
+            _, kwargs = mock_run.call_args
+            assert kwargs["timeout"] == _CLIP_TIMEOUT
+
+    def test_run_accepts_custom_timeout(self):
+        with mock.patch("subprocess.run") as mock_run:
+            mock_run.return_value = mock.MagicMock(returncode=0)
+            _run(["ffprobe", "x"], timeout=_PROBE_TIMEOUT)
+            _, kwargs = mock_run.call_args
+            assert kwargs["timeout"] == _PROBE_TIMEOUT
