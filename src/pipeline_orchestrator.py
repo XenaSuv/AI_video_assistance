@@ -47,7 +47,8 @@ from src.translator import translate_script
 from src.video_generator import assemble_video, build_video
 from src.voice_generator import synthesize_script
 from src.youtube_uploader import publish_episode
-from src.slack_notifier import notify_success, notify_failure
+from src.slack_notifier import notify_success, notify_failure, notify_slow_steps
+from src.latency_tracker import LatencyTracker
 from src.checkpoint import PipelineCheckpoint
 from src.quality_gate import run_gate, QualityGateError
 from src.cost_tracker import reset_ledger
@@ -1200,8 +1201,18 @@ class PipelineOrchestrator:
         self._summary["cost_usd"] = cost_report["total_usd"]
         self._live.set_cost({"total_usd": cost_report["total_usd"]})
         self._live.log_event(f"Pipeline complete! Cost: ${cost_report['total_usd']:.3f}")
-        self._observer.finish(status="success", cost_usd=cost_report["total_usd"])
-        notify_success(self._summary, "daily")
+
+        trace = self._observer.finish(status="success", cost_usd=cost_report["total_usd"])
+
+        tracker = LatencyTracker(settings.data_dir)
+        tracker.record(trace)
+
+        slow = tracker.slow_steps(trace)
+        if slow:
+            notify_slow_steps(slow, pipeline="daily", date=self._summary.get("date", ""))
+
+        step_timings = tracker.step_summary(trace)
+        notify_success(self._summary, "daily", step_timings=step_timings)
         logger.info(f"=== DONE ===  {json.dumps(self._summary, indent=2)}")
 
     def _run_language_variant(

@@ -45,7 +45,7 @@ def _yt_url(video_id: str | None) -> str | None:
     return f"https://youtu.be/{video_id}" if video_id else None
 
 
-def notify_success(summary: dict, pipeline: str) -> None:
+def notify_success(summary: dict, pipeline: str, step_timings: list[dict] | None = None) -> None:
     """Post a green success card with key run stats."""
     emoji = _PIPELINE_EMOJI.get(pipeline, "🎬")
     date  = summary.get("date", dt.date.today().isoformat())
@@ -85,9 +85,42 @@ def notify_success(summary: dict, pipeline: str) -> None:
         ru_title  = ru.get("title", "")
         lines.append(f"🇷🇺 RU: {ru_status}" + (f" — {ru_title}" if ru_title else ""))
 
+    if step_timings:
+        timing_rows = "\n".join(
+            f"  {'⚠️' if row['slow'] else '✅'} `{row['name']:<12}` {row['duration_str']}"
+            for row in step_timings
+        )
+        lines.append(f"⏲ *Step timing:*\n{timing_rows}")
+
     _post({
         "attachments": [{
             "color": "#2eb886",
+            "text": "\n".join(lines),
+            "mrkdwn_in": ["text"],
+        }]
+    })
+
+
+def notify_slow_steps(slow: list[dict], pipeline: str, date: str) -> None:
+    """Post a yellow warning when one or more steps exceeded their latency threshold."""
+    if not slow:
+        return
+
+    lines: list[str] = [f"*⚠️ {pipeline.capitalize()} pipeline — slow steps detected — {date}*"]
+    for entry in slow:
+        name     = entry["name"]
+        dur      = entry["duration_sec"]
+        limit    = entry["threshold_sec"]
+        p95      = entry.get("p95_sec")
+        label    = "total" if name == "_total" else name
+        p95_note = f"  _(P95 baseline: {_duration_str(int(p95))})_" if p95 else ""
+        lines.append(
+            f"• `{label}` took *{_duration_str(int(dur))}* — threshold {_duration_str(int(limit))}{p95_note}"
+        )
+
+    _post({
+        "attachments": [{
+            "color": "#ffa500",
             "text": "\n".join(lines),
             "mrkdwn_in": ["text"],
         }]
