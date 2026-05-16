@@ -43,7 +43,11 @@ class HookOptimizer:
 
         feedback = self._load_feedback()
         if not feedback:
-            logger.warning("No feedback history available")
+            logger.info(
+                "No feedback history yet — using default hook recommendations. "
+                "History is populated automatically after videos accumulate "
+                "YouTube Analytics data (typically 48-72h after upload)."
+            )
             return self._default_recommendations()
 
         patterns = self._extract_patterns(feedback)
