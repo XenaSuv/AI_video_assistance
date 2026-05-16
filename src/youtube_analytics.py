@@ -1,11 +1,12 @@
 """YouTube Analytics client for retrieving video performance metrics."""
 import json
 from pathlib import Path
+from typing import Any
 
 from googleapiclient.discovery import build
 
 
-def get_analytics_service(token_file: str = "config/token.json") -> object:
+def get_analytics_service(token_file: str = "config/token.json") -> Any:
     """Build and return YouTube Analytics service using stored credentials."""
     from google.oauth2.credentials import Credentials  # lazy: avoids import at module level
 
