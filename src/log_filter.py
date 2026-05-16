@@ -11,6 +11,7 @@ strings before logging (e.g. Slack notifications).
 from __future__ import annotations
 
 import re
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Redaction patterns (most-specific first to avoid double-substitution)
@@ -53,7 +54,7 @@ def scrub_message(text: str) -> str:
     return text
 
 
-def scrub(record: dict) -> bool:
+def scrub(record: Any) -> bool:
     """Loguru sink filter — redacts the message in place, always returns True."""
     record["message"] = scrub_message(record["message"])
     return True
