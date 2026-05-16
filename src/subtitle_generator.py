@@ -14,7 +14,6 @@ from openai import OpenAI
 from src.retry_utils import make_openai_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from config import settings
 from src.script_generator import VideoScript
 
 

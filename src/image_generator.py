@@ -22,7 +22,6 @@ import requests
 from loguru import logger
 from openai import BadRequestError, OpenAI, RateLimitError, APIStatusError
 from PIL import Image as PILImage
-from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings

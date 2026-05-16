@@ -12,12 +12,10 @@ from openai import OpenAI
 from src.retry_utils import make_openai_client
 
 sys_path_insert = __import__("sys").path.insert
-from pathlib import Path
 from pathlib import Path as _Path
 
 import sys
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
-from config import settings
 from src.scraper import NewsItem
 from src.feedback_analyzer import FeedbackAnalyzer
 from src.shared_types import ContentStrategy

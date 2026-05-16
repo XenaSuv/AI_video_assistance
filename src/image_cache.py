@@ -20,11 +20,9 @@ from pathlib import Path
 
 import numpy as np
 from loguru import logger
-from openai import OpenAI
 from src.retry_utils import make_openai_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from config import settings
 
 _JSON_NAME = "dalle_image_cache.json"
 _NPY_NAME  = "dalle_image_cache.npy"

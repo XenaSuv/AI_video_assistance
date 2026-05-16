@@ -49,7 +49,7 @@ from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
-from src.emotion_engine import AVATAR_STYLE_MAP, EMOTIONS
+from src.emotion_engine import AVATAR_STYLE_MAP
 from src.script_generator import Scene, VideoScript
 
 

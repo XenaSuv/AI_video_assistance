@@ -10,12 +10,10 @@ The breaking script is tight and urgent: 5 scenes, ~550-600 words total
 """
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
 from loguru import logger
-from openai import OpenAI
 from src.retry_utils import make_openai_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))

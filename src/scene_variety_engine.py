@@ -35,7 +35,6 @@ Scene intents:
 from __future__ import annotations
 
 import re
-import textwrap
 from typing import Any, TYPE_CHECKING
 
 from loguru import logger
@@ -207,7 +206,6 @@ class SceneVarietyEngineV2:
 
         Returns the same list for chaining.
         """
-        from src.scene_strategy_engine import INTENT_TO_SCENE
 
         for scene in scenes:
             item = strategy.get(scene.idx)

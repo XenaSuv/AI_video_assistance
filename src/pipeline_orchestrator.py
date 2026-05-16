@@ -418,7 +418,7 @@ def _build_v3_context(
     }
 
 
-
+class PipelineOrchestrator:
     """Orchestrates the full daily AI news pipeline end-to-end.
 
     Per-run state is stored as instance attributes so step methods share context

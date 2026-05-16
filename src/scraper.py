@@ -21,7 +21,6 @@ from urllib.parse import urljoin, quote as _url_quote
 import xml.etree.ElementTree as ET
 
 import arxiv
-import requests
 from bs4 import BeautifulSoup
 from src.retry_utils import http_get
 from loguru import logger

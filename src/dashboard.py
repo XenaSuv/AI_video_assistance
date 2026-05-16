@@ -389,7 +389,7 @@ def render_emotion_engine() -> None:
         import sys
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
         from src.emotion_engine import (
-            EmotionEngine, EMOTIONS, EMOTION_MAP, SHORT_EMOTION_FLOW,
+            EmotionEngine, EMOTION_MAP, SHORT_EMOTION_FLOW,
         )
         engine = EmotionEngine()
         history = engine.load_stats(n=10)
@@ -496,7 +496,7 @@ def render_narrative_identity() -> None:
         import sys
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
         from src.narrative_identity_engine import (
-            NarrativeIdentityEngine, BELIEFS, THEMES, ARCS, CALLBACKS,
+            NarrativeIdentityEngine, BELIEFS, THEMES, CALLBACKS,
         )
         engine = NarrativeIdentityEngine()
         arc_data = engine.arc_status()

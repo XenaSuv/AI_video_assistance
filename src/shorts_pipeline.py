@@ -38,7 +38,7 @@ from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
-from src.scraper import scrape_all, NewsItem
+from src.scraper import scrape_all
 from src.viral_selector import pick_viral_news
 from src.shorts_engine_v2 import ShortsEngineV2, ShortScript, ShortResult
 from src.shorts_experiment_engine import ShortsExperimentEngine
