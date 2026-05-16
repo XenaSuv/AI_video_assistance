@@ -122,21 +122,47 @@ def _get_creds(
                 "Download OAuth client_secrets.json from Google Cloud Console."
             )
         flow = InstalledAppFlow.from_client_secrets_file(str(client_secrets), SCOPES)
-        headless = (
-            os.getenv("CI", "").lower() in ("1", "true")
-            or os.getenv("GITHUB_ACTIONS", "").lower() == "true"
-            or not os.getenv("DISPLAY")
-        ) and not force_browser
-        if headless:
-            logger.info("Headless environment detected; using OAuth local server without opening a browser.")
-            creds = flow.run_local_server(port=0, open_browser=False)
+
+        in_ci = os.getenv("CI", "").lower() in ("1", "true") or os.getenv("GITHUB_ACTIONS") == "true"
+        in_codespaces = os.getenv("CODESPACES") == "true"
+
+        if in_ci and not force_browser:
+            # True CI — no interactive user present
+            raise RuntimeError(
+                "YouTube OAuth requires interactive login, which is not possible in CI. "
+                "Run 'python src/youtube_uploader.py --auth --force' locally or in Codespaces, "
+                "then upload the token JSON as the YOUTUBE_TOKEN_JSON_B64 GitHub secret."
+            )
+        elif in_codespaces or not os.getenv("DISPLAY"):
+            # Codespaces or any headless environment with a real user:
+            # use a fixed port so VS Code / Codespaces can forward it predictably.
+            _OAUTH_PORT = 8080
+            codespace_name = os.getenv("CODESPACE_NAME", "")
+            if codespace_name:
+                forwarded = f"https://{codespace_name}-{_OAUTH_PORT}.app.github.dev"
+                logger.info(
+                    "GitHub Codespaces detected.\n"
+                    "  1. The OAuth server will start on port %d.\n"
+                    "  2. Open the PORTS tab in VS Code and make port %d 'Public' if prompted.\n"
+                    "  3. Complete the auth in your browser — Google will redirect to\n"
+                    "     http://localhost:%d which Codespaces tunnels automatically.\n"
+                    "  Forwarded URL (for reference): %s",
+                    _OAUTH_PORT, _OAUTH_PORT, _OAUTH_PORT, forwarded,
+                )
+            else:
+                logger.info(
+                    "Headless environment detected. OAuth server starting on port %d. "
+                    "Open the auth URL in your browser and complete the login.",
+                    _OAUTH_PORT,
+                )
+            creds = flow.run_local_server(port=_OAUTH_PORT, open_browser=False)
         else:
             try:
                 creds = flow.run_local_server(port=0)
             except Exception as exc:
                 logger.warning(
                     "Unable to launch local browser for OAuth: %s. "
-                    "Falling back to headless authorization.",
+                    "Falling back to no-browser mode.",
                     exc,
                 )
                 creds = flow.run_local_server(port=0, open_browser=False)
