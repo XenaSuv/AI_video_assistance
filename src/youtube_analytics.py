@@ -2,12 +2,13 @@
 import json
 from pathlib import Path
 
-from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 
 def get_analytics_service(token_file: str = "config/token.json") -> object:
     """Build and return YouTube Analytics service using stored credentials."""
+    from google.oauth2.credentials import Credentials  # lazy: avoids import at module level
+
     path = Path(token_file)
 
     # Auto-migrate legacy pickle token if present.
