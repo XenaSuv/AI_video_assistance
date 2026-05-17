@@ -880,10 +880,11 @@ class PipelineOrchestrator:
                 # Run TTS and image pre-fetch concurrently: DALL-E and ElevenLabs
                 # calls overlap in time instead of running sequentially, saving
                 # several minutes on a typical episode.
+                _script = self._script  # narrowed by assert above; captured for closure
                 async def _voice_and_images() -> None:
                     await asyncio.gather(
-                        async_synthesize_script(self._script, self._run_dir),
-                        async_prefetch_scene_images(self._script, self._run_dir),
+                        async_synthesize_script(_script, self._run_dir),
+                        async_prefetch_scene_images(_script, self._run_dir),
                     )
                 asyncio.run(_voice_and_images())
                 self._script.save(self._run_dir / "script.json")
