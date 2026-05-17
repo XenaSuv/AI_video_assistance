@@ -478,6 +478,8 @@ class TestSetupLogging:
 # self._summary, and how errors propagate.
 
 from src.pipeline_orchestrator import PipelineOrchestrator
+from src.media_builder import _MediaBuilder
+from src.publish_step import _PublishStep
 from src.quality_gate import QualityGateError
 
 
@@ -533,7 +535,53 @@ def orch(tmp_path) -> PipelineOrchestrator:
     o._auto_insights = []
     o._thompson_preferred_type = None
     o._v3_strategy = None
+    # _builder and _publisher are created during run(); pre-populate for step tests
+    o._builder = MagicMock()
+    o._builder.subtitle_path = None
+    o._builder.en_intro = None
+    o._builder.en_outro = None
+    o._builder.long_video = tmp_path / "final_video.mp4"
+    o._builder.short_video = None
+    o._builder.thumbnail = tmp_path / "thumbnail_default.jpg"
+    o._publisher = MagicMock()
     return o
+
+
+# ── Helper factories for new classes ─────────────────────────────────────────
+
+def _make_builder(orch, tmp_path) -> _MediaBuilder:
+    return _MediaBuilder(
+        script=orch._script,
+        run_dir=tmp_path,
+        cp=orch._cp,
+        observer=orch._observer,
+        live=orch._live,
+        seen=orch._seen,
+        news=orch._news,
+        summary=orch._summary,
+        thompson_preferred_type=None,
+    )
+
+
+def _make_publisher(orch, tmp_path) -> _PublishStep:
+    return _PublishStep(
+        script=orch._script,
+        run_dir=tmp_path,
+        cp=orch._cp,
+        observer=orch._observer,
+        live=orch._live,
+        seen=orch._seen,
+        news=orch._news,
+        summary=orch._summary,
+        skip_upload=orch._skip_upload,
+        auto_strategy=orch._auto_strategy,
+        auto_actions=orch._auto_actions,
+        long_video=orch._long_video,
+        short_video=orch._short_video,
+        thumbnail=orch._thumbnail,
+        subtitle_path=orch._subtitle_path,
+        feedback_history=orch._feedback_history,
+    )
 
 
 # ── run() control flow ────────────────────────────────────────────────────────
@@ -640,6 +688,8 @@ class TestPipelineOrchestratorRun:
             patch("src.pipeline_orchestrator.scrape_all", return_value=[fake_news]),
             patch("src.pipeline_orchestrator.pick_viral_news", return_value=[fake_news]),
             patch("src.pipeline_orchestrator.notify_failure"),
+            patch("src.pipeline_orchestrator._MediaBuilder"),
+            patch("src.pipeline_orchestrator._PublishStep"),
         ):
             o = PipelineOrchestrator()
             # Patch step methods to skip to quality gate quickly
@@ -668,6 +718,8 @@ class TestPipelineOrchestratorRun:
             patch("src.pipeline_orchestrator.SeenStories", return_value=mocks["seen"]),
             patch("src.pipeline_orchestrator.scrape_all", return_value=[fake_news]),
             patch("src.pipeline_orchestrator.pick_viral_news", return_value=[fake_news]),
+            patch("src.pipeline_orchestrator._MediaBuilder"),
+            patch("src.pipeline_orchestrator._PublishStep"),
         ):
             o = PipelineOrchestrator()
             o._step_script = MagicMock()
@@ -761,11 +813,12 @@ class TestStepVoice:
         orch._cp.is_done.return_value = True
         audio_dir = tmp_path / "audio"
         audio_dir.mkdir()
+        builder = _make_builder(orch, tmp_path)
         with (
-            patch("src.pipeline_orchestrator._load_audio_durations") as mock_load,
-            patch("src.pipeline_orchestrator.asyncio") as mock_asyncio,
+            patch("src.media_builder._load_audio_durations") as mock_load,
+            patch("src.media_builder.asyncio") as mock_asyncio,
         ):
-            orch._step_voice()
+            builder.build_voice()
         mock_load.assert_called_once()
         mock_asyncio.run.assert_not_called()
 
@@ -774,22 +827,25 @@ class TestStepVoice:
         audio_dir.mkdir()
         for i in range(3):
             (audio_dir / f"scene_{i:02d}.mp3").write_bytes(b"audio")
+        builder = _make_builder(orch, tmp_path)
         with (
-            patch("src.pipeline_orchestrator._load_audio_durations") as mock_load,
-            patch("src.pipeline_orchestrator.asyncio") as mock_asyncio,
+            patch("src.media_builder._load_audio_durations") as mock_load,
+            patch("src.media_builder.asyncio") as mock_asyncio,
         ):
-            orch._step_voice()
+            builder.build_voice()
         mock_asyncio.run.assert_not_called()
         mock_load.assert_called_once()
 
     def test_fresh_voice_runs_async_synthesis(self, orch, tmp_path):
-        with patch("src.pipeline_orchestrator.asyncio") as mock_asyncio:
-            orch._step_voice()
+        builder = _make_builder(orch, tmp_path)
+        with patch("src.media_builder.asyncio") as mock_asyncio:
+            builder.build_voice()
         mock_asyncio.run.assert_called_once()
 
     def test_summary_gets_total_duration_sec(self, orch, tmp_path):
-        with patch("src.pipeline_orchestrator.asyncio"):
-            orch._step_voice()
+        builder = _make_builder(orch, tmp_path)
+        with patch("src.media_builder.asyncio"):
+            builder.build_voice()
         assert "total_duration_sec" in orch._summary
         assert orch._summary["total_duration_sec"] == 30.0  # 3 scenes × 10s
 
@@ -798,67 +854,73 @@ class TestStepVoice:
 
 class TestStepSubtitles:
 
-    def test_subtitle_failure_is_nonfatal(self, orch):
+    def test_subtitle_failure_is_nonfatal(self, orch, tmp_path):
+        builder = _make_builder(orch, tmp_path)
         with patch(
-            "src.pipeline_orchestrator.generate_subtitles",
+            "src.media_builder.generate_subtitles",
             side_effect=RuntimeError("whisper unavailable"),
         ):
-            orch._step_subtitles()  # must not raise
-        assert orch._subtitle_path is None
+            builder.build_subtitles()  # must not raise
+        assert builder.subtitle_path is None
 
-    def test_checkpoint_hit_skips_generate_subtitles(self, orch):
+    def test_checkpoint_hit_skips_generate_subtitles(self, orch, tmp_path):
         orch._cp.is_done.return_value = True
-        with patch("src.pipeline_orchestrator.generate_subtitles") as mock_gen:
-            orch._step_subtitles()
+        builder = _make_builder(orch, tmp_path)
+        with patch("src.media_builder.generate_subtitles") as mock_gen:
+            builder.build_subtitles()
         mock_gen.assert_not_called()
 
     def test_subtitle_path_set_on_success(self, orch, tmp_path):
+        builder = _make_builder(orch, tmp_path)
         fake_srt = tmp_path / "subtitles.srt"
         with (
-            patch("src.pipeline_orchestrator.generate_subtitles", return_value=fake_srt),
-            patch("src.pipeline_orchestrator._get_intro_duration", return_value=0.0),
+            patch("src.media_builder.generate_subtitles", return_value=fake_srt),
+            patch("src.media_builder._get_intro_duration", return_value=0.0),
         ):
-            orch._step_subtitles()
-        assert orch._subtitle_path == fake_srt
+            builder.build_subtitles()
+        assert builder.subtitle_path == fake_srt
 
 
 # ── _step_video ───────────────────────────────────────────────────────────────
 
 class TestStepVideo:
 
-    def test_fresh_build_calls_build_video(self, orch):
+    def test_fresh_build_calls_build_video(self, orch, tmp_path):
+        builder = _make_builder(orch, tmp_path)
         with (
-            patch("src.pipeline_orchestrator.build_video") as mock_build,
-            patch("src.pipeline_orchestrator._needs_video_rebuild", return_value=False),
+            patch("src.media_builder.build_video") as mock_build,
+            patch("src.media_builder._needs_video_rebuild", return_value=False),
             patch.dict("sys.modules", {"src.broll_fetcher": MagicMock(
                 get_pexels_credits=MagicMock(return_value=[])
             )}),
         ):
-            orch._step_video()
+            builder.build_video()
         mock_build.assert_called_once()
 
-    def test_checkpoint_hit_reuses_video(self, orch):
+    def test_checkpoint_hit_reuses_video(self, orch, tmp_path):
         orch._cp.is_done.return_value = True
+        builder = _make_builder(orch, tmp_path)
         with (
-            patch("src.pipeline_orchestrator.build_video") as mock_build,
-            patch("src.pipeline_orchestrator._needs_video_rebuild", return_value=False),
+            patch("src.media_builder.build_video") as mock_build,
+            patch("src.media_builder._needs_video_rebuild", return_value=False),
             patch.dict("sys.modules", {"src.broll_fetcher": MagicMock(
                 get_pexels_credits=MagicMock(return_value=[])
             )}),
         ):
-            orch._step_video()
+            builder.build_video()
         mock_build.assert_not_called()
 
-    def test_rebuild_forced_when_video_needs_rebuild(self, orch):
+    def test_rebuild_forced_when_video_needs_rebuild(self, orch, tmp_path):
         orch._cp.is_done.return_value = True
+        builder = _make_builder(orch, tmp_path)
         with (
-            patch("src.pipeline_orchestrator.build_video") as mock_build,
-            patch("src.pipeline_orchestrator._needs_video_rebuild", return_value=True),
+            patch("src.media_builder.build_video") as mock_build,
+            patch("src.media_builder._needs_video_rebuild", return_value=True),
             patch.dict("sys.modules", {"src.broll_fetcher": MagicMock(
                 get_pexels_credits=MagicMock(return_value=[])
             )}),
         ):
-            orch._step_video()
+            builder.build_video()
         mock_build.assert_called_once()
 
 
@@ -866,65 +928,72 @@ class TestStepVideo:
 
 class TestStepQualityGate:
 
-    def test_quality_score_stored_in_summary(self, orch):
+    def test_quality_score_stored_in_summary(self, orch, tmp_path):
+        publisher = _make_publisher(orch, tmp_path)
         fake_report = MagicMock(score=0.87, warnings=[])
-        with patch("src.pipeline_orchestrator.run_gate", return_value=fake_report):
-            orch._step_quality_gate()
+        with patch("src.publish_step.run_gate", return_value=fake_report):
+            publisher.run_quality_gate()
         assert orch._summary["quality_score"] == 0.87
 
-    def test_quality_warnings_stored_in_summary(self, orch):
+    def test_quality_warnings_stored_in_summary(self, orch, tmp_path):
+        publisher = _make_publisher(orch, tmp_path)
         fake_report = MagicMock(score=0.6, warnings=["hook too short"])
-        with patch("src.pipeline_orchestrator.run_gate", return_value=fake_report):
-            orch._step_quality_gate()
+        with patch("src.publish_step.run_gate", return_value=fake_report):
+            publisher.run_quality_gate()
         assert orch._summary["quality_warnings"] == ["hook too short"]
 
-    def test_quality_gate_error_propagates(self, orch):
+    def test_quality_gate_error_propagates(self, orch, tmp_path):
+        publisher = _make_publisher(orch, tmp_path)
         with patch(
-            "src.pipeline_orchestrator.run_gate",
+            "src.publish_step.run_gate",
             side_effect=QualityGateError("missing audio"),
         ):
             with pytest.raises(QualityGateError, match="missing audio"):
-                orch._step_quality_gate()
+                publisher.run_quality_gate()
 
 
 # ── _step_upload_en ───────────────────────────────────────────────────────────
 
 class TestStepUploadEn:
 
-    def test_skip_upload_sets_built_not_uploaded(self, orch):
+    def test_skip_upload_sets_built_not_uploaded(self, orch, tmp_path):
         orch._skip_upload = True
-        with patch("src.pipeline_orchestrator.publish_episode") as mock_pub:
-            orch._step_upload_en()
+        publisher = _make_publisher(orch, tmp_path)
+        with patch("src.publish_step.publish_episode") as mock_pub:
+            publisher.upload_en()
         assert orch._summary["status"] == "built_not_uploaded"
         mock_pub.assert_not_called()
 
-    def test_checkpoint_done_skipped_restores_status(self, orch):
+    def test_checkpoint_done_skipped_restores_status(self, orch, tmp_path):
         orch._cp.is_done.return_value = True
         orch._cp.metadata.return_value = {"skipped": True}
-        with patch("src.pipeline_orchestrator.publish_episode") as mock_pub:
-            orch._step_upload_en()
+        publisher = _make_publisher(orch, tmp_path)
+        with patch("src.publish_step.publish_episode") as mock_pub:
+            publisher.upload_en()
         assert orch._summary["status"] == "built_not_uploaded"
         mock_pub.assert_not_called()
 
-    def test_publish_episode_called_when_not_skipping(self, orch):
+    def test_publish_episode_called_when_not_skipping(self, orch, tmp_path):
+        publisher = _make_publisher(orch, tmp_path)
         with (
-            patch("src.pipeline_orchestrator.publish_episode",
+            patch("src.publish_step.publish_episode",
                   return_value={"video_id": "vid123"}) as mock_pub,
-            patch("src.pipeline_orchestrator.get_recommendations", return_value={}),
-            patch("src.pipeline_orchestrator.record_usage"),
-            patch("src.pipeline_orchestrator.record_thumbnail_usage"),
-            patch("src.pipeline_orchestrator.save_result"),
+            patch("src.publish_step.get_recommendations", return_value={}),
+            patch("src.publish_step.record_usage"),
+            patch("src.publish_step.record_thumbnail_usage"),
+            patch("src.publish_step.save_result"),
         ):
-            orch._step_upload_en()
+            publisher.upload_en()
         mock_pub.assert_called_once()
         assert orch._summary["video_id"] == "vid123"
         assert orch._summary["status"] == "published"
 
-    def test_checkpoint_done_published_restores_status(self, orch):
+    def test_checkpoint_done_published_restores_status(self, orch, tmp_path):
         orch._cp.is_done.return_value = True
         orch._cp.metadata.return_value = {"skipped": False, "video_id": "vid999"}
-        with patch("src.pipeline_orchestrator.publish_episode") as mock_pub:
-            orch._step_upload_en()
+        publisher = _make_publisher(orch, tmp_path)
+        with patch("src.publish_step.publish_episode") as mock_pub:
+            publisher.upload_en()
         assert orch._summary["status"] == "published"
         mock_pub.assert_not_called()
 

@@ -7,7 +7,6 @@ Safe to re-run: cached artifacts in output/YYYY-MM-DD/ are reused.
 """
 from __future__ import annotations
 
-import asyncio
 import datetime as dt
 import json
 import re
@@ -23,13 +22,10 @@ from config import settings
 from src.auto_action_engine import AutoActionEngine
 from src.deduplicator import SeenStories
 from src.digest_script_generator import save_for_digest
-from src.hook_selector import record_usage
-from src.analytics import get_recommendations
 from src.decision_engine_v3 import DecisionEngineV3, UnifiedStrategy, PerformanceStore
 from src.shared_types import ContentStrategy
 from src.feedback_analyzer import FeedbackAnalyzer
 from src.hook_mutation_engine import HookMutationEngine
-from src.performance_tracker import save_result
 from src.scraper import scrape_all, NewsItem
 from src.viral_selector import pick_viral_news
 from src.editorial_brain import EditorialBrain
@@ -37,28 +33,15 @@ from src.humanizer_agent import HumanizerAgent
 from src.micro_hook_agent import MicroHookAgent
 from src.presentation_engine import PresentationEngine
 from src.script_generator import Scene, VideoScript, generate_script
-from src.subtitle_generator import generate_subtitles
-from src.thumbnail_ab import (
-    generate_thumbnail_variants,
-    pick_thumbnail,
-    record_thumbnail_usage,
-)
-from src.thumbnail_generator import generate_thumbnail
 from src.translator import translate_script
-from src.video_generator import assemble_video, build_video
-from src.image_generator import async_prefetch_scene_images
-from src.voice_generator import synthesize_script, async_synthesize_script
-from src.youtube_uploader import publish_episode
 from src.slack_notifier import notify_success, notify_failure, notify_slow_steps, notify_budget_summary, notify_budget_alert
 from src.latency_tracker import LatencyTracker
 from src.budget_guard import BudgetGuard
 from src.checkpoint import PipelineCheckpoint
-from src.quality_gate import run_gate, QualityGateError
+from src.quality_gate import QualityGateError
 from src.cost_tracker import reset_ledger
 from src.pipeline_observer import PipelineObserver
 from src.live_state import LiveState
-from src.thompson_bandit import ThompsonBandit
-from src.ab_testing_engine import ABTestVariant
 from src.youtube_analytics import get_video_metrics, get_retention_curve
 from src.sequence_learning_engine import SequenceLearningEngine
 from src.cross_learning_engine import CrossLearningEngine
@@ -73,17 +56,16 @@ from src.pipeline_helpers import (
     _build_scene_map,
     _build_v3_context,
     _classify_hook_type,
-    _get_intro_duration,
-    _get_shared_outro,
-    _load_audio_durations,
     _load_cached_script,
     _load_retention_state,
-    _needs_video_rebuild,
     _save_retention_state,
     _setup_logging as _setup_logging_helper,
     _unified_strategy_to_content_strategy,
 )
-from src.language_variant import _run_language_variant
+from src.analytics import get_recommendations
+from src.thompson_bandit import ThompsonBandit
+from src.media_builder import _MediaBuilder
+from src.publish_step import _PublishStep
 
 
 
@@ -140,10 +122,39 @@ class PipelineOrchestrator:
                 logger.info("Dry run — stopping after scrape")
                 return self._summary
             self._step_script()
+            self._builder = _MediaBuilder(
+                script=self._script,
+                run_dir=self._run_dir,
+                cp=self._cp,
+                observer=self._observer,
+                live=self._live,
+                seen=self._seen,
+                news=self._news,
+                summary=self._summary,
+                thompson_preferred_type=self._thompson_preferred_type,
+            )
             self._step_voice()
             self._step_subtitles()
             self._step_video()
             self._step_thumbnail()
+            self._publisher = _PublishStep(
+                script=self._script,
+                run_dir=self._run_dir,
+                cp=self._cp,
+                observer=self._observer,
+                live=self._live,
+                seen=self._seen,
+                news=self._news,
+                summary=self._summary,
+                skip_upload=self._skip_upload,
+                auto_strategy=self._auto_strategy,
+                auto_actions=self._auto_actions,
+                long_video=self._long_video,
+                short_video=self._short_video,
+                thumbnail=self._thumbnail,
+                subtitle_path=self._subtitle_path,
+                feedback_history=self._feedback_history,
+            )
             self._step_quality_gate()
             self._step_upload_en()
             self._step_shorts_experiments()
@@ -535,340 +546,36 @@ class PipelineOrchestrator:
         self._summary["num_scenes"] = len(self._script.scenes)
 
     def _step_voice(self) -> None:
-        assert self._script is not None
-        audio_dir = self._run_dir / "audio"
-        self._observer.step_start("voice")
-        if not self._cp.is_done("voice"):
-            if not audio_dir.exists() or len(list(audio_dir.glob("*.mp3"))) < len(self._script.scenes):
-                # Run TTS and image pre-fetch concurrently: DALL-E and ElevenLabs
-                # calls overlap in time instead of running sequentially, saving
-                # several minutes on a typical episode.
-                _script = self._script  # narrowed by assert above; captured for closure
-                async def _voice_and_images() -> None:
-                    await asyncio.gather(
-                        async_synthesize_script(_script, self._run_dir),
-                        async_prefetch_scene_images(_script, self._run_dir),
-                    )
-                asyncio.run(_voice_and_images())
-                self._script.save(self._run_dir / "script.json")
-            else:
-                logger.info("Reusing cached audio; measuring durations")
-                _load_audio_durations(self._script, audio_dir)
-            total_dur = sum(s.duration_sec for s in self._script.scenes)
-            self._live.log_event(f"Audio synthesized: {total_dur:.0f}s total")
-            self._cp.mark_done("voice", {"total_duration_sec": total_dur})
-            self._observer.step_done("voice", total_duration_sec=total_dur)
-        else:
-            logger.info("Step 3 (voice) already done — measuring cached audio durations")
-            _load_audio_durations(self._script, audio_dir)
-            self._observer.step_skip(
-                "voice",
-                total_duration_sec=sum(s.duration_sec for s in self._script.scenes),
-            )
-
-        self._summary["total_duration_sec"] = sum(s.duration_sec for s in self._script.scenes)
+        self._builder.build_voice()
 
     def _step_subtitles(self) -> None:
-        assert self._script is not None
-        en_intro = settings.source_dir / "ai-news-intro.mp4"
-        self._en_intro = en_intro if en_intro.exists() else None
-        self._en_outro = _get_shared_outro()
-
-        cached_srt = self._run_dir / "subtitles.srt"
-        self._subtitle_path = cached_srt if cached_srt.exists() else None
-
-        self._observer.step_start("subtitles")
-        if not self._cp.is_done("subtitles"):
-            try:
-                self._subtitle_path = generate_subtitles(
-                    self._script,
-                    self._run_dir / "audio",
-                    self._run_dir / "subtitles.srt",
-                    intro_duration=_get_intro_duration(self._en_intro),
-                )
-                self._cp.mark_done("subtitles")
-                self._observer.step_done("subtitles")
-            except Exception as exc:
-                logger.warning(f"Subtitle generation failed (non-fatal): {exc}")
-                self._observer.step_fail("subtitles", exc)
-        else:
-            logger.info("Step 4 (subtitles) already done")
-            self._observer.step_skip("subtitles")
+        self._builder.build_subtitles()
+        self._subtitle_path = self._builder.subtitle_path
+        self._en_intro = self._builder.en_intro
+        self._en_outro = self._builder.en_outro
 
     def _step_video(self) -> None:
-        assert self._script is not None
-        self._long_video = self._run_dir / "final_video.mp4"
-        self._observer.step_start("video")
-        rebuild_video = not self._cp.is_done("video") or _needs_video_rebuild(self._long_video)
-        if rebuild_video:
-            build_video(
-                self._script, self._run_dir,
-                intro_path=self._en_intro,
-                outro_path=self._en_outro,
-                use_presenter=settings.presenter_enabled or settings.heygen_enabled,
-            )
-            self._seen.mark_featured(self._news)
-            self._live.log_event(f"Video built: {self._long_video.name}")
-            self._cp.mark_done("video", {"presenter": settings.presenter_enabled})
-            self._observer.step_done(
-                "video",
-                file=self._long_video.name,
-                presenter=settings.presenter_enabled,
-            )
-        else:
-            logger.info(f"Step 5 (video) already done — reusing {self._long_video.name}")
-            self._observer.step_skip("video")
-
-        self._short_video = self._run_dir / "shorts.mp4"
-        self._short_video = None
-
-        from src.broll_fetcher import get_pexels_credits
-        credits = get_pexels_credits(self._run_dir)
-        if credits:
-            self._script.description += (
-                "\n\nVideo clips provided by Pexels:\n" + "\n".join(credits)
-            )
+        self._builder.build_video()
+        self._long_video = self._builder.long_video
+        self._short_video = self._builder.short_video
 
     def _step_thumbnail(self) -> None:
-        assert self._script is not None
-        assert self._long_video is not None
-        self._observer.step_start("thumbnail")
-        if not self._cp.is_done("thumbnail"):
-            thumb_variants = generate_thumbnail_variants(
-                self._long_video, self._script.title, self._run_dir
-            )
-            self._thumbnail = pick_thumbnail(thumb_variants, settings.data_dir, "daily")
-            _style = self._thumbnail.stem.removeprefix("thumbnail_")
-            self._cp.mark_done("thumbnail", {"style": _style})
-            self._observer.step_done("thumbnail", style=_style, variants=len(thumb_variants))
-        else:
-            logger.info("Step 6 (thumbnail) already done")
-            _style = self._cp.metadata("thumbnail").get("style", "default")
-            self._thumbnail = self._run_dir / f"thumbnail_{_style}.jpg"
-            if not self._thumbnail.exists():
-                thumb_variants = generate_thumbnail_variants(
-                    self._long_video, self._script.title, self._run_dir
-                )
-                self._thumbnail = pick_thumbnail(thumb_variants, settings.data_dir, "daily")
-            self._observer.step_skip("thumbnail", style=_style)
-
-        self._summary["thumbnail_style"] = self._thumbnail.stem.removeprefix("thumbnail_")
+        self._builder.build_thumbnail()
+        self._thumbnail = self._builder.thumbnail
+        if "thumbnail_style" in (self._builder._summary or {}):
+            pass  # already updated by builder via shared summary ref
 
     def _step_quality_gate(self) -> None:
-        assert self._script is not None
-        quality_report = run_gate(
-            self._script, self._run_dir / "audio", self._feedback_history
-        )
-        self._summary["quality_score"] = quality_report.score
-        if quality_report.warnings:
-            self._summary["quality_warnings"] = quality_report.warnings
+        self._publisher.run_quality_gate()
 
     def _step_upload_en(self) -> None:
-        assert self._script is not None
-        assert self._long_video is not None
-        assert self._thumbnail is not None
-        self._observer.step_start("upload_en")
-        if not self._cp.is_done("upload_en"):
-            if self._skip_upload:
-                logger.info("--skip-upload specified; leaving files on disk")
-                self._summary["status"] = "built_not_uploaded"
-                self._cp.mark_done("upload_en", {"skipped": True})
-                self._observer.step_done("upload_en", skipped=True)
-            else:
-                ids = publish_episode(
-                    self._script, self._long_video, self._short_video,
-                    thumbnail=self._thumbnail,
-                    subtitle_path=self._subtitle_path,
-                )
-                self._summary.update(ids)
-                self._summary["status"] = "published"
-                self._summary["analytics"] = get_recommendations()
-                if video_id := ids.get("video_id"):
-                    record_usage(self._script.hook, video_id, settings.data_dir, "daily")
-                    record_thumbnail_usage(self._thumbnail, video_id, settings.data_dir, "daily")
-                    _ep = self._summary.get("editorial_plan", {}).get("editorial_plan") or [{}]
-                    save_result(
-                        video_id, self._script.hook, self._script.title, self._script.description,
-                        content_type="daily",
-                        strategy=self._auto_strategy,
-                        auto_actions=self._auto_actions,
-                        angle=_ep[0].get("angle", ""),
-                        format=_ep[0].get("format", ""),
-                        platform="youtube",
-                    )
-                    self._setup_thompson_variants(video_id)
-                    # Record persona memory so the character can reference this
-                    # opinion in future videos ("I said this before...")
-                    try:
-                        from src.persona_engine import PersonaEngine
-                        _fmt = _ep[0].get("format", "opinion")
-                        PersonaEngine().record(
-                            topic      = self._script.title,
-                            opinion    = self._script.hook,
-                            entry_type = _fmt if _fmt in ("hot_take", "prediction", "reaction", "breakdown") else "opinion",
-                            video_id   = video_id,
-                        )
-                    except Exception as _mem_exc:
-                        logger.debug(f"PersonaMemory record skipped: {_mem_exc}")
-                    try:
-                        from src.narrative_identity_engine import get_narrative_engine
-                        _ep_plan = _ep[0] if _ep else {}
-                        get_narrative_engine().record(
-                            topic      = self._script.title,
-                            content    = self._script.hook,
-                            entry_type = _ep_plan.get("format", "opinion"),
-                            theme      = _ep_plan.get("theme", ""),
-                            arc_key    = _ep_plan.get("arc_key", ""),
-                            video_id   = video_id,
-                        )
-                    except Exception as _narr_exc:
-                        logger.debug(f"NarrativeMemory record skipped: {_narr_exc}")
-                    try:
-                        from src.narrative_conflict_engine import get_conflict_engine
-                        _ep_plan = _ep[0] if _ep else {}
-                        _ctype = _ep_plan.get("conflict_type", "external")
-                        _cline = _ep_plan.get("conflict_line", "")
-                        _cint  = _ep_plan.get("conflict_intensity", 0.5)
-                        if _cline:
-                            get_conflict_engine().record(
-                                topic         = self._script.title,
-                                conflict_type = _ctype,
-                                intensity     = _cint,
-                                line          = _cline,
-                                video_id      = video_id,
-                            )
-                    except Exception as _conf_exc:
-                        logger.debug(f"ConflictMemory record skipped: {_conf_exc}")
-                    try:
-                        from src.emotion_engine import EmotionEngine
-                        EmotionEngine().log_stats(self._script, video_id)
-                    except Exception as _emo_exc:
-                        logger.debug(f"EmotionEngine log_stats skipped: {_emo_exc}")
-                    try:
-                        from src.emotional_arc_engine import EmotionalArcEngine
-                        _arc_eng  = EmotionalArcEngine()
-                        _arc_type = _arc_eng.select_arc_from_editorial(
-                            self._editorial if hasattr(self, "_editorial") else {}
-                        )
-                        _arc_eng.log_stats(self._script, _arc_type, video_id)
-                    except Exception as _arc_exc:
-                        logger.debug(f"EmotionalArcEngine log_stats skipped: {_arc_exc}")
-                    self._live.log_event(f"Uploaded to YouTube EN: {video_id}")
-                    self._live.set_metrics({"video_id": video_id, "views": 0, "ctr": 0.0})
-                self._cp.mark_done("upload_en", {k: v for k, v in ids.items()})
-                self._observer.step_done(
-                    "upload_en",
-                    **{k: v for k, v in ids.items() if isinstance(v, (str, int, float, bool))},
-                )
-        else:
-            logger.info("Step 7 (upload_en) already done")
-            meta = self._cp.metadata("upload_en")
-            self._summary["status"] = (
-                "built_not_uploaded" if meta.get("skipped") else "published"
-            )
-            if not meta.get("skipped"):
-                self._summary.update(meta)
-            self._observer.step_skip("upload_en")
+        self._publisher.upload_en()
 
     def _step_shorts_experiments(self) -> None:
-        """Generate and upload hook-variant Shorts experiments for the top story.
-
-        Each experiment is an independent 25s Short with a different hook type.
-        Results are collected in the next run's deferred feedback loop via
-        _collect_thompson_strategy() which calls ShortsExperimentEngine.collect_analytics().
-
-        Non-fatal: failures are logged and the pipeline continues normally.
-        """
-        if self._skip_upload or not self._news or not self._script:
-            return
-        if self._cp.is_done("shorts_experiments"):
-            logger.info("Shorts experiments already done for this run")
-            return
-
-        try:
-            from src.shorts_generator import create_short_video
-            from src.youtube_uploader import upload_short
-
-            shorts_engine = ShortsExperimentEngine(data_dir=settings.data_dir)
-            top_story = {
-                "title":  self._news[0].title,
-                "source": getattr(self._news[0], "source", ""),
-            }
-            experiments = shorts_engine.generate(top_story)
-            uploaded = 0
-
-            for exp in experiments:
-                try:
-                    exp_dir = self._run_dir / "shorts_experiments"
-                    exp_dir.mkdir(parents=True, exist_ok=True)
-                    script_text = "\n".join([exp.hook_text, exp.core_text, exp.payoff_text])
-                    video_path = create_short_video(
-                        script_text=script_text,
-                        out_dir=exp_dir,
-                        duration_sec=25,
-                    )
-                    short_title = exp.hook_text[:95] + ("…" if len(exp.hook_text) > 95 else "")
-                    video_id = upload_short(
-                        video_path=video_path,
-                        title=short_title,
-                        description=(
-                            f"{exp.hook_text}\n\n"
-                            f"{exp.core_text}\n\n"
-                            f"#AINews #Shorts #AI"
-                        ),
-                        tags=["AI", "AINews", "Shorts", exp.hook_type],
-                        client_secrets=settings.youtube_client_secrets,
-                        token_file=settings.youtube_token_file,
-                    )
-                    shorts_engine.mark_uploaded(
-                        exp.experiment_id,
-                        video_id=video_id,
-                        video_path=str(video_path),
-                    )
-                    uploaded += 1
-                    logger.info(
-                        f"ShortsExperiment uploaded: [{exp.hook_type}] {video_id}"
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        f"ShortsExperiment: failed to generate/upload "
-                        f"[{exp.hook_type}]: {exc}"
-                    )
-
-            self._cp.mark_done("shorts_experiments", {"uploaded": uploaded})
-            self._summary["shorts_experiments"] = {"uploaded": uploaded}
-            logger.info(
-                f"ShortsExperimentEngine: {uploaded}/{len(experiments)} experiments uploaded"
-            )
-        except Exception as exc:
-            logger.warning(f"ShortsExperimentEngine: step failed (non-fatal): {exc}")
+        self._publisher.run_shorts_experiments()
 
     def _step_upload_ru(self) -> None:
-        assert self._script is not None
-        self._observer.step_start("upload_ru")
-        if settings.ru_enabled and not self._cp.is_done("upload_ru"):
-            ru_intro = settings.source_dir / "ai-novosti-intro.mp4"
-            ru = self._run_language_variant(
-                english_script=self._script,
-                lang_code="ru",
-                lang_name="Russian",
-                voice_id=settings.ru_elevenlabs_voice_id,
-                voice_model=settings.ru_elevenlabs_model,
-                client_secrets=settings.ru_youtube_client_secrets,
-                token_file=settings.ru_youtube_token_file,
-                intro_path=ru_intro if ru_intro.exists() else None,
-                outro_path=_get_shared_outro(),
-                include_short=False,
-            )
-            self._summary["ru"] = ru
-            self._cp.mark_done("upload_ru", ru)
-            self._observer.step_done("upload_ru", status=ru.get("status"))
-        elif settings.ru_enabled:
-            logger.info("Step 8 (upload_ru) already done")
-            self._summary["ru"] = self._cp.metadata("upload_ru")
-            self._observer.step_skip("upload_ru")
-        else:
-            self._observer.step_skip("upload_ru")
+        self._publisher.upload_ru()
 
     def _finalize(self) -> None:
         cost_report = self._ledger.save(self._run_dir / "cost_report.json")
@@ -895,34 +602,6 @@ class PipelineOrchestrator:
         step_timings = tracker.step_summary(trace)
         notify_success(self._summary, "daily", step_timings=step_timings)
         logger.info(f"=== DONE ===  {json.dumps(self._summary, indent=2)}")
-
-    def _run_language_variant(
-        self,
-        english_script: VideoScript,
-        lang_code: str,
-        lang_name: str,
-        voice_id: str,
-        voice_model: str,
-        client_secrets: Path,
-        token_file: Path,
-        intro_path: Path | None = None,
-        outro_path: Path | None = None,
-        include_short: bool = True,
-    ) -> dict:
-        return _run_language_variant(
-            english_script=english_script,
-            run_dir=self._run_dir,
-            lang_code=lang_code,
-            lang_name=lang_name,
-            voice_id=voice_id,
-            voice_model=voice_model,
-            client_secrets=client_secrets,
-            token_file=token_file,
-            skip_upload=self._skip_upload,
-            intro_path=intro_path,
-            outro_path=outro_path,
-            include_short=include_short,
-        )
 
     # ── Script post-processing helpers ────────────────────────────────────────
 
@@ -1230,38 +909,6 @@ class PipelineOrchestrator:
             )
             script.hook = match
         return script
-
-    def _setup_thompson_variants(self, video_id: str) -> None:
-        """Register hook variants as Thompson arms for this video after upload.
-
-        Creates one arm per hook_variant (max 4), classifies each by type, then
-        calls select_variant() to log which arm the bandit currently favours.
-        State is persisted to output/<date>/thompson_state.json so the next
-        pipeline run can update it with real YouTube metrics.
-        """
-        hook_texts = self._script.hook_variants or [self._script.hook]  # type: ignore[union-attr]
-        variants = [
-            ABTestVariant(
-                id=chr(ord("A") + i),
-                type=_classify_hook_type(h),
-                title=self._script.title,  # type: ignore[union-attr]
-                thumbnail={},
-                hook=h,
-            )
-            for i, h in enumerate(hook_texts[:4])
-        ]
-
-        bandit = ThompsonBandit(data_dir=self._run_dir)
-        bandit.register_variants(variants)
-
-        best = bandit.select_variant()
-        if best:
-            bandit.record_switch()
-            logger.info(
-                f"ThompsonBandit: {len(variants)} arm(s) registered for {video_id}; "
-                f"initial selection → {best.variant_id!r} ({best.type}) "
-                f"— {best.hook[:60]!r}"
-            )
 
     def _setup_logging(self) -> None:
         _setup_logging_helper(self._run_dir)
