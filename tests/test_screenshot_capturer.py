@@ -114,14 +114,38 @@ class TestCaptureUrl:
 
     def test_creates_parent_dir_before_capture(self, tmp_path):
         out = tmp_path / "nested" / "dir" / "screenshot.jpg"
-        # The function creates parent dirs before calling playwright
-        # We just verify it raises (playwright not installed) without FileNotFoundError
-        try:
+
+        mock_page = MagicMock()
+        mock_context = MagicMock()
+        mock_browser = MagicMock()
+        mock_pw = MagicMock()
+        mock_pw.chromium.launch.return_value = mock_browser
+        mock_browser.new_context.return_value = mock_context
+        mock_context.new_page.return_value = mock_page
+
+        # Write a fake file so capture_url's trailing stat() doesn't fail
+        from pathlib import Path as _Path
+
+        def _fake_screenshot(**kwargs):
+            _Path(kwargs["path"]).write_bytes(b"FAKE")
+
+        mock_page.screenshot.side_effect = _fake_screenshot
+
+        mock_sp_instance = MagicMock()
+        mock_sp_instance.__enter__ = MagicMock(return_value=mock_pw)
+        mock_sp_instance.__exit__ = MagicMock(return_value=False)
+
+        mock_sync_api = MagicMock()
+        mock_sync_api.sync_playwright = MagicMock(return_value=mock_sp_instance)
+
+        with patch.dict("sys.modules", {
+            "playwright": MagicMock(),
+            "playwright.sync_api": mock_sync_api,
+        }):
             capture_url("https://example.com", out)
-        except (RuntimeError, ImportError, TypeError, ModuleNotFoundError):
-            pass  # expected — playwright not installed
-        # Parent dir creation happens before playwright is called
-        assert out.parent.exists() or not out.parent.exists()  # always True
+
+        assert out.parent.exists()
+        assert out.exists()
 
 
 class TestConstants:
