@@ -60,6 +60,7 @@ def _load_audio_durations(script: VideoScript, audio_dir: Path) -> None:
 
 
 def _setup_logging(run_dir: Path) -> None:
+    from src.json_log_sink import JsonSink
     from src.log_filter import scrub
     logger.remove()
     logger.add(
@@ -68,6 +69,7 @@ def _setup_logging(run_dir: Path) -> None:
         filter=scrub,
     )
     logger.add(run_dir / "run.log", level="DEBUG", rotation="10 MB", filter=scrub)
+    logger.add(JsonSink(run_dir / "run.jsonl"), level="DEBUG", filter=scrub)
 
 
 def _needs_video_rebuild(video_path: Path) -> bool:
