@@ -665,10 +665,8 @@ class TestGenerateSceneClip:
         fake_clip = clip_dir / "scene_04_clip_0.mp4"
 
         with patch("src.image_generator.settings") as ms, \
-             patch.dict("sys.modules", {"src.infographic_generator": MagicMock()}):
+             patch("src.infographic_generator.generate_infographic_clip", return_value=fake_clip):
             ms.data_dir = tmp_path / "data"
-            import src.infographic_generator as ig_mock
-            ig_mock.generate_infographic_clip = MagicMock(return_value=fake_clip)
 
             result = generate_scene_clip(scene, clip_dir)
 
