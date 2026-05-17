@@ -463,8 +463,9 @@ class TestNeedsVideoRebuild:
 # ── _setup_logging ────────────────────────────────────────────────────────────
 
 class TestSetupLogging:
-    def test_calls_logger_add_twice(self, tmp_path):
+    def test_calls_logger_add_three_times(self, tmp_path):
         with patch("src.pipeline_helpers.logger") as mock_logger:
             _setup_logging(tmp_path)
         assert mock_logger.remove.called
-        assert mock_logger.add.call_count == 2
+        # stderr sink + text file sink + JSON sink
+        assert mock_logger.add.call_count == 3
