@@ -232,10 +232,7 @@ class TestMultiDayIsolation:
 
 class TestSaveException:
     def test_save_swallows_exception(self, tmp_path):
+        from unittest.mock import patch
         g = _guard(tmp_path)
-        # Make the path read-only so write fails
-        g._path.parent.chmod(0o555)
-        try:
-            g._save()  # should not raise
-        finally:
-            g._path.parent.chmod(0o755)
+        with patch("json.dumps", side_effect=ValueError("not serializable")):
+            g._save()  # must not raise

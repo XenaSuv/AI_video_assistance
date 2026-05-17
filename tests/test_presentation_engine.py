@@ -144,6 +144,13 @@ class TestVoiceDirection:
         result = engine.apply(script, _strategy())
         assert result.scenes[0].narration.count("[PAUSE_SHORT]") == 1
 
+    def test_reaction_intent_injects_pause_short(self):
+        engine = PresentationEngine()
+        # "reaction" maps to voice="curious" → should prepend [PAUSE_SHORT]
+        script = _script(_scene(intent="reaction", narration="What a surprise."))
+        result = engine.apply(script, _strategy())
+        assert result.scenes[0].narration.startswith("[PAUSE_SHORT]")
+
     def test_voice_direction_field_set(self):
         engine = PresentationEngine()
         script = _script(_scene(intent="shock"))
