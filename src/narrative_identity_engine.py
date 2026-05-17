@@ -264,8 +264,8 @@ class NarrativeMemory:
                 continue
             try:
                 entries.append(NarrativeEntry.from_dict(json.loads(line)))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Skipped malformed record: {exc}")
         return entries[-n:]
 
     def get_relevant(self, topic: str, n: int = 2) -> list[NarrativeEntry]:

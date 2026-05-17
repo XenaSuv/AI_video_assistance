@@ -18,6 +18,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from loguru import logger
+
 
 @dataclass
 class BudgetStatus:
@@ -80,8 +82,8 @@ class BudgetGuard:
             try:
                 data = json.loads(report_path.read_text())
                 total += float(data.get("total_usd", 0.0))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"BudgetGuard: skipped {report_path.name}: {exc}")
         return round(total, 4)
 
     # ── public API ────────────────────────────────────────────────────────────

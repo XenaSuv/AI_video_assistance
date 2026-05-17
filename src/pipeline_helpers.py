@@ -219,8 +219,8 @@ def _load_retention_state(data_dir: Path) -> dict:
     try:
         if path.exists():
             return json.loads(path.read_text())
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug(f"_load_retention_state: {exc}")
     return {}
 
 

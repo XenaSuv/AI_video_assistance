@@ -168,8 +168,8 @@ class SceneVarietyEngine:
             plans = editorial_plan.editorial_plan
             if plans:
                 return str(plans[0].get("format", ""))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(f"SceneVarietyEngine: key lookup failed: {exc}")
         return ""
 
     def _extract_angle(self, editorial_plan: Any) -> str:
@@ -180,8 +180,8 @@ class SceneVarietyEngine:
                 for key in _ANGLE_INTENT:
                     if key in raw:
                         return key
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(f"SceneVarietyEngine: key lookup failed: {exc}")
         return ""
 
 
@@ -395,8 +395,8 @@ class SceneVarietyEngineV2:
                 for key in _ANGLE_INTENT:
                     if key in raw:
                         return key
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(f"SceneVarietyEngine: key lookup failed: {exc}")
         return ""
 
     def _enforce_variety(self, scenes: list[Scene]) -> None:

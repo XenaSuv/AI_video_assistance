@@ -307,6 +307,6 @@ class SceneStrategyEngine:
                 for key in _ANGLE_INTENT:
                     if key in raw:
                         return key
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(f"SceneStrategyEngine: key lookup failed: {exc}")
         return ""

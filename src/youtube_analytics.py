@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from googleapiclient.discovery import build
+from loguru import logger
 
 
 def get_analytics_service(token_file: str = "config/token.json") -> Any:
@@ -23,7 +24,8 @@ def get_analytics_service(token_file: str = "config/token.json") -> Any:
                 import io
                 creds = _pickle.load(io.BytesIO(raw))
                 token_json = creds.to_json()
-            except Exception:
+            except Exception as exc:
+                logger.debug(f"_get_credentials: pickle load failed, trying JSON ({exc})")
                 # File was saved as JSON with a .pickle extension.
                 token_json = raw.decode()
                 json.loads(token_json)  # validate — raises if truly corrupt

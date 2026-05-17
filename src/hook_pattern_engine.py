@@ -414,8 +414,8 @@ class HookPatternEngine:
                 continue
             try:
                 records.append(HookPatternRecord.from_dict(json.loads(line)))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Skipped malformed record: {exc}")
         return records
 
 

@@ -321,7 +321,8 @@ def _valid_video_clip(path: Path) -> bool:
         w, h = ffmpeg_utils.video_size(path)
         dur = ffmpeg_utils.duration(path)
         return w > 0 and h > 0 and dur > 0
-    except Exception:
+    except Exception as exc:
+        logger.debug(f"_valid_video_clip: probe failed for {path.name}: {exc}")
         return False
 
 

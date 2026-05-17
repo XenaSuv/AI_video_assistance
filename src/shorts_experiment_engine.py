@@ -188,8 +188,8 @@ class ShortsExperimentStore:
                 continue
             try:
                 records.append(json.loads(line))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Skipped malformed record: {exc}")
         return records
 
 
@@ -285,8 +285,8 @@ class ShortsExperimentEngine:
                 age_h = (now - created).total_seconds() / 3600
                 if age_h < min_age_hours:
                     continue
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Skipped malformed record: {exc}")
 
             try:
                 yt = get_video_metrics(exp.video_id)

@@ -51,8 +51,8 @@ def _load_seen(data_dir: Path) -> dict:
     if p.exists():
         try:
             return json.loads(p.read_text())
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(f"BreakingDetector._load_seen: {exc}")
     return {"seen_urls": [], "videos": []}
 
 

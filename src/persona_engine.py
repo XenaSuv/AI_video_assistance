@@ -216,8 +216,8 @@ class PersonaMemory:
                 continue
             try:
                 entries.append(MemoryEntry.from_dict(json.loads(line)))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Skipped malformed record: {exc}")
         return entries[-n:]
 
     def get_callbacks(self, topic: str, n: int = 2) -> list[str]:

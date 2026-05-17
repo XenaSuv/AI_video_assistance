@@ -168,8 +168,8 @@ def capture(tool: str, key: str, out_path: Path) -> Path:
                         btn.click(timeout=1_000)
                         page.wait_for_timeout(300)
                         break
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug(f"Dismiss selector '{selector}' failed: {exc}")
 
             if scroll > 0:
                 page.evaluate(f"window.scrollTo(0, {scroll})")
@@ -225,8 +225,8 @@ def capture_url(url: str, out_path: Path, scroll: int = 0) -> Path:
                         btn.click(timeout=1_000)
                         page.wait_for_timeout(300)
                         break
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug(f"Dismiss selector '{selector}' failed: {exc}")
 
             if scroll > 0:
                 page.evaluate(f"window.scrollTo(0, {scroll})")
