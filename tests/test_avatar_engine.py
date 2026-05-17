@@ -237,6 +237,79 @@ class TestRenderEnabled:
 
         assert mock_hg.call_args.kwargs["avatar_id"] == "default-fallback-id"
 
+    @pytest.mark.parametrize("persona,env_var,expected_id", [
+        ("curious",      "HEYGEN_AVATAR_ID_CURIOUS",      "curious-avatar-abc"),
+        ("direct",       "HEYGEN_AVATAR_ID_DIRECT",       "direct-avatar-def"),
+        ("professional", "HEYGEN_AVATAR_ID_PROFESSIONAL", "professional-avatar-ghi"),
+        ("serious",      "HEYGEN_AVATAR_ID_SERIOUS",      "serious-avatar-jkl"),
+    ])
+    def test_all_personas_pass_correct_avatar_id(self, tmp_path, persona, env_var, expected_id):
+        """Each persona env var must reach generate_heygen_clip as avatar_id."""
+        engine = self._engine_with_mock(tmp_path / "clip.mp4")
+        raw_path = tmp_path / "out_av_raw.mp4"
+        raw_path.write_bytes(b"fake")
+
+        with patch.dict(os.environ, {env_var: expected_id}):
+            with patch("src.avatar_engine.generate_heygen_clip", return_value=raw_path) as mock_hg:
+                with patch("src.avatar_engine.ffmpeg_utils.burn_captions", side_effect=lambda v, t, o, **kw: v):
+                    with patch("shutil.copy2"):
+                        engine.render(
+                            tmp_path / "audio.mp3",
+                            tmp_path / "out.mp4",
+                            intent="shock",
+                            persona=persona,
+                            subtitle_text="text",
+                        )
+
+        assert mock_hg.call_args.kwargs["avatar_id"] == expected_id
+
+    @pytest.mark.parametrize("persona,env_var", [
+        ("curious",      "HEYGEN_AVATAR_ID_CURIOUS"),
+        ("direct",       "HEYGEN_AVATAR_ID_DIRECT"),
+        ("professional", "HEYGEN_AVATAR_ID_PROFESSIONAL"),
+        ("serious",      "HEYGEN_AVATAR_ID_SERIOUS"),
+    ])
+    def test_all_personas_fall_back_to_default(self, tmp_path, persona, env_var):
+        """Falls back to HEYGEN_AVATAR_ID when persona-specific env var is absent."""
+        engine = self._engine_with_mock(tmp_path / "clip.mp4")
+        engine._default_id = "fallback-id"
+        raw_path = tmp_path / "out_av_raw.mp4"
+        raw_path.write_bytes(b"fake")
+
+        clean_env = {k: v for k, v in os.environ.items() if k != env_var}
+        with patch.dict(os.environ, clean_env, clear=True):
+            with patch("src.avatar_engine.generate_heygen_clip", return_value=raw_path) as mock_hg:
+                with patch("src.avatar_engine.ffmpeg_utils.burn_captions", side_effect=lambda v, t, o, **kw: v):
+                    with patch("shutil.copy2"):
+                        engine.render(
+                            tmp_path / "audio.mp3",
+                            tmp_path / "out.mp4",
+                            intent="shock",
+                            persona=persona,
+                            subtitle_text="text",
+                        )
+
+        assert mock_hg.call_args.kwargs["avatar_id"] == "fallback-id"
+
+    def test_voice_id_flows_to_generate_heygen_clip(self, tmp_path):
+        """HEYGEN_VOICE_ID (self._voice_id) must reach generate_heygen_clip as voice_id."""
+        engine = self._engine_with_mock(tmp_path / "clip.mp4")
+        engine._voice_id = "voice-from-env-xyz"
+        raw_path = tmp_path / "out_av_raw.mp4"
+        raw_path.write_bytes(b"fake")
+
+        with patch("src.avatar_engine.generate_heygen_clip", return_value=raw_path) as mock_hg:
+            with patch("src.avatar_engine.ffmpeg_utils.burn_captions", side_effect=lambda v, t, o, **kw: v):
+                with patch("shutil.copy2"):
+                    engine.render(
+                        tmp_path / "audio.mp3",
+                        tmp_path / "out.mp4",
+                        intent="shock",
+                        subtitle_text="text",
+                    )
+
+        assert mock_hg.call_args.kwargs["voice_id"] == "voice-from-env-xyz"
+
     def test_calls_heygen_with_normal_style_for_explain(self, tmp_path):
         engine = self._engine_with_mock(tmp_path / "clip.mp4")
         raw_path = tmp_path / "out_av_raw.mp4"
