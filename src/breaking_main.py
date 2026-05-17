@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.breaking_detector import mark_publish_failed, mark_published
 from src.breaking_script_generator import generate_breaking_short_script
-from src.pipeline_orchestrator import _load_audio_durations, _load_cached_script, _setup_logging
+from src.pipeline_helpers import _load_audio_durations, _load_cached_script, _setup_logging
 from src.scraper import NewsItem
 from src.shorts_generator import build_short, create_short_video
 from src.translator import translate_script
