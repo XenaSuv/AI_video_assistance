@@ -1254,3 +1254,122 @@ class TestFramesToVideo:
             with pytest.raises(RuntimeError, match="timed out"):
                 frames_to_video([], output)
         mock_proc.kill.assert_called_once()
+
+    def test_mismatched_frame_shape_triggers_pil_resize(self, tmp_path):
+        """Frames with wrong shape must be resized to (height, width, 3) via PIL."""
+        output = tmp_path / "out.mp4"
+        mock_proc = MagicMock()
+        mock_proc.stdin = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.wait.return_value = 0
+
+        # Create a frame with incorrect shape (too small)
+        wrong_shape_frame = _np_mock.zeros.return_value
+        wrong_shape_frame.shape = (100, 50, 3)  # differs from 720×1280
+
+        mock_pil_img = MagicMock()
+        mock_pil_img.resize.return_value = MagicMock()
+
+        with patch("subprocess.Popen", return_value=mock_proc):
+            with patch("src.ffmpeg_utils.np") as mock_np:
+                # Make frame.shape != (height, width, 3) so the branch fires
+                mock_frame = MagicMock()
+                mock_frame.shape = (100, 50, 3)  # wrong shape
+                mock_frame.astype.return_value = mock_frame
+                mock_frame.tobytes.return_value = b""
+                mock_np.array.return_value = mock_frame
+
+                with patch("PIL.Image") as mock_pil:
+                    mock_pil.fromarray.return_value = mock_pil_img
+                    frames_to_video([mock_frame], output, width=1280, height=720)
+
+        # PIL resize was invoked to fix the frame dimensions
+        mock_pil_img.resize.assert_called_once_with((1280, 720))
+
+
+# ── Timeout constants — configurable via settings ─────────────────────────────
+
+class TestTimeoutSettings:
+    """Verify that _PROBE/_CLIP/_LONG_TIMEOUT are wired to config/settings.py."""
+
+    def test_constants_match_settings_defaults(self):
+        from config import settings
+        assert _PROBE_TIMEOUT == settings.ffmpeg_probe_timeout
+        assert _CLIP_TIMEOUT  == settings.ffmpeg_clip_timeout
+        assert _LONG_TIMEOUT  == settings.ffmpeg_long_timeout
+
+    def test_probe_lt_clip_lt_long(self):
+        assert _PROBE_TIMEOUT < _CLIP_TIMEOUT < _LONG_TIMEOUT
+
+
+# ── concat() — fallback re-encode with video_only=True ───────────────────────
+
+class TestConcatFallbackVideoOnly:
+    """Cover the video_only=True branch inside the fallback re-encode path."""
+
+    def test_fallback_video_only_adds_an_not_aac(self, tmp_path):
+        """When stream copy fails and video_only=True, fallback must use -an."""
+        import subprocess as _sp
+        paths = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+        output = tmp_path / "out.mp4"
+        with patch("subprocess.run") as m:
+            m.side_effect = [
+                _sp.CalledProcessError(1, "ffmpeg"),   # stream copy fails
+                MagicMock(stdout="", returncode=0),    # re-encode succeeds
+            ]
+            concat(paths, output, video_only=True)
+        fallback_cmd = m.call_args_list[1][0][0]
+        assert "-an" in fallback_cmd
+        assert "aac" not in fallback_cmd
+
+
+# ── config_validator — ffmpeg timeout fields ──────────────────────────────────
+
+class TestConfigValidatorFfmpegTimeouts:
+    """Validate that the three ffmpeg timeout settings are range-checked."""
+
+    def _cfg(self, **overrides):
+        from types import SimpleNamespace
+        base = dict(
+            daily_run_hour_utc=8, topic_run_hour_utc=10,
+            background_music_volume=0.1, shorts_music_volume=0.13,
+            script_target_words=2200, dedup_ttl_days=30,
+            daily_budget_usd=50.0, monthly_budget_usd=500.0,
+            end_card_duration=10.0,
+            youtube_privacy="public", tiktok_privacy="PUBLIC_TO_EVERYONE",
+            heygen_aspect="16:9",
+            tiktok_enabled=False, tiktok_client_key="", tiktok_client_secret="",
+            presenter_enabled=False, did_api_key="",
+            heygen_enabled=False, heygen_api_key="", heygen_avatar_id="",
+            heygen_avatar_id_direct="", heygen_avatar_id_serious="",
+            heygen_avatar_id_curious="", heygen_avatar_id_professional="",
+            heygen_avatar_id_casual="",
+            ffmpeg_probe_timeout=30, ffmpeg_clip_timeout=300,
+            ffmpeg_long_timeout=600,
+        )
+        base.update(overrides)
+        return SimpleNamespace(**base)
+
+    def test_valid_timeouts_do_not_raise(self):
+        from src.config_validator import validate
+        validate(self._cfg())
+
+    def test_probe_timeout_zero_raises(self):
+        from src.config_validator import validate, ConfigurationError
+        with pytest.raises(ConfigurationError, match="FFMPEG_PROBE_TIMEOUT"):
+            validate(self._cfg(ffmpeg_probe_timeout=0))
+
+    def test_clip_timeout_zero_raises(self):
+        from src.config_validator import validate, ConfigurationError
+        with pytest.raises(ConfigurationError, match="FFMPEG_CLIP_TIMEOUT"):
+            validate(self._cfg(ffmpeg_clip_timeout=0))
+
+    def test_long_timeout_zero_raises(self):
+        from src.config_validator import validate, ConfigurationError
+        with pytest.raises(ConfigurationError, match="FFMPEG_LONG_TIMEOUT"):
+            validate(self._cfg(ffmpeg_long_timeout=0))
+
+    def test_negative_timeout_raises(self):
+        from src.config_validator import validate, ConfigurationError
+        with pytest.raises(ConfigurationError, match="FFMPEG_CLIP_TIMEOUT"):
+            validate(self._cfg(ffmpeg_clip_timeout=-1))

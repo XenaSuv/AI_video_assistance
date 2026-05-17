@@ -36,6 +36,9 @@ def _cfg(**overrides) -> SimpleNamespace:
         heygen_avatar_id_curious="",
         heygen_avatar_id_professional="",
         heygen_avatar_id_casual="",
+        ffmpeg_probe_timeout=30,
+        ffmpeg_clip_timeout=300,
+        ffmpeg_long_timeout=600,
     )
     base.update(overrides)
     return SimpleNamespace(**base)

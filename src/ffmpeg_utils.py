@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import math
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
 from typing import Union
@@ -19,15 +20,19 @@ from typing import Union
 import numpy as np
 from loguru import logger
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from config import settings
+
 # Font used for on-screen text
 _FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 # Per-operation subprocess timeouts (seconds).
 # ffmpeg can hang indefinitely on corrupted/truncated media; without a timeout
 # the GitHub Actions job consumes its full 180-min budget before failing.
-_PROBE_TIMEOUT = 30    # ffprobe metadata reads
-_CLIP_TIMEOUT  = 300   # per-clip encoding (title card, ken burns, short clips)
-_LONG_TIMEOUT  = 600   # full-video operations (concat, mix_music, frames_to_video)
+# Configurable via FFMPEG_PROBE_TIMEOUT / FFMPEG_CLIP_TIMEOUT / FFMPEG_LONG_TIMEOUT.
+_PROBE_TIMEOUT: int = settings.ffmpeg_probe_timeout
+_CLIP_TIMEOUT:  int = settings.ffmpeg_clip_timeout
+_LONG_TIMEOUT:  int = settings.ffmpeg_long_timeout
 
 
 # ─────────────────────────────────────────────────────────────────────────────

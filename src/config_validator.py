@@ -68,6 +68,18 @@ def validate(cfg: Any) -> None:
         errors.append(
             f"END_CARD_DURATION must be >= 0, got {cfg.end_card_duration}"
         )
+    if cfg.ffmpeg_probe_timeout <= 0:
+        errors.append(
+            f"FFMPEG_PROBE_TIMEOUT must be > 0, got {cfg.ffmpeg_probe_timeout}"
+        )
+    if cfg.ffmpeg_clip_timeout <= 0:
+        errors.append(
+            f"FFMPEG_CLIP_TIMEOUT must be > 0, got {cfg.ffmpeg_clip_timeout}"
+        )
+    if cfg.ffmpeg_long_timeout <= 0:
+        errors.append(
+            f"FFMPEG_LONG_TIMEOUT must be > 0, got {cfg.ffmpeg_long_timeout}"
+        )
 
     # ── Choice checks ─────────────────────────────────────────────────────────
 
