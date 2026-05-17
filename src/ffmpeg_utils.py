@@ -217,7 +217,8 @@ def merge_av(
 def concat(paths: list[Path], output: Path, *, video_only: bool = False) -> Path:
     """Concatenate *paths* into *output* using the concat demuxer.
 
-    Re-encodes with libx264/aac so all streams are compatible.
+    Tries stream copy first (fast, lossless); falls back to re-encoding with
+    veryfast preset when inputs have incompatible stream parameters.
     Pass *video_only=True* when all inputs have no audio stream (e.g. quote
     card clip + raw Ken Burns clip before merge_av).
     """
@@ -230,18 +231,37 @@ def concat(paths: list[Path], output: Path, *, video_only: bool = False) -> Path
         list_file.write_text(
             "\n".join(f"file '{p.resolve()}'" for p in paths) + "\n"
         )
-        cmd = [
+
+        # Fast path: stream copy — no re-encoding when inputs share codec/resolution.
+        copy_cmd = [
             "ffmpeg", "-y",
             "-f", "concat", "-safe", "0",
             "-i", str(list_file),
-            "-c:v", "libx264", "-crf", "18", "-preset", "medium",
+            "-c", "copy",
         ]
         if video_only:
-            cmd += ["-an"]
+            copy_cmd += ["-an"]
+        copy_cmd.append(str(output))
+        try:
+            _run(copy_cmd, timeout=_LONG_TIMEOUT)
+            return output
+        except Exception:
+            output.unlink(missing_ok=True)
+            logger.debug("concat: stream copy failed, falling back to re-encode")
+
+        # Fallback: re-encode with veryfast preset to stay within CI time limits.
+        encode_cmd = [
+            "ffmpeg", "-y",
+            "-f", "concat", "-safe", "0",
+            "-i", str(list_file),
+            "-c:v", "libx264", "-crf", "18", "-preset", "veryfast",
+        ]
+        if video_only:
+            encode_cmd += ["-an"]
         else:
-            cmd += ["-c:a", "aac"]
-        cmd.append(str(output))
-        _run(cmd, timeout=_LONG_TIMEOUT)
+            encode_cmd += ["-c:a", "aac"]
+        encode_cmd.append(str(output))
+        _run(encode_cmd, timeout=_LONG_TIMEOUT)
     finally:
         list_file.unlink(missing_ok=True)
     return output

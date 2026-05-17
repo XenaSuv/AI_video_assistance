@@ -414,16 +414,30 @@ class TestConcat:
         list_file = tmp_path / "out_list.txt"
         assert not list_file.exists()
 
-    def test_uses_libx264_and_aac(self, tmp_path):
+    def test_prefers_stream_copy(self, tmp_path):
         paths = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
         output = tmp_path / "out.mp4"
         with patch("subprocess.run") as m:
             m.return_value = MagicMock(stdout="", returncode=0)
             concat(paths, output)
         cmd = m.call_args[0][0]
-        assert "libx264" in cmd
-        assert "aac" in cmd
-        assert "-an" not in cmd
+        assert "-c" in cmd and "copy" in cmd
+        assert "libx264" not in cmd
+
+    def test_fallback_uses_libx264_and_aac(self, tmp_path):
+        import subprocess as _sp
+        paths = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+        output = tmp_path / "out.mp4"
+        with patch("subprocess.run") as m:
+            m.side_effect = [
+                _sp.CalledProcessError(1, "ffmpeg"),
+                MagicMock(stdout="", returncode=0),
+            ]
+            concat(paths, output)
+        fallback_cmd = m.call_args_list[1][0][0]
+        assert "libx264" in fallback_cmd
+        assert "aac" in fallback_cmd
+        assert "-an" not in fallback_cmd
 
     def test_video_only_adds_an_flag(self, tmp_path):
         paths = [tmp_path / "a.mp4"]

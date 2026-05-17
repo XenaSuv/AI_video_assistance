@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.retry_utils import http_get, http_post
 
 _API_BASE      = "https://api.heygen.com"
+_UPLOAD_BASE   = "https://upload.heygen.com"
 _POLL_INTERVAL = 5    # seconds between status checks
 _POLL_TIMEOUT  = 300  # give up after 5 minutes
 
@@ -53,28 +54,32 @@ def _headers(api_key: str) -> dict[str, str]:
     }
 
 
-def _upload_audio(audio_path: Path, api_key: str) -> str:
-    """Upload a local MP3 to HeyGen's asset store and return a public URL.
+def _upload_audio(audio_path: Path, api_key: str) -> tuple[str, str]:
+    """Upload a local MP3 to HeyGen's asset store.
 
-    HeyGen requires a public URL for audio-driven clips; this endpoint
-    hosts the file and returns a CDN URL valid for the video generation call.
+    Returns (audio_url, asset_id) — either may be empty string if absent.
 
-    Uses /v2/asset (the /v1/asset endpoint was removed).
+    upload.heygen.com/v1/asset expects raw binary body with Content-Type
+    set to the file's MIME type — NOT multipart/form-data.
     """
     with open(audio_path, "rb") as f:
         audio_bytes = f.read()
 
     resp = http_post(
-        f"{_API_BASE}/v2/asset",
-        headers={"X-Api-Key": api_key},
-        files={"file": (audio_path.name, audio_bytes, "audio/mpeg")},
+        f"{_UPLOAD_BASE}/v1/asset",
+        headers={
+            "X-Api-Key":    api_key,
+            "Content-Type": "audio/mpeg",
+        },
+        data=audio_bytes,
         timeout=60,
     )
     data = resp.json().get("data", {})
-    url = data.get("url") or data.get("asset_url", "")
-    if not url:
-        raise RuntimeError(f"HeyGen asset upload returned no URL: {resp.text}")
-    return url
+    url      = data.get("url") or data.get("asset_url", "")
+    asset_id = data.get("asset_id", "")
+    if not url and not asset_id:
+        raise RuntimeError(f"HeyGen asset upload returned no URL or asset_id: {resp.text}")
+    return url, asset_id
 
 
 def _create_video(
@@ -83,9 +88,15 @@ def _create_video(
     audio_url: str,
     aspect: str = "16:9",
     avatar_style: str = "normal",
+    audio_asset_id: str = "",
 ) -> str:
     """Submit a video generation job and return the video_id."""
     dim = _DIMENSIONS.get(aspect, _DIMENSIONS["16:9"])
+    # Prefer asset_id (server-side reference) over public URL when both available
+    if audio_asset_id:
+        voice_block: dict = {"type": "audio", "audio_asset_id": audio_asset_id}
+    else:
+        voice_block = {"type": "audio", "audio_url": audio_url}
     payload = {
         "video_inputs": [{
             "character": {
@@ -93,10 +104,7 @@ def _create_video(
                 "avatar_id":    avatar_id,
                 "avatar_style": avatar_style,
             },
-            "voice": {
-                "type":      "audio",
-                "audio_url": audio_url,
-            },
+            "voice": voice_block,
             "background": {
                 "type":  "color",
                 "value": "#1a1a2e",   # dark navy background
@@ -240,8 +248,12 @@ def generate_heygen_clip(
         # ── Audio-driven mode ─────────────────────────────────────────────────
         if audio_path.exists():
             logger.info(f"HeyGen: uploading audio {audio_path.name} (style={avatar_style!r})")
-            audio_url = _upload_audio(audio_path, api_key)
-            video_id  = _create_video(api_key, avatar_id, audio_url, aspect=aspect, avatar_style=avatar_style)
+            audio_url, audio_asset_id = _upload_audio(audio_path, api_key)
+            video_id  = _create_video(
+                api_key, avatar_id, audio_url,
+                aspect=aspect, avatar_style=avatar_style,
+                audio_asset_id=audio_asset_id,
+            )
             logger.info(f"HeyGen: video generation started — {video_id}")
             result_url = _poll_video(api_key, video_id)
             _download(result_url, out_path)

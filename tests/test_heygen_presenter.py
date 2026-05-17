@@ -38,18 +38,33 @@ class TestUploadAudio:
         audio.write_bytes(b"fake-audio")
         resp = _mock_response({"data": {"url": "https://cdn.heygen.com/audio/abc.mp3"}})
         with patch("src.heygen_presenter.http_post", return_value=resp) as mock_post:
-            url = _upload_audio(audio, api_key="test-key")
+            url, asset_id = _upload_audio(audio, api_key="test-key")
         assert url == "https://cdn.heygen.com/audio/abc.mp3"
+        assert asset_id == ""
         mock_post.assert_called_once()
         args, kwargs = mock_post.call_args
-        assert "v2/asset" in args[0]
+        assert "upload.heygen.com" in args[0]
+        assert "v1/asset" in args[0]
+        # Must send raw binary, not multipart
+        assert kwargs.get("data") == b"fake-audio"
+        assert "files" not in kwargs
+        assert kwargs.get("headers", {}).get("Content-Type") == "audio/mpeg"
 
-    def test_raises_when_no_url_returned(self, tmp_path):
+    def test_returns_asset_id_when_provided(self, tmp_path):
+        audio = tmp_path / "hook.mp3"
+        audio.write_bytes(b"fake-audio")
+        resp = _mock_response({"data": {"url": "https://cdn.heygen.com/audio/abc.mp3", "asset_id": "asset-xyz"}})
+        with patch("src.heygen_presenter.http_post", return_value=resp):
+            url, asset_id = _upload_audio(audio, api_key="test-key")
+        assert url == "https://cdn.heygen.com/audio/abc.mp3"
+        assert asset_id == "asset-xyz"
+
+    def test_raises_when_no_url_or_asset_id_returned(self, tmp_path):
         audio = tmp_path / "hook.mp3"
         audio.write_bytes(b"fake-audio")
         resp = _mock_response({"data": {}})
         with patch("src.heygen_presenter.http_post", return_value=resp):
-            with pytest.raises(RuntimeError, match="no URL"):
+            with pytest.raises(RuntimeError, match="no URL or asset_id"):
                 _upload_audio(audio, api_key="test-key")
 
 
@@ -92,6 +107,20 @@ class TestCreateVideoText:
             _create_video_text("key", "avatar-1", "voice-1", long_text)
         payload = mock_post.call_args[1]["json"]
         assert len(payload["video_inputs"][0]["voice"]["input_text"]) == 2000
+
+    def test_voice_id_in_payload(self):
+        resp = _mock_response({"data": {"video_id": "vid-v"}})
+        with patch("src.heygen_presenter.http_post", return_value=resp) as mock_post:
+            _create_video_text("key", "avatar-1", "my-voice-xyz", "Hello")
+        payload = mock_post.call_args[1]["json"]
+        assert payload["video_inputs"][0]["voice"]["voice_id"] == "my-voice-xyz"
+
+    def test_avatar_id_in_payload(self):
+        resp = _mock_response({"data": {"video_id": "vid-a"}})
+        with patch("src.heygen_presenter.http_post", return_value=resp) as mock_post:
+            _create_video_text("key", "my-avatar-id", "voice-1", "Hello")
+        payload = mock_post.call_args[1]["json"]
+        assert payload["video_inputs"][0]["character"]["avatar_id"] == "my-avatar-id"
 
 
 # ── _poll_video ───────────────────────────────────────────────────────────────
@@ -201,6 +230,33 @@ class TestGenerateHeygenClip:
 
         assert result == out
         assert out.read_bytes() == b"tts-video"
+
+    def test_tts_fallback_sends_voice_id_and_avatar_id_in_payload(self, tmp_path):
+        """voice_id and avatar_id must appear in the TTS video generation payload."""
+        audio = tmp_path / "missing.mp3"   # does NOT exist → triggers TTS path
+        out   = tmp_path / "out.mp4"
+
+        create_resp = _mock_response({"data": {"video_id": "vid-tts"}})
+        poll_resp   = _mock_response({"data": {"status": "completed", "video_url": "https://cdn.heygen.com/v.mp4"}})
+        dl_resp     = MagicMock()
+        dl_resp.iter_content.return_value = [b"tts"]
+
+        with patch("src.heygen_presenter.http_post", return_value=create_resp) as mock_post:
+            with patch("src.heygen_presenter.http_get", side_effect=[poll_resp, dl_resp]):
+                with patch("src.heygen_presenter.time.sleep"):
+                    generate_heygen_clip(
+                        audio, out,
+                        api_key="key",
+                        avatar_id="avatar-from-casual",
+                        fallback_text="Hello world",
+                        voice_id="heygen-voice-abc",
+                    )
+
+        payload = mock_post.call_args[1]["json"]
+        voice   = payload["video_inputs"][0]["voice"]
+        char    = payload["video_inputs"][0]["character"]
+        assert voice["voice_id"]   == "heygen-voice-abc"
+        assert char["avatar_id"]   == "avatar-from-casual"
 
     def test_returns_none_on_api_failure(self, tmp_path):
         audio = tmp_path / "hook.mp3"
