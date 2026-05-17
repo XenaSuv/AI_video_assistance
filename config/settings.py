@@ -128,6 +128,11 @@ class Settings:
     dedup_ttl_days: int = int(_env("DEDUP_TTL_DAYS", "30"))
     source_dir: Path = ROOT / _env("SOURCE_DIR", "source")
 
+    # FFmpeg subprocess timeouts (seconds). Increase for slow CI environments.
+    ffmpeg_probe_timeout: int = int(_env("FFMPEG_PROBE_TIMEOUT", "30"))
+    ffmpeg_clip_timeout:  int = int(_env("FFMPEG_CLIP_TIMEOUT",  "300"))
+    ffmpeg_long_timeout:  int = int(_env("FFMPEG_LONG_TIMEOUT",  "600"))
+
     def __post_init__(self) -> None:
         from src.config_validator import validate
         validate(self)
