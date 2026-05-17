@@ -32,6 +32,14 @@ data/seen_stories.db
 # Scraper cache (ephemeral, regenerated each day)
 data/scraper_cache/
 
+# Runtime learning state written by engines during pipeline runs
+data/*.jsonl
+data/latency_history.json
+data/youtube_quota.json
+data/live_state.json
+data/breaking_seen.json
+data/retention_state.json
+
 # OS
 .DS_Store
 Thumbs.db
