@@ -61,15 +61,21 @@ jobs:
 
       - name: Migrate pickle token to JSON
         run: |
-          python3 -c "
-          import pickle, pathlib
+          python3 - <<'EOF'
+          import io, pickle, json, pathlib
           s = pathlib.Path('config/token.pickle')
           if not s.exists(): exit(0)
-          with open(s, 'rb') as f: creds = pickle.load(f)
-          pathlib.Path('config/token.json').write_text(creds.to_json())
+          raw = s.read_bytes()
+          try:
+              creds = pickle.load(io.BytesIO(raw))
+              pathlib.Path('config/token.json').write_text(creds.to_json())
+          except Exception:
+              text = raw.decode()
+              json.loads(text)  # validate — raises if truly corrupt
+              pathlib.Path('config/token.json').write_text(text)
           s.unlink()
           print('Migrated token.pickle -> token.json')
-          "
+          EOF
 
       - name: Run Shorts Pipeline
         env:

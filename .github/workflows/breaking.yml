@@ -111,15 +111,21 @@ jobs:
       - name: Migrate pickle tokens to JSON
         run: |
           python3 - <<'EOF'
-          import pickle, json, pathlib
+          import io, pickle, json, pathlib
 
           def migrate(src, dst):
               s, d = pathlib.Path(src), pathlib.Path(dst)
               if not s.exists():
                   return
-              with open(s, "rb") as f:
-                  creds = pickle.load(f)
-              d.write_text(creds.to_json())
+              raw = s.read_bytes()
+              try:
+                  creds = pickle.load(io.BytesIO(raw))
+                  d.write_text(creds.to_json())
+              except Exception:
+                  # Secret was already updated to JSON format
+                  text = raw.decode()
+                  json.loads(text)  # validate — raises if truly corrupt
+                  d.write_text(text)
               s.unlink()
               print(f"  Migrated {s.name} → {d.name}")
 
