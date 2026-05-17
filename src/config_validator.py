@@ -103,9 +103,17 @@ def validate(cfg: Any) -> None:
     if cfg.heygen_enabled:
         if not cfg.heygen_api_key:
             errors.append("HEYGEN_API_KEY is required when HEYGEN_ENABLED=true")
-        if not cfg.heygen_avatar_id:
+        _persona_ids = [
+            cfg.heygen_avatar_id_direct,
+            cfg.heygen_avatar_id_serious,
+            cfg.heygen_avatar_id_curious,
+            cfg.heygen_avatar_id_professional,
+            cfg.heygen_avatar_id_casual,
+        ]
+        if not cfg.heygen_avatar_id and not any(_persona_ids):
             errors.append(
-                "HEYGEN_AVATAR_ID is required when HEYGEN_ENABLED=true"
+                "HEYGEN_AVATAR_ID (or at least one HEYGEN_AVATAR_ID_<PERSONA>) "
+                "is required when HEYGEN_ENABLED=true"
             )
 
     if errors:

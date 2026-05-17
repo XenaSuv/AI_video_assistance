@@ -50,7 +50,6 @@ Shorts mode
 """
 from __future__ import annotations
 
-import os
 import shutil
 import sys
 from pathlib import Path
@@ -86,13 +85,13 @@ _INTENT_STYLE: dict[str, str] = {
     "insider":   "normal",
 }
 
-# Persona → environment variable name for persona-specific avatar_id overrides
-_PERSONA_AVATAR_ENVVAR: dict[str, str] = {
-    "direct":       "HEYGEN_AVATAR_ID_DIRECT",
-    "serious":      "HEYGEN_AVATAR_ID_SERIOUS",
-    "curious":      "HEYGEN_AVATAR_ID_CURIOUS",
-    "professional": "HEYGEN_AVATAR_ID_PROFESSIONAL",
-    "casual":       "HEYGEN_AVATAR_ID_CASUAL",
+# Persona → settings attribute name for persona-specific avatar_id overrides
+_PERSONA_AVATAR_ATTR: dict[str, str] = {
+    "direct":       "heygen_avatar_id_direct",
+    "serious":      "heygen_avatar_id_serious",
+    "curious":      "heygen_avatar_id_curious",
+    "professional": "heygen_avatar_id_professional",
+    "casual":       "heygen_avatar_id_casual",
 }
 
 
@@ -138,14 +137,14 @@ class AvatarEngine:
     def avatar_id(self, persona: str) -> str:
         """Resolve the avatar_id for *persona*.
 
-        Checks the persona-specific env var first; falls back to the default
-        HEYGEN_AVATAR_ID so a single avatar always works.
+        Checks the persona-specific settings field first; falls back to the
+        default HEYGEN_AVATAR_ID so a single avatar always works.
         """
-        env_var = _PERSONA_AVATAR_ENVVAR.get(persona, "")
-        if env_var:
-            override = os.environ.get(env_var, "").strip()
+        attr = _PERSONA_AVATAR_ATTR.get(persona, "")
+        if attr:
+            override = getattr(settings, attr, "").strip()
             if override:
-                logger.debug(f"AvatarEngine: persona={persona!r} → avatar_id from {env_var}")
+                logger.debug(f"AvatarEngine: persona={persona!r} → avatar_id from {attr}")
                 return override
         return self._default_id
 

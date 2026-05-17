@@ -31,6 +31,11 @@ def _cfg(**overrides) -> SimpleNamespace:
         heygen_enabled=False,
         heygen_api_key="",
         heygen_avatar_id="",
+        heygen_avatar_id_direct="",
+        heygen_avatar_id_serious="",
+        heygen_avatar_id_curious="",
+        heygen_avatar_id_professional="",
+        heygen_avatar_id_casual="",
     )
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -185,11 +190,19 @@ class TestCrossFieldDependencies:
         with pytest.raises(ConfigurationError, match="HEYGEN_API_KEY"):
             validate(_cfg(heygen_enabled=True, heygen_api_key="", heygen_avatar_id="avatar123"))
 
-    def test_heygen_enabled_requires_avatar_id(self):
+    def test_heygen_enabled_requires_avatar_id_when_no_persona_ids(self):
         with pytest.raises(ConfigurationError, match="HEYGEN_AVATAR_ID"):
             validate(_cfg(heygen_enabled=True, heygen_api_key="key", heygen_avatar_id=""))
 
-    def test_heygen_enabled_with_all_values_valid(self):
+    def test_heygen_enabled_persona_id_satisfies_avatar_requirement(self):
+        validate(_cfg(
+            heygen_enabled=True,
+            heygen_api_key="key",
+            heygen_avatar_id="",
+            heygen_avatar_id_direct="persona_avatar_xyz",
+        ))
+
+    def test_heygen_enabled_with_default_avatar_id_valid(self):
         validate(_cfg(heygen_enabled=True, heygen_api_key="key", heygen_avatar_id="avatar123"))
 
     def test_heygen_disabled_no_fields_required(self):

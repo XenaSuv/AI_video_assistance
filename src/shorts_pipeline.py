@@ -1,5 +1,12 @@
 """Standalone Shorts Pipeline — Shorts as first-class growth engine.
 
+STATUS: PRIMARY pipeline for Shorts production.
+    Run directly (``python src/shorts_pipeline.py``) or call
+    ``ShortsPipeline().run()`` programmatically.
+    Uses ShortsEngineV2 for content generation and ShortsExperimentEngine
+    for hypothesis tracking and learning.
+    Do NOT use the legacy ``src.shorts_generator`` module for new code.
+
 This pipeline runs independently of the daily long-form pipeline.
 It is NOT a "clip the video" pipeline. Every Short is:
   - built from scratch (no dependency on a long video)
