@@ -681,12 +681,9 @@ class TestGenerateSceneClip:
         fake_clip = clip_dir / "scene_05_clip_0.mp4"
 
         with patch("src.image_generator.settings") as ms, \
-             patch.dict("sys.modules", {"src.broll_fetcher": MagicMock()}), \
+             patch("src.broll_fetcher.fetch_broll_clip", return_value=fake_clip), \
              patch("src.image_generator._valid_video_clip", return_value=False):
             ms.data_dir = tmp_path / "data"
-            import src.broll_fetcher as bf_mock
-            bf_mock.fetch_broll_clip = MagicMock(return_value=fake_clip)
-
             result = generate_scene_clip(scene, clip_dir)
 
         assert result == fake_clip
@@ -696,10 +693,9 @@ class TestGenerateSceneClip:
         clip_dir.mkdir()
         scene = _make_scene(idx=6, video_query="robot arm assembly")
         fake_clip = clip_dir / "scene_06_clip_0.mp4"
-        fake_img = clip_dir.parent / "images" / "scene_06.png"
 
         with patch("src.image_generator.settings") as ms, \
-             patch.dict("sys.modules", {"src.broll_fetcher": MagicMock()}), \
+             patch("src.broll_fetcher.fetch_broll_clip", return_value=None), \
              patch("src.image_generator._valid_video_clip", return_value=True), \
              patch("src.image_generator.image_cache.find_similar", return_value=(None, None)), \
              patch("src.image_generator.image_cache.add_entry"), \
@@ -707,9 +703,6 @@ class TestGenerateSceneClip:
              patch("src.image_generator._ken_burns_clip", return_value=fake_clip):
             ms.data_dir = tmp_path / "data"
             ms.stability_api_key = None
-            import src.broll_fetcher as bf_mock
-            bf_mock.fetch_broll_clip = MagicMock(return_value=None)
-
             result = generate_scene_clip(scene, clip_dir)
 
         mock_dalle.assert_called_once()
