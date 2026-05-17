@@ -45,6 +45,10 @@ class TestUploadAudio:
         args, kwargs = mock_post.call_args
         assert "upload.heygen.com" in args[0]
         assert "v1/asset" in args[0]
+        # Must send raw binary, not multipart
+        assert kwargs.get("data") == b"fake-audio"
+        assert "files" not in kwargs
+        assert kwargs.get("headers", {}).get("Content-Type") == "audio/mpeg"
 
     def test_returns_asset_id_when_provided(self, tmp_path):
         audio = tmp_path / "hook.mp3"
