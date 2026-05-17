@@ -8,6 +8,9 @@ Reads data/live_state.json written by LiveState during pipeline execution.
 """
 from __future__ import annotations
 
+import datetime as dt
+import json
+import re
 import time
 from pathlib import Path
 
@@ -16,7 +19,12 @@ import streamlit as st
 # ── config ────────────────────────────────────────────────────────────────────
 
 REFRESH_SEC = 10
-STATE_FILE  = Path(__file__).resolve().parent.parent / "data" / "live_state.json"
+_ROOT      = Path(__file__).resolve().parent.parent
+STATE_FILE = _ROOT / "data" / "live_state.json"
+DATA_DIR   = _ROOT / "data"
+OUTPUT_DIR = _ROOT / "output"
+
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 STEP_ICONS = {
     "running": "🔄",
@@ -82,6 +90,182 @@ def _steps_map(state: dict) -> dict[str, dict]:
         if name not in result:
             result[name] = rec
     return result
+
+
+# ── analytics data loaders ────────────────────────────────────────────────────
+
+def _load_performance_records() -> list[dict]:
+    path = DATA_DIR / "performance.json"
+    try:
+        return json.loads(path.read_text()) if path.exists() else []
+    except Exception:
+        return []
+
+
+def _load_weekly_costs() -> dict[str, float]:
+    """Aggregate cost_report.json files from the last 7 days across all pipelines."""
+    today  = dt.date.today()
+    cutoff = today - dt.timedelta(days=6)
+    daily: dict[str, float] = {}
+    if not OUTPUT_DIR.exists():
+        return daily
+    for report_path in OUTPUT_DIR.glob("**/cost_report.json"):
+        for part in report_path.parts:
+            if _DATE_RE.match(part):
+                try:
+                    d = dt.date.fromisoformat(part)
+                    if cutoff <= d <= today:
+                        data = json.loads(report_path.read_text())
+                        daily[part] = daily.get(part, 0.0) + data.get("total_usd", 0.0)
+                except Exception:
+                    pass
+                break
+    return dict(sorted(daily.items()))
+
+
+def _load_scene_retention() -> dict[str, float]:
+    path = DATA_DIR / "scene_performance.json"
+    try:
+        return json.loads(path.read_text()) if path.exists() else {}
+    except Exception:
+        return {}
+
+
+# ── analytics render functions ────────────────────────────────────────────────
+
+def render_hook_trend(records: list[dict]) -> None:
+    st.subheader("Hook Score Trend")
+    dated = [
+        (r["timestamp"][:10], r["avg_view_percentage"])
+        for r in records
+        if r.get("avg_view_percentage") is not None and r.get("timestamp")
+    ]
+    if not dated:
+        st.caption("No retention data yet — populates after videos accumulate views.")
+        return
+    by_date: dict[str, list[float]] = {}
+    for d, v in dated:
+        by_date.setdefault(d, []).append(v)
+    rows = [
+        {"Date": d, "Avg retention %": round(sum(vs) / len(vs) * 100, 1)}
+        for d, vs in sorted(by_date.items())
+    ]
+    st.line_chart(rows, x="Date", y="Avg retention %")
+    st.caption(
+        f"Based on {len(dated)} video(s). "
+        "Retention % = avg_view_percentage from YouTube Analytics."
+    )
+
+
+def render_ctr_trend(records: list[dict]) -> None:
+    st.subheader("CTR Trend")
+    dated = [
+        (r["timestamp"][:10], r["ctr"])
+        for r in records
+        if r.get("ctr") is not None and r.get("timestamp")
+    ]
+    if not dated:
+        st.caption("No CTR data yet.")
+        return
+    by_date: dict[str, list[float]] = {}
+    for d, v in dated:
+        by_date.setdefault(d, []).append(v)
+    rows = [
+        {"Date": d, "Avg CTR %": round(sum(vs) / len(vs) * 100, 2)}
+        for d, vs in sorted(by_date.items())
+    ]
+    st.line_chart(rows, x="Date", y="Avg CTR %")
+
+
+def render_weekly_cost(costs: dict[str, float]) -> None:
+    st.subheader("API Spend (last 7 days)")
+    if not costs:
+        st.caption("No cost reports found in output/ yet.")
+        return
+    rows = [{"Date": d, "Cost ($)": round(v, 4)} for d, v in costs.items()]
+    st.bar_chart(rows, x="Date", y="Cost ($)")
+    total = sum(costs.values())
+    st.caption(f"Total this week: **${total:.4f}**")
+
+
+def render_scene_retention(data: dict[str, float]) -> None:
+    st.subheader("Retention by Scene Type")
+    if not data:
+        st.caption("No scene_performance.json data yet.")
+        return
+    rows = [
+        {"Scene type": k.replace("_", " ").title(), "Avg score": round(v, 3)}
+        for k, v in sorted(data.items(), key=lambda x: -x[1])
+    ]
+    st.bar_chart(rows, x="Scene type", y="Avg score")
+    st.caption("Source: data/scene_performance.json — scene-type retention averages.")
+
+
+def render_top_videos(records: list[dict]) -> None:
+    st.subheader("Top Videos by Retention")
+    scored = [
+        r for r in records
+        if r.get("avg_view_percentage") is not None and r.get("views", 0) > 0
+    ]
+    scored.sort(key=lambda r: r["avg_view_percentage"], reverse=True)
+    if not scored:
+        st.caption("No video performance records with views yet.")
+        return
+    rows = [
+        {
+            "Title":       r["title"][:55],
+            "Date":        (r.get("timestamp") or "")[:10],
+            "Type":        r.get("content_type", "—"),
+            "Views":       r.get("views", 0),
+            "CTR %":       f"{r['ctr']*100:.1f}" if r.get("ctr") else "—",
+            "Retention %": f"{r['avg_view_percentage']*100:.1f}",
+        }
+        for r in scored[:15]
+    ]
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+
+
+def render_analytics() -> None:
+    st.header("📊 Analytics")
+
+    records        = _load_performance_records()
+    weekly_costs   = _load_weekly_costs()
+    scene_ret      = _load_scene_retention()
+
+    # ── summary KPIs ──────────────────────────────────────────────────────────
+    with_ret = [r for r in records if r.get("avg_view_percentage") is not None]
+    with_ctr = [r for r in records if r.get("ctr") is not None]
+    avg_ret  = sum(r["avg_view_percentage"] for r in with_ret) / len(with_ret) if with_ret else None
+    avg_ctr  = sum(r["ctr"]               for r in with_ctr) / len(with_ctr) if with_ctr else None
+    week_usd = sum(weekly_costs.values())
+
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Total videos tracked", len(records))
+    k2.metric("Avg retention",  f"{avg_ret*100:.1f}%" if avg_ret is not None else "—")
+    k3.metric("Avg CTR",        f"{avg_ctr*100:.2f}%" if avg_ctr is not None else "—")
+    k4.metric("Spend this week", f"${week_usd:.4f}")
+
+    st.divider()
+
+    # ── trend charts ──────────────────────────────────────────────────────────
+    col_left, col_right = st.columns(2)
+    with col_left:
+        render_hook_trend(records)
+    with col_right:
+        render_ctr_trend(records)
+
+    st.divider()
+
+    # ── cost + scene retention ────────────────────────────────────────────────
+    col_cost, col_scene = st.columns(2)
+    with col_cost:
+        render_weekly_cost(weekly_costs)
+    with col_scene:
+        render_scene_retention(scene_ret)
+
+    st.divider()
+
+    render_top_videos(records)
 
 
 # ── page layout ───────────────────────────────────────────────────────────────
@@ -550,8 +734,14 @@ def render_narrative_identity() -> None:
             st.write(f"• {cb}")
 
 
-state = _load_state()
-render(state)
+tab_monitor, tab_analytics = st.tabs(["🎬 Live Monitor", "📊 Analytics"])
+
+with tab_monitor:
+    state = _load_state()
+    render(state)
+
+with tab_analytics:
+    render_analytics()
 
 time.sleep(REFRESH_SEC)
 st.rerun()
