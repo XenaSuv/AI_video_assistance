@@ -11,7 +11,7 @@ from src.avatar_engine import (
     AVATAR_INTENTS,
     AvatarEngine,
     _INTENT_STYLE,
-    _PERSONA_AVATAR_ENVVAR,
+    _PERSONA_AVATAR_ATTR,
 )
 
 
@@ -109,16 +109,18 @@ class TestAvatarId:
     def test_returns_persona_override_when_set(self):
         engine = AvatarEngine()
         engine._default_id = "default_avatar"
-        env_var = _PERSONA_AVATAR_ENVVAR.get("direct", "HEYGEN_AVATAR_ID_DIRECT")
-        with patch.dict(os.environ, {env_var: "direct_avatar_id"}):
+        attr = _PERSONA_AVATAR_ATTR.get("direct", "heygen_avatar_id_direct")
+        with patch("src.avatar_engine.settings") as mock_settings:
+            setattr(mock_settings, attr, "direct_avatar_id")
             result = engine.avatar_id("direct")
         assert result == "direct_avatar_id"
 
-    def test_falls_back_to_default_when_env_empty(self):
+    def test_falls_back_to_default_when_setting_empty(self):
         engine = AvatarEngine()
         engine._default_id = "default_avatar"
-        env_var = _PERSONA_AVATAR_ENVVAR.get("serious", "HEYGEN_AVATAR_ID_SERIOUS")
-        with patch.dict(os.environ, {env_var: ""}):
+        attr = _PERSONA_AVATAR_ATTR.get("serious", "heygen_avatar_id_serious")
+        with patch("src.avatar_engine.settings") as mock_settings:
+            setattr(mock_settings, attr, "")
             result = engine.avatar_id("serious")
         assert result == "default_avatar"
 
@@ -127,9 +129,9 @@ class TestAvatarId:
         engine._default_id = "default_avatar"
         assert engine.avatar_id("completely_unknown_persona") == "default_avatar"
 
-    def test_all_defined_personas_have_envvar_entry(self):
+    def test_all_defined_personas_have_attr_entry(self):
         for persona in ("direct", "serious", "curious", "professional", "casual"):
-            assert persona in _PERSONA_AVATAR_ENVVAR, persona
+            assert persona in _PERSONA_AVATAR_ATTR, persona
 
 
 # ── AvatarEngine.render — disabled ────────────────────────────────────────────
@@ -195,12 +197,13 @@ class TestRenderEnabled:
         assert call_kwargs["avatar_style"] == "closeup"
 
     def test_casual_persona_passes_casual_avatar_id(self, tmp_path):
-        """HEYGEN_AVATAR_ID_CASUAL must reach generate_heygen_clip as avatar_id."""
+        """heygen_avatar_id_casual setting must reach generate_heygen_clip as avatar_id."""
         engine = self._engine_with_mock(tmp_path / "clip.mp4")
         raw_path = tmp_path / "out_av_raw.mp4"
         raw_path.write_bytes(b"fake")
 
-        with patch.dict(os.environ, {"HEYGEN_AVATAR_ID_CASUAL": "casual-avatar-xyz"}):
+        with patch("src.avatar_engine.settings") as mock_settings:
+            mock_settings.heygen_avatar_id_casual = "casual-avatar-xyz"
             with patch("src.avatar_engine.generate_heygen_clip", return_value=raw_path) as mock_hg:
                 with patch("src.avatar_engine.ffmpeg_utils.burn_captions", side_effect=lambda v, t, o, **kw: v):
                     with patch("shutil.copy2"):
@@ -214,16 +217,15 @@ class TestRenderEnabled:
 
         assert mock_hg.call_args.kwargs["avatar_id"] == "casual-avatar-xyz"
 
-    def test_default_avatar_id_used_when_casual_env_not_set(self, tmp_path):
-        """Falls back to HEYGEN_AVATAR_ID when HEYGEN_AVATAR_ID_CASUAL is absent."""
+    def test_default_avatar_id_used_when_casual_setting_empty(self, tmp_path):
+        """Falls back to _default_id when heygen_avatar_id_casual is empty."""
         engine = self._engine_with_mock(tmp_path / "clip.mp4")
         engine._default_id = "default-fallback-id"
         raw_path = tmp_path / "out_av_raw.mp4"
         raw_path.write_bytes(b"fake")
 
-        env_without_casual = {k: v for k, v in os.environ.items()
-                              if k != "HEYGEN_AVATAR_ID_CASUAL"}
-        with patch.dict(os.environ, env_without_casual, clear=True):
+        with patch("src.avatar_engine.settings") as mock_settings:
+            mock_settings.heygen_avatar_id_casual = ""
             with patch("src.avatar_engine.generate_heygen_clip", return_value=raw_path) as mock_hg:
                 with patch("src.avatar_engine.ffmpeg_utils.burn_captions", side_effect=lambda v, t, o, **kw: v):
                     with patch("shutil.copy2"):
@@ -237,19 +239,20 @@ class TestRenderEnabled:
 
         assert mock_hg.call_args.kwargs["avatar_id"] == "default-fallback-id"
 
-    @pytest.mark.parametrize("persona,env_var,expected_id", [
-        ("curious",      "HEYGEN_AVATAR_ID_CURIOUS",      "curious-avatar-abc"),
-        ("direct",       "HEYGEN_AVATAR_ID_DIRECT",       "direct-avatar-def"),
-        ("professional", "HEYGEN_AVATAR_ID_PROFESSIONAL", "professional-avatar-ghi"),
-        ("serious",      "HEYGEN_AVATAR_ID_SERIOUS",      "serious-avatar-jkl"),
+    @pytest.mark.parametrize("persona,attr,expected_id", [
+        ("curious",      "heygen_avatar_id_curious",      "curious-avatar-abc"),
+        ("direct",       "heygen_avatar_id_direct",       "direct-avatar-def"),
+        ("professional", "heygen_avatar_id_professional", "professional-avatar-ghi"),
+        ("serious",      "heygen_avatar_id_serious",      "serious-avatar-jkl"),
     ])
-    def test_all_personas_pass_correct_avatar_id(self, tmp_path, persona, env_var, expected_id):
-        """Each persona env var must reach generate_heygen_clip as avatar_id."""
+    def test_all_personas_pass_correct_avatar_id(self, tmp_path, persona, attr, expected_id):
+        """Each persona settings field must reach generate_heygen_clip as avatar_id."""
         engine = self._engine_with_mock(tmp_path / "clip.mp4")
         raw_path = tmp_path / "out_av_raw.mp4"
         raw_path.write_bytes(b"fake")
 
-        with patch.dict(os.environ, {env_var: expected_id}):
+        with patch("src.avatar_engine.settings") as mock_settings:
+            setattr(mock_settings, attr, expected_id)
             with patch("src.avatar_engine.generate_heygen_clip", return_value=raw_path) as mock_hg:
                 with patch("src.avatar_engine.ffmpeg_utils.burn_captions", side_effect=lambda v, t, o, **kw: v):
                     with patch("shutil.copy2"):
@@ -263,21 +266,21 @@ class TestRenderEnabled:
 
         assert mock_hg.call_args.kwargs["avatar_id"] == expected_id
 
-    @pytest.mark.parametrize("persona,env_var", [
-        ("curious",      "HEYGEN_AVATAR_ID_CURIOUS"),
-        ("direct",       "HEYGEN_AVATAR_ID_DIRECT"),
-        ("professional", "HEYGEN_AVATAR_ID_PROFESSIONAL"),
-        ("serious",      "HEYGEN_AVATAR_ID_SERIOUS"),
+    @pytest.mark.parametrize("persona,attr", [
+        ("curious",      "heygen_avatar_id_curious"),
+        ("direct",       "heygen_avatar_id_direct"),
+        ("professional", "heygen_avatar_id_professional"),
+        ("serious",      "heygen_avatar_id_serious"),
     ])
-    def test_all_personas_fall_back_to_default(self, tmp_path, persona, env_var):
-        """Falls back to HEYGEN_AVATAR_ID when persona-specific env var is absent."""
+    def test_all_personas_fall_back_to_default(self, tmp_path, persona, attr):
+        """Falls back to _default_id when persona-specific setting is empty."""
         engine = self._engine_with_mock(tmp_path / "clip.mp4")
         engine._default_id = "fallback-id"
         raw_path = tmp_path / "out_av_raw.mp4"
         raw_path.write_bytes(b"fake")
 
-        clean_env = {k: v for k, v in os.environ.items() if k != env_var}
-        with patch.dict(os.environ, clean_env, clear=True):
+        with patch("src.avatar_engine.settings") as mock_settings:
+            setattr(mock_settings, attr, "")
             with patch("src.avatar_engine.generate_heygen_clip", return_value=raw_path) as mock_hg:
                 with patch("src.avatar_engine.ffmpeg_utils.burn_captions", side_effect=lambda v, t, o, **kw: v):
                     with patch("shutil.copy2"):

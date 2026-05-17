@@ -82,6 +82,13 @@ class Settings:
     heygen_aspect:    str = _env("HEYGEN_ASPECT",    "16:9")
     heygen_enabled:   bool = _env("HEYGEN_ENABLED", "false").lower() in ("1", "true", "yes")
 
+    # Per-persona avatar IDs (optional — all fall back to heygen_avatar_id)
+    heygen_avatar_id_direct:       str = _env("HEYGEN_AVATAR_ID_DIRECT",       "")
+    heygen_avatar_id_serious:      str = _env("HEYGEN_AVATAR_ID_SERIOUS",       "")
+    heygen_avatar_id_curious:      str = _env("HEYGEN_AVATAR_ID_CURIOUS",       "")
+    heygen_avatar_id_professional: str = _env("HEYGEN_AVATAR_ID_PROFESSIONAL",  "")
+    heygen_avatar_id_casual:       str = _env("HEYGEN_AVATAR_ID_CASUAL",        "")
+
     # Slack notifications (optional — leave blank to disable)
     slack_webhook_url: str = _env("SLACK_WEBHOOK_URL", "")
 
