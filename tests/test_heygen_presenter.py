@@ -38,18 +38,29 @@ class TestUploadAudio:
         audio.write_bytes(b"fake-audio")
         resp = _mock_response({"data": {"url": "https://cdn.heygen.com/audio/abc.mp3"}})
         with patch("src.heygen_presenter.http_post", return_value=resp) as mock_post:
-            url = _upload_audio(audio, api_key="test-key")
+            url, asset_id = _upload_audio(audio, api_key="test-key")
         assert url == "https://cdn.heygen.com/audio/abc.mp3"
+        assert asset_id == ""
         mock_post.assert_called_once()
         args, kwargs = mock_post.call_args
-        assert "v2/asset" in args[0]
+        assert "upload.heygen.com" in args[0]
+        assert "v1/asset" in args[0]
 
-    def test_raises_when_no_url_returned(self, tmp_path):
+    def test_returns_asset_id_when_provided(self, tmp_path):
+        audio = tmp_path / "hook.mp3"
+        audio.write_bytes(b"fake-audio")
+        resp = _mock_response({"data": {"url": "https://cdn.heygen.com/audio/abc.mp3", "asset_id": "asset-xyz"}})
+        with patch("src.heygen_presenter.http_post", return_value=resp):
+            url, asset_id = _upload_audio(audio, api_key="test-key")
+        assert url == "https://cdn.heygen.com/audio/abc.mp3"
+        assert asset_id == "asset-xyz"
+
+    def test_raises_when_no_url_or_asset_id_returned(self, tmp_path):
         audio = tmp_path / "hook.mp3"
         audio.write_bytes(b"fake-audio")
         resp = _mock_response({"data": {}})
         with patch("src.heygen_presenter.http_post", return_value=resp):
-            with pytest.raises(RuntimeError, match="no URL"):
+            with pytest.raises(RuntimeError, match="no URL or asset_id"):
                 _upload_audio(audio, api_key="test-key")
 
 
