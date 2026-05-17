@@ -70,6 +70,16 @@ News Sources
 | `src/presenter.py` | D-ID AI avatar integration (optional) |
 | `src/translator.py` | Script translation EN → RU |
 
+### Shorts Stack (primary engine)
+
+| Module | Role |
+|--------|------|
+| `src/shorts_pipeline.py` | **PRIMARY** — standalone pipeline, entry point; run directly or call `ShortsPipeline().run()` |
+| `src/shorts_engine_v2.py` | **PRIMARY** — editorial + hook-generation layer; produces `ShortScript` objects |
+| `src/shorts_experiment_engine.py` | **PRIMARY** — learning layer; stores per-experiment metrics, feeds best hooks back to daily pipeline |
+| `src/shorts_beat_engine.py` | Sub-component of v2; per-beat execution plan for 16-second Shorts |
+| `src/shorts_generator.py` | **DEPRECATED** — legacy "clip-the-video" approach; kept for backward-compat callers (breaking_main, weekly_main, topic_main, language_variant). New code must not import from this module. |
+
 ### Layer 3 — Learning System
 
 | Module | Responsibility |

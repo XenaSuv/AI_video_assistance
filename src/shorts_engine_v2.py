@@ -1,5 +1,11 @@
 """Shorts Engine V2 — experiment system, not a video generator.
 
+STATUS: PRIMARY content-generation engine for the Shorts stack.
+    Entry point for production use: ``src.shorts_pipeline.ShortsPipeline``.
+    This class (ShortsEngineV2) is the editorial + hook-generation layer;
+    shorts_pipeline.py owns I/O, TTS, upload, and experiment registration.
+    Do NOT use the legacy ``src.shorts_generator`` module for new code.
+
 Flow:
     editorial (topic + core_fact + angle)
         ↓

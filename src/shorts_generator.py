@@ -1,11 +1,25 @@
 """Create a vertical 9:16 YouTube Short (≤60s) from the main video.
 
+.. deprecated::
+    This module is the **legacy** Shorts implementation.  It clips and
+    center-crops an already-rendered long-form video, which means every Short
+    is derivative content with no independent editorial angle.
+
+    **Use instead**: ``src.shorts_pipeline.ShortsPipeline`` (driven by
+    ``src.shorts_engine_v2.ShortsEngineV2``), which builds each Short from
+    scratch as a standalone hypothesis-test — an independent idea in 25–30 s.
+
+    Existing callers (breaking_main, weekly_main, topic_main, language_variant,
+    pipeline_orchestrator) are kept on this path until migrated.  New code
+    must NOT import from this module.
+
 Strategy: use the hook + first scene only. Crop center 9:16, add big subtitle
 burn-in so it reads on mute (Shorts almost always autoplay muted).
 """
 from __future__ import annotations
 
 import sys
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -69,9 +83,18 @@ def build_short(
 ) -> Path:
     """Produce the Shorts-ready mp4.
 
+    .. deprecated::
+        Use ``src.shorts_pipeline.ShortsPipeline`` instead.
+
     *audio_subdir* lets language variants point at e.g. ``audio_ru/``.
     *out_name* lets variants write ``shorts_ru.mp4`` alongside ``shorts.mp4``.
     """
+    warnings.warn(
+        "shorts_generator.build_short() is deprecated; "
+        "use src.shorts_pipeline.ShortsPipeline instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     assembled_dir = out_dir / "assembled"
     assembled_dir.mkdir(parents=True, exist_ok=True)
 
@@ -177,7 +200,17 @@ def create_short_video(
     duration_sec: float = 20.0,
     audio_path: Path | None = None,
 ) -> Path:
-    """Create a simple static Shorts video with big burned-in captions."""
+    """Create a simple static Shorts video with big burned-in captions.
+
+    .. deprecated::
+        Use ``src.shorts_pipeline.ShortsPipeline`` instead.
+    """
+    warnings.warn(
+        "shorts_generator.create_short_video() is deprecated; "
+        "use src.shorts_pipeline.ShortsPipeline instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
     assembled_dir = out_dir / "assembled"
     assembled_dir.mkdir(parents=True, exist_ok=True)
