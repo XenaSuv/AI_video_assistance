@@ -513,3 +513,10 @@ class TestFullPipeline:
         # They persist to different files — no collision
         assert scene_b._store._path.name == "scene_bandit_state.json"
         assert pkg_b._store._path.name   == "thompson_state.json"
+
+
+class TestGetState:
+    def test_get_state_returns_state(self):
+        b = SceneBandit(data_dir=_tmp())
+        state = b.get_state()
+        assert state is b._state

@@ -253,3 +253,79 @@ class TestResolvePublishId:
     def test_returns_none_when_token_missing(self, tmp_path):
         result = resolve_publish_id("pub_abc", tmp_path / "nofile.json")
         assert result is None
+
+    def test_returns_none_on_exception_during_poll(self, tmp_path):
+        import requests as req_lib
+
+        token_file = tmp_path / "token.json"
+        token_file.write_text(json.dumps({
+            "access_token": "valid-token",
+            "expires_at": time.time() + 7200,
+        }))
+
+        # Sequence: token-check, deadline, while(enter loop), while(exit loop)
+        now = time.time()
+        times = [now, now, now, now + 120]
+
+        with patch("src.tiktok_analytics.http_post", side_effect=Exception("network error")):
+            with patch("src.tiktok_analytics.time") as mock_time:
+                mock_time.time.side_effect = times
+                mock_time.sleep = MagicMock()
+                result = resolve_publish_id("pub_xyz", token_file)
+
+        assert result is None
+
+    def test_returns_none_when_timed_out(self, tmp_path):
+        token_file = tmp_path / "token.json"
+        token_file.write_text(json.dumps({
+            "access_token": "valid-token",
+            "expires_at": time.time() + 7200,
+        }))
+
+        now = time.time()
+        # calls: _load_access_token check, deadline=time.time()+60, while condition
+        times = [now, now, now + 61]  # deadline already past on third call
+
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"data": {"status": "PROCESSING"}}
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch("src.tiktok_analytics.http_post", return_value=mock_resp):
+            with patch("src.tiktok_analytics.time") as mock_time:
+                mock_time.time.side_effect = times
+                mock_time.sleep = MagicMock()
+                result = resolve_publish_id("pub_xyz", token_file)
+
+        assert result is None
+
+
+class TestGetVideoMetricsErrors:
+    def test_returns_none_on_401_error(self, tmp_path):
+        import requests as req_lib
+
+        token_file = tmp_path / "token.json"
+        token_file.write_text(json.dumps({
+            "access_token": "valid-token",
+            "expires_at": time.time() + 7200,
+        }))
+
+        http_error = req_lib.HTTPError(response=MagicMock(status_code=401))
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.side_effect = http_error
+
+        with patch("src.tiktok_analytics.requests.post", return_value=mock_resp):
+            result = get_video_metrics("vid", token_file)
+
+        assert result is None
+
+    def test_returns_none_on_generic_exception(self, tmp_path):
+        token_file = tmp_path / "token.json"
+        token_file.write_text(json.dumps({
+            "access_token": "valid-token",
+            "expires_at": time.time() + 7200,
+        }))
+
+        with patch("src.tiktok_analytics.requests.post", side_effect=RuntimeError("unexpected")):
+            result = get_video_metrics("vid", token_file)
+
+        assert result is None

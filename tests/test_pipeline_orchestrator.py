@@ -27,9 +27,14 @@ from src.pipeline_orchestrator import (
     _build_scene_map,
     _build_v3_context,
     _classify_hook_type,
+    _get_intro_duration,
+    _get_shared_outro,
+    _load_audio_durations,
     _load_cached_script,
     _load_retention_state,
+    _needs_video_rebuild,
     _save_retention_state,
+    _setup_logging,
     _unified_strategy_to_content_strategy,
 )
 from src.decision_engine_v3 import UnifiedStrategy
@@ -307,3 +312,159 @@ class TestBuildV3Context:
 
         result = _build_v3_context(perf_store, v3_engine, None, [])
         assert result["metrics"] == {"ctr": 0.05}
+
+
+# ── _get_intro_duration ───────────────────────────────────────────────────────
+
+class TestGetIntroDuration:
+    def test_returns_zero_when_none(self):
+        assert _get_intro_duration(None) == 0.0
+
+    def test_returns_zero_when_path_not_exists(self, tmp_path):
+        assert _get_intro_duration(tmp_path / "missing.mp4") == 0.0
+
+    def test_calls_ffmpeg_duration_when_exists(self, tmp_path):
+        intro = tmp_path / "intro.mp4"
+        intro.write_bytes(b"fake")
+        with patch("src.pipeline_orchestrator.ffmpeg_utils.duration", return_value=5.0) as mock_dur:
+            result = _get_intro_duration(intro)
+        assert result == 5.0
+        mock_dur.assert_called_once_with(intro)
+
+
+# ── _get_shared_outro ─────────────────────────────────────────────────────────
+
+class TestGetSharedOutro:
+    def test_returns_none_when_outro_absent(self, tmp_path):
+        with patch("src.pipeline_orchestrator.settings") as mock_settings:
+            mock_settings.source_dir = tmp_path
+            result = _get_shared_outro()
+        assert result is None
+
+    def test_returns_path_when_outro_exists(self, tmp_path):
+        outro = tmp_path / "ai-news-outro.mp4"
+        outro.write_bytes(b"fake")
+        with patch("src.pipeline_orchestrator.settings") as mock_settings:
+            mock_settings.source_dir = tmp_path
+            result = _get_shared_outro()
+        assert result == outro
+
+
+# ── _load_audio_durations ─────────────────────────────────────────────────────
+
+class TestLoadAudioDurations:
+    def _make_script(self, n_scenes: int = 2) -> VideoScript:
+        return VideoScript(
+            title="Test",
+            description="desc",
+            tags=[],
+            hook="hook",
+            scenes=[
+                Scene(idx=i, heading=f"S{i}", narration="text", visual_prompt="img", duration_sec=30)
+                for i in range(n_scenes)
+            ],
+        )
+
+    def test_updates_duration_sec_from_audio(self, tmp_path):
+        script = self._make_script(2)
+        with patch("src.pipeline_orchestrator.ffmpeg_utils.duration", return_value=10.5):
+            _load_audio_durations(script, tmp_path)
+        # duration_sec = int(10.5) + 1 = 11
+        assert script.scenes[0].duration_sec == 11
+        assert script.scenes[1].duration_sec == 11
+
+    def test_uses_correct_filename_pattern(self, tmp_path):
+        script = self._make_script(1)
+        with patch("src.pipeline_orchestrator.ffmpeg_utils.duration", return_value=5.0) as mock_dur:
+            _load_audio_durations(script, tmp_path)
+        called_path = mock_dur.call_args[0][0]
+        assert "scene_00.mp3" in str(called_path)
+
+
+# ── _needs_video_rebuild ──────────────────────────────────────────────────────
+
+class TestNeedsVideoRebuild:
+    def test_returns_true_when_video_missing(self, tmp_path):
+        video = tmp_path / "final.mp4"
+        assert _needs_video_rebuild(video) is True
+
+    def test_returns_false_when_video_has_audio(self, tmp_path):
+        video = tmp_path / "final.mp4"
+        video.write_bytes(b"fake")
+        (tmp_path / "assembled").mkdir()
+        with patch("src.pipeline_orchestrator.ffmpeg_utils.has_audio_stream", return_value=True):
+            result = _needs_video_rebuild(video)
+        assert result is False
+
+    def test_returns_true_when_legacy_end_card_png(self, tmp_path):
+        video = tmp_path / "final.mp4"
+        video.write_bytes(b"fake")
+        assembled = tmp_path / "assembled"
+        assembled.mkdir()
+        (assembled / "end_card.png").write_bytes(b"fake")
+        with patch("src.pipeline_orchestrator.ffmpeg_utils.has_audio_stream", return_value=True):
+            result = _needs_video_rebuild(video)
+        assert result is True
+        assert not video.exists()
+
+    def test_returns_true_when_legacy_end_card_mp4(self, tmp_path):
+        video = tmp_path / "final.mp4"
+        video.write_bytes(b"fake")
+        assembled = tmp_path / "assembled"
+        assembled.mkdir()
+        (assembled / "end_card.mp4").write_bytes(b"fake")
+        with patch("src.pipeline_orchestrator.ffmpeg_utils.has_audio_stream", return_value=True):
+            result = _needs_video_rebuild(video)
+        assert result is True
+
+    def test_returns_true_when_legacy_title_card(self, tmp_path):
+        video = tmp_path / "final.mp4"
+        video.write_bytes(b"fake")
+        assembled = tmp_path / "assembled"
+        assembled.mkdir()
+        (assembled / "title_01.mp4").write_bytes(b"fake")
+        with patch("src.pipeline_orchestrator.ffmpeg_utils.has_audio_stream", return_value=True):
+            result = _needs_video_rebuild(video)
+        assert result is True
+
+    def test_returns_true_when_probe_fails(self, tmp_path):
+        video = tmp_path / "final.mp4"
+        video.write_bytes(b"fake")
+        (tmp_path / "assembled").mkdir()
+        with patch("src.pipeline_orchestrator.ffmpeg_utils.has_audio_stream", side_effect=Exception("probe error")):
+            result = _needs_video_rebuild(video)
+        assert result is True
+
+    def test_returns_true_when_video_has_no_audio(self, tmp_path):
+        video = tmp_path / "final.mp4"
+        video.write_bytes(b"fake")
+        (tmp_path / "assembled").mkdir()
+        with patch("src.pipeline_orchestrator.ffmpeg_utils.has_audio_stream", return_value=False):
+            result = _needs_video_rebuild(video)
+        assert result is True
+
+    def test_intro_outro_audio_missing_triggers_rebuild(self, tmp_path):
+        video = tmp_path / "final.mp4"
+        video.write_bytes(b"fake")
+        assembled = tmp_path / "assembled"
+        assembled.mkdir()
+        (assembled / "intro_resized.mp4").write_bytes(b"fake")
+
+        def _has_audio(path):
+            if "intro_resized" in str(path):
+                return False
+            return True
+
+        with patch("src.pipeline_orchestrator.ffmpeg_utils.has_audio_stream", side_effect=_has_audio):
+            result = _needs_video_rebuild(video)
+        assert result is True
+
+
+# ── _setup_logging ────────────────────────────────────────────────────────────
+
+class TestSetupLogging:
+    def test_calls_logger_add_twice(self, tmp_path):
+        with patch("src.pipeline_orchestrator.logger") as mock_logger:
+            _setup_logging(tmp_path)
+        assert mock_logger.remove.called
+        assert mock_logger.add.call_count == 2

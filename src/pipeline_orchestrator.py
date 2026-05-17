@@ -7,6 +7,7 @@ Safe to re-run: cached artifacts in output/YYYY-MM-DD/ are reused.
 """
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import json
 import re
@@ -45,7 +46,8 @@ from src.thumbnail_ab import (
 from src.thumbnail_generator import generate_thumbnail
 from src.translator import translate_script
 from src.video_generator import assemble_video, build_video
-from src.voice_generator import synthesize_script
+from src.image_generator import async_prefetch_scene_images
+from src.voice_generator import synthesize_script, async_synthesize_script
 from src.youtube_uploader import publish_episode
 from src.slack_notifier import notify_success, notify_failure, notify_slow_steps, notify_budget_summary, notify_budget_alert
 from src.latency_tracker import LatencyTracker
@@ -875,7 +877,16 @@ class PipelineOrchestrator:
         self._observer.step_start("voice")
         if not self._cp.is_done("voice"):
             if not audio_dir.exists() or len(list(audio_dir.glob("*.mp3"))) < len(self._script.scenes):
-                synthesize_script(self._script, self._run_dir)
+                # Run TTS and image pre-fetch concurrently: DALL-E and ElevenLabs
+                # calls overlap in time instead of running sequentially, saving
+                # several minutes on a typical episode.
+                _script = self._script  # narrowed by assert above; captured for closure
+                async def _voice_and_images() -> None:
+                    await asyncio.gather(
+                        async_synthesize_script(_script, self._run_dir),
+                        async_prefetch_scene_images(_script, self._run_dir),
+                    )
+                asyncio.run(_voice_and_images())
                 self._script.save(self._run_dir / "script.json")
             else:
                 logger.info("Reusing cached audio; measuring durations")

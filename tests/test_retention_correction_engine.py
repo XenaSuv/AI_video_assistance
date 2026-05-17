@@ -217,6 +217,19 @@ class TestCorrectionStore:
         store2 = CorrectionStore(data_dir=tmp)
         assert store2.all_records() == []
 
+    def test_get_best_fix_returns_none_on_invalid_fix_string(self):
+        store = CorrectionStore(data_dir=_tmp())
+        # Inject records with a fix value that is not a valid FixType member
+        for _ in range(3):
+            store._records.append({
+                "scene_type": "image",
+                "intent": "explain",
+                "fix": "NOT_A_VALID_FIX_TYPE",
+                "delta_retention": 0.5,
+            })
+        result = store.get_best_fix("image", "explain")
+        assert result is None
+
     def test_record_accepts_fix_type_enum(self):
         store = CorrectionStore(data_dir=_tmp())
         store.record(FixType.ADD_MICRO_HOOK, "diagram", "data", 0.03)

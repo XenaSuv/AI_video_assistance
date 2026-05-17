@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.script_generator import Scene, VideoScript
-from src.translator import translate_script
+from src.translator import translate_script, _log_usage
 
 
 def _make_script(n_scenes: int = 2) -> VideoScript:
@@ -124,3 +124,46 @@ class TestTranslateScript:
             result = translate_script(script, "Russian")
         for orig, translated in zip(script.scenes, result.scenes):
             assert translated.idx == orig.idx
+
+
+class TestLogUsage:
+    def test_no_op_when_usage_is_none(self):
+        # Should return without error
+        _log_usage(None)
+
+    def test_calls_record_llm_with_usage(self):
+        usage = MagicMock()
+        usage.prompt_tokens = 100
+        usage.completion_tokens = 20
+        usage.prompt_tokens_details = MagicMock(cached_tokens=30)
+        with patch("src.translator.get_ledger") as mock_ledger:
+            _log_usage(usage, label="test-label")
+        mock_ledger.return_value.record_llm.assert_called_once()
+
+    def test_handles_none_details(self):
+        usage = MagicMock()
+        usage.prompt_tokens = 100
+        usage.completion_tokens = 10
+        usage.prompt_tokens_details = None
+        with patch("src.translator.get_ledger") as mock_ledger:
+            _log_usage(usage)
+        mock_ledger.return_value.record_llm.assert_called_once()
+
+    def test_handles_zero_prompt_tokens(self):
+        usage = MagicMock()
+        usage.prompt_tokens = 0
+        usage.completion_tokens = 5
+        usage.prompt_tokens_details = None
+        with patch("src.translator.get_ledger") as mock_ledger:
+            _log_usage(usage, label="zero-pct")
+        # Should not raise ZeroDivisionError
+        mock_ledger.return_value.record_llm.assert_called_once()
+
+    def test_label_optional(self):
+        usage = MagicMock()
+        usage.prompt_tokens = 50
+        usage.completion_tokens = 10
+        usage.prompt_tokens_details = None
+        with patch("src.translator.get_ledger") as mock_ledger:
+            _log_usage(usage)  # no label
+        mock_ledger.return_value.record_llm.assert_called_once()

@@ -178,3 +178,22 @@ class TestPickViralNews:
             mock_client.return_value.chat.completions.create.return_value = self._gpt_returns(8)
             result = pick_viral_news(items, top_n=2)
         assert len(result) <= 2
+
+
+class TestViralSelectorUsageLogging:
+    def _gpt_returns(self, score: int):
+        resp = MagicMock()
+        resp.choices[0].message.content = str(score)
+        resp.usage = MagicMock()
+        resp.usage.prompt_tokens = 50
+        resp.usage.completion_tokens = 10
+        return resp
+
+    def test_records_llm_usage_when_present(self):
+        from src.viral_selector import pick_viral_news
+        items = [_item("OpenAI launches GPT-5 with record benchmarks")]
+        with patch("src.viral_selector.make_openai_client") as mock_client:
+            mock_client.return_value.chat.completions.create.return_value = self._gpt_returns(8)
+            with patch("src.viral_selector.get_ledger") as mock_ledger:
+                pick_viral_news(items)
+        mock_ledger.return_value.record_llm.assert_called()

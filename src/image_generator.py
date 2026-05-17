@@ -12,6 +12,8 @@ Cost at ~8 scenes/episode (daily), 5 scenes (breaking):
 """
 from __future__ import annotations
 
+import asyncio
+import functools
 import re
 import shutil
 import sys
@@ -28,7 +30,7 @@ from config import settings
 from src.circuit_breaker import openai_breaker
 from src.cost_tracker import get_ledger
 from src.retry_utils import http_get, http_post, make_openai_client
-from src.script_generator import Scene
+from src.script_generator import Scene, VideoScript
 import src.ffmpeg_utils as ffmpeg_utils
 import src.image_cache as image_cache
 
@@ -556,3 +558,121 @@ def generate_scene_clip(
     except Exception as e:
         logger.error(f"Scene {scene.idx} clip failed, using placeholder: {e}")
         return _black_placeholder(clip_path, scene.duration_sec)
+
+
+# ── Async image pre-fetch (runs in parallel with voice synthesis) ──────────────
+
+def prefetch_scene_image(
+    scene: Scene,
+    img_dir: Path,
+    *,
+    tool: str | None = None,
+    run_dir: Path | None = None,
+    is_breaking: bool = False,
+) -> "Path | None":
+    """Download / generate the image for *scene* without the Ken Burns step.
+
+    Thread-safe; does **not** read or mutate ``scene.duration_sec``.
+    Returns the image path on success, ``None`` when the scene type does not
+    require an external image API call (text_overlay, infographic, video_query).
+
+    If the image file already exists it is returned immediately — no API call.
+    """
+    img_path = img_dir / f"scene_{scene.idx:02d}.png"
+
+    if img_path.exists():
+        return img_path
+
+    # Scenes that don't need an external image API call.
+    if getattr(scene, "scene_type", None) in ("text_overlay", "infographic"):
+        return None
+    if getattr(scene, "video_query", None):
+        # B-roll needs the clip duration to know how long to cut; handled later
+        # in generate_scene_clip → broll_fetcher.
+        return None
+
+    visual_prompt = (scene.visual_prompt or scene.heading or "").strip()
+    if not visual_prompt:
+        visual_prompt = (scene.narration or "").strip().split(".")[0]
+    if not visual_prompt:
+        visual_prompt = "A cinematic AI newsroom scene"
+
+    try:
+        # 1. Real screenshot (weekly tutorials / dynamic URL)
+        if _try_real_screenshot(scene, tool, img_path):
+            return img_path
+
+        # 2. Cross-run similarity cache — free disk lookup
+        cached, embedding = image_cache.find_similar(visual_prompt, settings.data_dir)
+        if cached:
+            shutil.copy2(str(cached), str(img_path))
+            return img_path
+
+        # 3. Stock photo for generic real-world scenes — free
+        if _is_generic_prompt(visual_prompt):
+            result = fetch_stock_photo(visual_prompt, img_path)
+            if result:
+                return img_path
+
+        # 4. Stable Diffusion for breaking-news clips (~$0.003)
+        if is_breaking and settings.stability_api_key:
+            try:
+                generate_sd_image(visual_prompt, img_path)
+                if img_path.exists():
+                    return img_path
+            except Exception as exc:
+                logger.warning(
+                    f"Scene {scene.idx}: SD prefetch failed ({exc}) — DALL-E will handle it"
+                )
+
+        # 5. gpt-image-2 — most expensive; benefits most from parallelism (~$0.040)
+        generate_dalle_image(visual_prompt, img_path)
+        if img_path.exists():
+            image_cache.add_entry(visual_prompt, img_path, settings.data_dir,
+                                  embedding=embedding)
+        return img_path
+
+    except Exception as exc:
+        logger.warning(f"Scene {scene.idx}: image prefetch failed (non-fatal): {exc}")
+        return None
+
+
+async def async_prefetch_scene_images(
+    script: VideoScript,
+    run_dir: Path,
+    *,
+    tool: str | None = None,
+    is_breaking: bool = False,
+) -> None:
+    """Concurrently download / generate images for all scenes in a thread pool.
+
+    Designed to overlap with ElevenLabs voice synthesis so DALL-E and TTS
+    calls run in parallel instead of sequentially::
+
+        await asyncio.gather(
+            async_synthesize_script(script, run_dir),
+            async_prefetch_scene_images(script, run_dir),
+        )
+
+    Images are written to *run_dir/images/scene_NN.png*.  The subsequent
+    ``build_video()`` call finds them already cached and skips straight to
+    Ken Burns animation, saving several minutes on a typical episode.
+
+    Failures per scene are non-fatal — ``generate_scene_clip`` handles
+    any missing images when it runs.
+    """
+    img_dir = run_dir / "images"
+    img_dir.mkdir(parents=True, exist_ok=True)
+
+    loop = asyncio.get_running_loop()
+    await asyncio.gather(*[
+        loop.run_in_executor(
+            None,
+            functools.partial(
+                prefetch_scene_image, s, img_dir,
+                tool=tool, run_dir=run_dir, is_breaking=is_breaking,
+            ),
+        )
+        for s in script.scenes
+    ])
+    logger.info(f"Image prefetch complete for {len(script.scenes)} scenes")

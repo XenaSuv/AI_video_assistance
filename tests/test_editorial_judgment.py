@@ -516,3 +516,21 @@ class TestSingleton:
 
     def test_same_instance(self):
         assert get_judgment_engine() is get_judgment_engine()
+
+
+class TestEditorialIdentityLoad:
+    def test_load_returns_default_on_invalid_json(self, tmp_path):
+        bad_file = tmp_path / "editorial_identity.json"
+        bad_file.write_text("not valid json {")
+        result = EditorialIdentity.load(tmp_path)
+        assert result is not None  # returns default
+
+    def test_load_returns_default_when_from_dict_raises(self, tmp_path):
+        from unittest.mock import patch, MagicMock
+        good_file = tmp_path / "editorial_identity.json"
+        good_file.write_text('{"bad": "schema"}')
+        mock_default = MagicMock(spec=EditorialIdentity)
+        with patch.object(EditorialIdentity, "from_dict", side_effect=ValueError("bad")):
+            with patch.object(EditorialIdentity, "default", return_value=mock_default):
+                result = EditorialIdentity.load(tmp_path)
+        assert result is mock_default

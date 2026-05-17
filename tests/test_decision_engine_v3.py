@@ -30,6 +30,7 @@ from src.decision_engine_v3 import (
     SAFE_SCENE_MIX,
     DecisionEngineV3,
     DecisionHistoryStore,
+    PerformanceStore,
     UnifiedStrategy,
 )
 
@@ -479,3 +480,178 @@ class TestDecisionHistoryStore:
         engine.decide(_ctx(retention=0.3))
         hist = engine.load_history()
         assert hist[0]["mode"] == "growth"
+
+
+# ── PerformanceStore ───────────────────────────────────────────────────────────
+
+class TestPerformanceStore:
+    def _store(self, tmp_path) -> PerformanceStore:
+        return PerformanceStore(data_dir=tmp_path)
+
+    def _metrics(self, **kw) -> dict:
+        base = {
+            "avg_watch_pct": 0.6,
+            "hook_retention": 0.7,
+            "ctr": 0.05,
+            "drop_points": [],
+        }
+        base.update(kw)
+        return base
+
+    # ── save + _load_raw ───────────────────────────────────────────────────────
+
+    def test_save_creates_file(self, tmp_path):
+        store = self._store(tmp_path)
+        store.save("vid1", self._metrics(), "stable")
+        assert (tmp_path / "performance_store.json").exists()
+
+    def test_save_and_load_recent_single(self, tmp_path):
+        store = self._store(tmp_path)
+        store.save("vid1", self._metrics(), "stable")
+        recent = store.load_recent(n=1)
+        assert len(recent) == 1
+        assert recent[0]["video_id"] == "vid1"
+        assert recent[0]["strategy_mode"] == "stable"
+
+    def test_save_multiple_and_load_recent(self, tmp_path):
+        store = self._store(tmp_path)
+        for i in range(5):
+            store.save(f"vid{i}", self._metrics(), "stable")
+        recent = store.load_recent(n=3)
+        assert len(recent) == 3
+        assert recent[-1]["video_id"] == "vid4"
+
+    def test_save_preserves_metrics(self, tmp_path):
+        store = self._store(tmp_path)
+        m = self._metrics(avg_watch_pct=0.72, ctr=0.09)
+        store.save("vid_x", m, "growth")
+        entry = store.load_recent(n=1)[0]
+        assert abs(entry["metrics"]["avg_watch_pct"] - 0.72) < 1e-9
+        assert abs(entry["metrics"]["ctr"] - 0.09) < 1e-9
+
+    def test_load_raw_returns_empty_when_no_file(self, tmp_path):
+        store = self._store(tmp_path)
+        result = store._load_raw()
+        assert result == []
+
+    def test_load_raw_returns_empty_on_corrupt_file(self, tmp_path):
+        p = tmp_path / "performance_store.json"
+        p.write_text("not json {{{")
+        store = self._store(tmp_path)
+        result = store._load_raw()
+        assert result == []
+
+    def test_load_raw_returns_empty_when_file_is_not_list(self, tmp_path):
+        p = tmp_path / "performance_store.json"
+        p.write_text('{"key": "value"}')
+        store = self._store(tmp_path)
+        result = store._load_raw()
+        assert result == []
+
+    # ── load_recent ────────────────────────────────────────────────────────────
+
+    def test_load_recent_returns_empty_when_no_data(self, tmp_path):
+        store = self._store(tmp_path)
+        assert store.load_recent() == []
+
+    def test_load_recent_respects_n(self, tmp_path):
+        store = self._store(tmp_path)
+        for i in range(10):
+            store.save(f"vid{i}", self._metrics(), "stable")
+        assert len(store.load_recent(n=5)) == 5
+
+    def test_load_recent_default_n_is_10(self, tmp_path):
+        store = self._store(tmp_path)
+        for i in range(15):
+            store.save(f"vid{i}", self._metrics(), "stable")
+        assert len(store.load_recent()) == 10
+
+    # ── get_channel_metrics ────────────────────────────────────────────────────
+
+    def test_get_channel_metrics_empty_returns_defaults(self, tmp_path):
+        store = self._store(tmp_path)
+        m = store.get_channel_metrics()
+        assert "avg_watch_pct" in m
+        assert "hook_retention" in m
+        assert "ctr" in m
+        assert "drop_points" in m
+        assert "recent_trend" in m
+
+    def test_get_channel_metrics_with_data(self, tmp_path):
+        store = self._store(tmp_path)
+        for _ in range(3):
+            store.save("vid", self._metrics(avg_watch_pct=0.6, ctr=0.05), "stable")
+        m = store.get_channel_metrics()
+        assert abs(m["avg_watch_pct"] - 0.6) < 1e-3
+
+    def test_get_channel_metrics_aggregates_drop_points(self, tmp_path):
+        store = self._store(tmp_path)
+        store.save("vid1", self._metrics(drop_points=[2, 3]), "stable")
+        store.save("vid2", self._metrics(drop_points=[2, 5]), "stable")
+        m = store.get_channel_metrics()
+        # drop_points=2 appears twice, should be in common_drops
+        assert 2 in m["drop_points"]
+
+    # ── _compute_trend ─────────────────────────────────────────────────────────
+
+    def test_compute_trend_stable_equal_values(self, tmp_path):
+        store = self._store(tmp_path)
+        assert store._compute_trend([0.5, 0.5, 0.5, 0.5]) == "stable"
+
+    def test_compute_trend_stable_single_value(self, tmp_path):
+        store = self._store(tmp_path)
+        assert store._compute_trend([0.5]) == "stable"
+
+    def test_compute_trend_stable_empty(self, tmp_path):
+        store = self._store(tmp_path)
+        assert store._compute_trend([]) == "stable"
+
+    def test_compute_trend_up(self, tmp_path):
+        store = self._store(tmp_path)
+        # older_avg=0.3, recent_avg=0.8 → difference > 0.05 → "up"
+        assert store._compute_trend([0.3, 0.3, 0.8, 0.9]) == "up"
+
+    def test_compute_trend_down(self, tmp_path):
+        store = self._store(tmp_path)
+        # older_avg=0.8, recent_avg=0.3 → difference > 0.05 → "down"
+        assert store._compute_trend([0.8, 0.8, 0.3, 0.3]) == "down"
+
+    def test_compute_trend_stable_small_diff(self, tmp_path):
+        store = self._store(tmp_path)
+        # difference < 0.05 → "stable"
+        assert store._compute_trend([0.50, 0.50, 0.53, 0.53]) == "stable"
+
+    def test_compute_trend_exactly_threshold_is_stable(self, tmp_path):
+        store = self._store(tmp_path)
+        # older=0.5, recent=0.55 → diff=0.05, NOT > 0.05 → stable
+        assert store._compute_trend([0.5, 0.5, 0.55, 0.55]) == "stable"
+
+    def test_compute_trend_two_values_up(self, tmp_path):
+        store = self._store(tmp_path)
+        # 2 values: mid=1, older=[0.3], recent=[0.9] → up
+        assert store._compute_trend([0.3, 0.9]) == "up"
+
+    def test_compute_trend_three_values(self, tmp_path):
+        store = self._store(tmp_path)
+        # 3 values: mid=1, older=[0.3], recent=[0.8, 0.9] → avg older=0.3, recent=0.85 → up
+        assert store._compute_trend([0.3, 0.8, 0.9]) == "up"
+
+    # ── DecisionHistoryStore error paths (lines 231-232, 241-243) ─────────────
+
+    def test_history_store_append_swallows_write_error(self, tmp_path):
+        # Point path to a file (not a dir) to force write failure
+        p = tmp_path / "file.txt"
+        p.write_text("i am a file")
+        bad_dir = p / "subdir"  # parent is a file
+        store = DecisionHistoryStore(bad_dir)
+        # Should not raise
+        store.append(UnifiedStrategy(mode="stable"))
+
+    def test_history_store_load_recent_swallows_read_error(self, tmp_path):
+        p = tmp_path / "history.jsonl"
+        p.write_text("not valid json line\n")
+        store = DecisionHistoryStore.__new__(DecisionHistoryStore)
+        store._path = p
+        # Should return [] on error
+        result = store.load_recent()
+        assert result == []

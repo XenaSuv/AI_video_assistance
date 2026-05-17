@@ -240,3 +240,267 @@ class TestGetTikTokMetrics:
 
         assert result.retention_curve[0] == 1.0
         assert len(result.retention_curve) > 1
+
+
+# ── analyze() ────────────────────────────────────────────────────────────────
+
+class TestAnalyze:
+    def test_analyze_youtube_returns_result(self, analyzer):
+        with patch("src.feedback_analyzer.get_video_metrics", return_value={
+            "views": 1000, "avg_view_duration": 120, "avg_view_percentage": 0.6
+        }):
+            with patch("src.feedback_analyzer.get_retention_curve", return_value=[1.0, 0.7, 0.5, 0.4]):
+                result = analyzer.analyze("vid123", "youtube", {"angle": "technical_breakthrough", "format": "deep_dive"})
+        assert result["video_id"] == "vid123"
+        assert result["platform"] == "youtube"
+        assert result["views"] == 1000
+
+    def test_analyze_youtube_stores_angle_and_format(self, analyzer):
+        with patch("src.feedback_analyzer.get_video_metrics", return_value={
+            "views": 500, "avg_view_duration": 90, "avg_view_percentage": 0.55
+        }):
+            with patch("src.feedback_analyzer.get_retention_curve", return_value=[1.0, 0.65, 0.5]):
+                result = analyzer.analyze("vid999", "youtube", {"angle": "industry_impact", "format": "quick_hit"})
+        assert result["angle"] == "industry_impact"
+        assert result["format"] == "quick_hit"
+
+    def test_analyze_tiktok_returns_result(self, analyzer):
+        fake_response = {
+            "views": 2000, "likes": 100, "shares": 20, "comments": 30,
+            "duration_sec": 45, "avg_view_percentage": 0.55,
+        }
+        with patch("src.feedback_analyzer.get_tiktok_video_metrics", return_value=fake_response):
+            result = analyzer.analyze("tiktok_vid", "tiktok", {"angle": "hot_take", "format": "short"})
+        assert result["video_id"] == "tiktok_vid"
+        assert result["platform"] == "tiktok"
+
+    def test_analyze_unsupported_platform_returns_empty(self, analyzer):
+        result = analyzer.analyze("vid_x", "instagram", {"angle": "a", "format": "b"})
+        assert result == {}
+
+    def test_analyze_no_metrics_returns_empty(self, analyzer):
+        with patch("src.feedback_analyzer.get_video_metrics", return_value=None):
+            with patch("src.feedback_analyzer.get_retention_curve", return_value=None):
+                result = analyzer.analyze("vid_none", "youtube", {"angle": "a", "format": "b"})
+        assert result == {}
+
+    def test_analyze_exception_returns_empty(self, analyzer):
+        with patch("src.feedback_analyzer.get_video_metrics", side_effect=RuntimeError("API down")):
+            result = analyzer.analyze("vid_err", "youtube", {"angle": "a", "format": "b"})
+        assert result == {}
+
+    def test_analyze_saves_feedback_to_history(self, analyzer):
+        with patch("src.feedback_analyzer.get_video_metrics", return_value={
+            "views": 300, "avg_view_duration": 60, "avg_view_percentage": 0.5
+        }):
+            with patch("src.feedback_analyzer.get_retention_curve", return_value=[1.0, 0.6, 0.45]):
+                analyzer.analyze("vid_save", "youtube", {"angle": "threat_to_jobs", "format": "deep_dive"})
+        history = analyzer.load_feedback_history()
+        assert any(h["video_id"] == "vid_save" for h in history)
+
+    def test_analyze_with_published_at(self, analyzer):
+        from datetime import datetime as dt
+        ts = dt(2026, 5, 1, 10, 0, 0)
+        with patch("src.feedback_analyzer.get_video_metrics", return_value={
+            "views": 800, "avg_view_duration": 100, "avg_view_percentage": 0.6
+        }):
+            with patch("src.feedback_analyzer.get_retention_curve", return_value=[1.0, 0.7, 0.55]):
+                result = analyzer.analyze("vid_ts", "youtube", {}, published_at=ts)
+        assert result["published_at"] == ts.isoformat()
+
+
+# ── _get_youtube_metrics() ───────────────────────────────────────────────────
+
+class TestGetYouTubeMetrics:
+    def test_returns_video_metrics_object(self, analyzer):
+        with patch("src.feedback_analyzer.get_video_metrics", return_value={
+            "views": 1500, "avg_view_duration": 200, "avg_view_percentage": 0.65
+        }):
+            with patch("src.feedback_analyzer.get_retention_curve", return_value=[1.0, 0.8, 0.6, 0.5]):
+                result = analyzer._get_youtube_metrics("vid_yt")
+        assert result is not None
+        assert result.video_id == "vid_yt"
+        assert result.platform == "youtube"
+        assert result.views == 1500
+        assert result.retention_curve == [1.0, 0.8, 0.6, 0.5]
+
+    def test_falls_back_to_estimated_curve_when_none(self, analyzer):
+        with patch("src.feedback_analyzer.get_video_metrics", return_value={
+            "views": 700, "avg_view_duration": 80, "avg_view_percentage": 0.5
+        }):
+            with patch("src.feedback_analyzer.get_retention_curve", return_value=None):
+                result = analyzer._get_youtube_metrics("vid_fallback")
+        assert result is not None
+        assert result.retention_curve[0] == 1.0
+        assert len(result.retention_curve) > 1
+
+    def test_returns_none_when_no_basic_metrics(self, analyzer):
+        with patch("src.feedback_analyzer.get_video_metrics", return_value=None):
+            result = analyzer._get_youtube_metrics("vid_missing")
+        assert result is None
+
+    def test_returns_none_on_exception(self, analyzer):
+        with patch("src.feedback_analyzer.get_video_metrics", side_effect=Exception("network error")):
+            result = analyzer._get_youtube_metrics("vid_exc")
+        assert result is None
+
+
+# ── _generate_recommendations() — avg_view_percentage branches ───────────────
+
+class TestGenerateRecommendationsWatchTime:
+    def _metrics(self, **overrides) -> dict:
+        base = {
+            "hook_score": 0.65,
+            "drop_point": None,
+            "avg_view_percentage": 0.55,
+            "views": 500,
+            "best_segment": "scene_2",
+        }
+        base.update(overrides)
+        return base
+
+    def test_below_50_percent_suggests_shorter_runtime(self, analyzer):
+        recs = analyzer._generate_recommendations(self._metrics(avg_view_percentage=0.3))
+        assert any("50%" in r or "runtime" in r.lower() or "watch" in r.lower() for r in recs)
+
+    def test_above_75_percent_suggests_series(self, analyzer):
+        recs = analyzer._generate_recommendations(self._metrics(avg_view_percentage=0.8))
+        assert any("series" in r.lower() or "extend" in r.lower() or "sequel" in r.lower() for r in recs)
+
+    def test_mid_range_no_watch_time_recommendation(self, analyzer):
+        recs = analyzer._generate_recommendations(self._metrics(avg_view_percentage=0.6))
+        # Neither branch should fire for a value between 0.5 and 0.75
+        assert not any("50%" in r for r in recs)
+        assert not any("series" in r.lower() for r in recs)
+
+
+# ── _save_feedback() error path ───────────────────────────────────────────────
+
+class TestSaveFeedbackErrorPath:
+    def test_save_feedback_handles_write_error_gracefully(self, analyzer, tmp_path):
+        # Point feedback_db to a path whose parent doesn't exist so write_text fails
+        bad_path = tmp_path / "nonexistent_dir" / "feedback.json"
+        analyzer.feedback_db = bad_path
+        record = {
+            "video_id": "vid_err",
+            "platform": "youtube",
+            "hook_score": 0.5,
+            "avg_view_percentage": 0.5,
+            "angle": "a",
+            "format": "b",
+            "drop_point": None,
+        }
+        # Should not raise; exception is swallowed and logged as warning
+        analyzer._save_feedback(record)
+
+
+# ── load_feedback_history() error path ───────────────────────────────────────
+
+class TestLoadFeedbackHistoryErrorPath:
+    def test_load_returns_empty_list_on_read_error(self, analyzer, tmp_path):
+        # Write invalid JSON so json.loads raises
+        bad_file = tmp_path / "feedback_history.json"
+        bad_file.write_text("NOT VALID JSON {{{")
+        analyzer.feedback_db = bad_file
+        result = analyzer.load_feedback_history()
+        assert result == []
+
+
+# ── get_angle_performance() ───────────────────────────────────────────────────
+
+class TestGetAnglePerformance:
+    def _write_history(self, analyzer, records):
+        import json as _json
+        analyzer.feedback_db.write_text(_json.dumps(records))
+
+    def test_returns_performance_stats_for_known_angle(self, analyzer):
+        records = [
+            {"video_id": "v1", "hook_score": 0.7, "avg_view_percentage": 0.6, "angle": "technical_breakthrough", "format": "deep_dive", "drop_point": None},
+            {"video_id": "v2", "hook_score": 0.8, "avg_view_percentage": 0.65, "angle": "technical_breakthrough", "format": "quick_hit", "drop_point": None},
+        ]
+        self._write_history(analyzer, records)
+        stats = analyzer.get_angle_performance("technical_breakthrough")
+        assert stats is not None
+        assert stats.category == "technical_breakthrough"
+        assert stats.sample_size == 2
+        assert abs(stats.avg_hook_score - 0.75) < 1e-9
+        assert stats.success_rate == 1.0
+
+    def test_returns_none_for_empty_history(self, analyzer):
+        # No feedback_db file exists
+        stats = analyzer.get_angle_performance("technical_breakthrough")
+        assert stats is None
+
+    def test_returns_none_for_no_matching_angle(self, analyzer):
+        records = [
+            {"video_id": "v1", "hook_score": 0.7, "avg_view_percentage": 0.6, "angle": "industry_impact", "format": "deep_dive", "drop_point": None},
+        ]
+        self._write_history(analyzer, records)
+        stats = analyzer.get_angle_performance("technical_breakthrough")
+        assert stats is None
+
+    def test_handles_exception_gracefully(self, analyzer, tmp_path):
+        bad_file = tmp_path / "feedback_history.json"
+        bad_file.write_text("INVALID JSON")
+        analyzer.feedback_db = bad_file
+        stats = analyzer.get_angle_performance("some_angle")
+        assert stats is None
+
+    def test_success_rate_computed_correctly(self, analyzer):
+        records = [
+            {"video_id": "v1", "hook_score": 0.7, "avg_view_percentage": 0.5, "angle": "threat_to_jobs", "format": "hot_take", "drop_point": None},
+            {"video_id": "v2", "hook_score": 0.4, "avg_view_percentage": 0.4, "angle": "threat_to_jobs", "format": "hot_take", "drop_point": None},
+        ]
+        self._write_history(analyzer, records)
+        stats = analyzer.get_angle_performance("threat_to_jobs")
+        assert stats is not None
+        # Only v1 has hook_score > 0.6
+        assert abs(stats.success_rate - 0.5) < 1e-9
+
+
+# ── get_format_performance() ──────────────────────────────────────────────────
+
+class TestGetFormatPerformance:
+    def _write_history(self, analyzer, records):
+        import json as _json
+        analyzer.feedback_db.write_text(_json.dumps(records))
+
+    def test_returns_performance_stats_for_known_format(self, analyzer):
+        records = [
+            {"video_id": "v1", "hook_score": 0.75, "avg_view_percentage": 0.7, "angle": "industry_impact", "format": "deep_dive", "drop_point": None},
+            {"video_id": "v2", "hook_score": 0.65, "avg_view_percentage": 0.6, "angle": "hot_take", "format": "deep_dive", "drop_point": None},
+        ]
+        self._write_history(analyzer, records)
+        stats = analyzer.get_format_performance("deep_dive")
+        assert stats is not None
+        assert stats.category == "deep_dive"
+        assert stats.sample_size == 2
+
+    def test_returns_none_for_empty_history(self, analyzer):
+        stats = analyzer.get_format_performance("deep_dive")
+        assert stats is None
+
+    def test_returns_none_for_no_matching_format(self, analyzer):
+        records = [
+            {"video_id": "v1", "hook_score": 0.7, "avg_view_percentage": 0.6, "angle": "industry_impact", "format": "quick_hit", "drop_point": None},
+        ]
+        self._write_history(analyzer, records)
+        stats = analyzer.get_format_performance("deep_dive")
+        assert stats is None
+
+    def test_handles_exception_gracefully(self, analyzer, tmp_path):
+        bad_file = tmp_path / "feedback_history.json"
+        bad_file.write_text("INVALID JSON {{")
+        analyzer.feedback_db = bad_file
+        stats = analyzer.get_format_performance("some_format")
+        assert stats is None
+
+    def test_avg_hook_score_computed_correctly(self, analyzer):
+        records = [
+            {"video_id": "v1", "hook_score": 0.6, "avg_view_percentage": 0.5, "angle": "a", "format": "hot_take", "drop_point": None},
+            {"video_id": "v2", "hook_score": 0.8, "avg_view_percentage": 0.7, "angle": "b", "format": "hot_take", "drop_point": None},
+        ]
+        self._write_history(analyzer, records)
+        stats = analyzer.get_format_performance("hot_take")
+        assert stats is not None
+        assert abs(stats.avg_hook_score - 0.7) < 1e-9

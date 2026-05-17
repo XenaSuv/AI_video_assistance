@@ -276,6 +276,40 @@ class TestNotifyBudgetSummary:
         assert "123.45" in text
 
 
+class TestNotifyQuotaAlert:
+    def _run(self, used: int, limit: int):
+        from src.slack_notifier import notify_quota_alert
+        with patch("src.slack_notifier._http_post") as mock_post:
+            with patch("src.slack_notifier.settings") as mock_settings:
+                mock_settings.slack_webhook_url = "https://hooks.slack.com/test"
+                notify_quota_alert(used=used, limit=limit, pipeline="daily")
+        return mock_post
+
+    def test_posts_when_webhook_set(self):
+        assert self._run(8500, 10_000).called
+
+    def test_orange_when_near_limit(self):
+        color = self._run(8500, 10_000).call_args[1]["json"]["attachments"][0]["color"]
+        assert color == "#ffa500"
+
+    def test_red_when_fully_exhausted(self):
+        color = self._run(10_000, 10_000).call_args[1]["json"]["attachments"][0]["color"]
+        assert color == "#e01e5a"
+
+    def test_message_contains_usage(self):
+        text = self._run(8500, 10_000).call_args[1]["json"]["attachments"][0]["text"]
+        assert "8,500" in text
+        assert "10,000" in text
+
+    def test_no_post_when_no_webhook(self):
+        from src.slack_notifier import notify_quota_alert
+        with patch("src.slack_notifier._http_post") as mock_post:
+            with patch("src.slack_notifier.settings") as mock_settings:
+                mock_settings.slack_webhook_url = ""
+                notify_quota_alert(used=9000, limit=10_000, pipeline="daily")
+        mock_post.assert_not_called()
+
+
 class TestNotifyFailure:
     def test_payload_color_is_red(self):
         with patch("src.slack_notifier._http_post") as mock_post:
@@ -300,3 +334,59 @@ class TestNotifyFailure:
                 mock_settings.slack_webhook_url = ""
                 notify_failure(Exception("x"), "daily")
         mock_post.assert_not_called()
+
+
+class TestNotifySuccessOptionalFields:
+    def _run(self, summary: dict, pipeline: str = "daily"):
+        with patch("src.slack_notifier._http_post") as mock_post:
+            with patch("src.slack_notifier.settings") as mock_settings:
+                mock_settings.slack_webhook_url = "https://hooks.slack.com/test"
+                notify_success(summary, pipeline)
+        return mock_post
+
+    def _text(self, summary: dict) -> str:
+        mock_post = self._run(summary)
+        return mock_post.call_args[1]["json"]["attachments"][0]["text"]
+
+    def test_includes_num_scenes(self):
+        text = self._text({"num_scenes": 5})
+        assert "5 scenes" in text
+
+    def test_includes_thumbnail_style(self):
+        text = self._text({"thumbnail_style": "cinematic"})
+        assert "cinematic" in text
+
+    def test_includes_tool_name(self):
+        text = self._text({"tool": "claude"})
+        assert "claude" in text
+
+    def test_includes_short_id_link(self):
+        text = self._text({"short_id": "short999"})
+        assert "youtu.be/short999" in text
+
+    def test_includes_tiktok_id(self):
+        text = self._text({"tiktok_id": "tiktok777"})
+        assert "tiktok777" in text
+
+    def test_includes_ru_status(self):
+        text = self._text({"ru": {"status": "ok", "title": "RU Title"}})
+        assert "ok" in text
+        assert "RU Title" in text
+
+    def test_includes_ru_status_without_title(self):
+        text = self._text({"ru": {"status": "failed"}})
+        assert "failed" in text
+
+
+class TestNotifyFailureTraceback:
+    def test_includes_traceback_snippet(self):
+        with patch("src.slack_notifier._http_post") as mock_post:
+            with patch("src.slack_notifier.settings") as mock_settings:
+                mock_settings.slack_webhook_url = "https://hooks.slack.com/test"
+                notify_failure(
+                    RuntimeError("boom"),
+                    "daily",
+                    traceback_str="Traceback (most recent call last):\n  File x.py line 10\n    raise RuntimeError('boom')\nRuntimeError: boom",
+                )
+        text = mock_post.call_args[1]["json"]["attachments"][0]["text"]
+        assert "boom" in text
