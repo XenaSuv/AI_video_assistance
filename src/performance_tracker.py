@@ -143,7 +143,8 @@ def get_unanalyzed(min_age_hours: float = 24.0) -> list[dict[str, Any]]:
             continue
         try:
             ts = datetime.fromisoformat(r["timestamp"]).timestamp()
-        except Exception:
+        except Exception as exc:
+            logger.debug(f"get_unanalyzed: skipped record with bad timestamp: {exc}")
             continue
         if ts <= cutoff:
             result.append(r)

@@ -179,8 +179,8 @@ class EditorialJudgment:
                 continue
             try:
                 records.append(JudgmentFeedback.from_dict(json.loads(line)))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Skipped malformed record: {exc}")
         return records[-n:]
 
     def winning_angles(self, min_retention: float = _RETENTION_WINNER_THRESHOLD) -> list[str]:

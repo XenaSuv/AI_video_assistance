@@ -395,8 +395,8 @@ class EmotionalArcEngine:
                 continue
             try:
                 records.append(ArcStats.from_dict(json.loads(line)))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Skipped malformed record: {exc}")
         return records[-n:]
 
     def arc_type_distribution(self) -> dict[str, int]:

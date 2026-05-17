@@ -16,6 +16,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 # Soft thresholds per step (seconds).  Exceeded → Slack alert even on success.
 STEP_THRESHOLDS: dict[str, float] = {
     "scrape":     120.0,   # 2 min
@@ -58,7 +60,8 @@ class LatencyTracker:
         try:
             raw = json.loads(self._path.read_text())
             return {k: [float(v) for v in vals] for k, vals in raw.items()}
-        except Exception:
+        except Exception as exc:
+            logger.debug(f"LatencyTracker._load: {exc}")
             return {}
 
     def _save(self) -> None:
@@ -66,8 +69,8 @@ class LatencyTracker:
         try:
             tmp.write_text(json.dumps(self._history, indent=2))
             tmp.replace(self._path)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(f"LatencyTracker._save: {exc}")
 
     # ── public API ────────────────────────────────────────────────────────────
 

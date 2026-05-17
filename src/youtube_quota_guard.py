@@ -20,6 +20,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 
 # Unit costs from the official YouTube API quota calculator.
 QUOTA_COSTS: dict[str, int] = {
@@ -52,7 +54,8 @@ class YouTubeQuotaGuard:
     def _load(self) -> dict[str, Any]:
         try:
             return json.loads(self._path.read_text())
-        except Exception:
+        except Exception as exc:
+            logger.debug(f"YouTubeQuotaGuard._load: {exc}")
             return {}
 
     def _save(self) -> None:
@@ -60,8 +63,8 @@ class YouTubeQuotaGuard:
         try:
             tmp.write_text(json.dumps(self._data, indent=2))
             tmp.replace(self._path)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(f"YouTubeQuotaGuard._save: {exc}")
 
     # ── public API ────────────────────────────────────────────────────────────
 
@@ -125,5 +128,6 @@ class YouTubeQuotaGuard:
                 for e in body.get("error", {}).get("errors", [])
             }
             return bool(reasons & {"quotaExceeded", "userRateLimitExceeded"})
-        except Exception:
+        except Exception as exc:
+            logger.debug(f"YouTubeQuotaGuard._is_quota_exceeded: could not parse error body: {exc}")
             return False

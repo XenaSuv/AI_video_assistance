@@ -520,8 +520,8 @@ class ShortsEngineV2:
                 continue
             try:
                 records.append(factory(json.loads(line)))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Skipped malformed record: {exc}")
         return records
 
     # ── beat execution layer ──────────────────────────────────────────────────

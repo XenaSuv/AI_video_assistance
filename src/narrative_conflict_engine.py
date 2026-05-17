@@ -184,8 +184,8 @@ class ConflictMemory:
                 continue
             try:
                 entries.append(ConflictEntry.from_dict(json.loads(line)))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Skipped malformed record: {exc}")
         return entries[-n:]
 
     def get_topic_history(self, topic: str, n: int = 5) -> list[ConflictEntry]:

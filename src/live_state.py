@@ -24,6 +24,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 MAX_LOG_EVENTS = 100
 
 
@@ -148,7 +150,8 @@ class LiveState:
         """Read current state from disk. Returns idle state on any error."""
         try:
             return json.loads(path.read_text())
-        except Exception:
+        except Exception as exc:
+            logger.debug(f"LiveState.load: {exc}")
             return {**_IDLE}
 
     # ── internals ─────────────────────────────────────────────────────────────
@@ -176,5 +179,5 @@ class LiveState:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             tmp.write_text(json.dumps(self._state, indent=2, default=str))
             tmp.replace(self.path)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(f"LiveState._write: {exc}")

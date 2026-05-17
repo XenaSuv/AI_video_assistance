@@ -381,8 +381,8 @@ class EmotionEngine:
                     k: v for k, v in d.items()
                     if k in EmotionStats.__dataclass_fields__
                 }))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Skipped malformed record: {exc}")
         return records[-n:]
 
 

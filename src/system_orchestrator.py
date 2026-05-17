@@ -170,8 +170,8 @@ class SystemOrchestrator:
                 if hasattr(strategy, attr):
                     try:
                         setattr(strategy, attr, val)
-                    except Exception:
-                        pass   # validation rejects the value — keep original
+                    except Exception as exc:
+                        logger.debug(f"SystemOrchestrator: context override rejected {attr}={val!r}: {exc}")
             if overrides:
                 logger.info(f"SystemOrchestrator: context overrides applied — {overrides}")
 
@@ -386,8 +386,8 @@ class SystemOrchestrator:
             if self._run_history_path.exists():
                 try:
                     runs = json.loads(self._run_history_path.read_text())
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug(f"SystemOrchestrator: could not load run_history: {exc}")
 
             vid = patch.get("video_id")
             idx = next((i for i, r in enumerate(runs) if r.get("video_id") == vid), None)
@@ -464,8 +464,8 @@ def create_orchestrator(data_dir: Path | None = None) -> SystemOrchestrator:
             if self._path.exists():
                 try:
                     records = json.loads(self._path.read_text())
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug(f"PerformanceStore.save: existing records unreadable, starting fresh: {exc}")
             records.append(record)
             self._path.write_text(json.dumps(records, indent=2))
 

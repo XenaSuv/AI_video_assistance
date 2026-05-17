@@ -132,7 +132,8 @@ def assemble_video(
                 w, h = ffmpeg_utils.video_size(path)
                 dur = ffmpeg_utils.duration(path)
                 return w == VIDEO_W and h == VIDEO_H and dur > 0
-            except Exception:
+            except Exception as exc:
+                logger.debug(f"_valid_video_clip: probe failed for {path.name}: {exc}")
                 return False
 
         # Merge video + audio (loop video if shorter than narration)
