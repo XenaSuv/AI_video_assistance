@@ -228,3 +228,14 @@ class TestMultiDayIsolation:
         g2 = _guard(tmp_path)
         assert g2.used_today() == 0
         assert g2.remaining() == DEFAULT_DAILY_QUOTA
+
+
+class TestSaveException:
+    def test_save_swallows_exception(self, tmp_path):
+        g = _guard(tmp_path)
+        # Make the path read-only so write fails
+        g._path.parent.chmod(0o555)
+        try:
+            g._save()  # should not raise
+        finally:
+            g._path.parent.chmod(0o755)

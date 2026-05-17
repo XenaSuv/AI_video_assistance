@@ -179,3 +179,15 @@ class TestRunGate:
             report = run_gate(script, tmp_path, history, config={"min_scenes": 2})
 
         assert report.passed
+
+
+class TestCheckAudioException:
+    def test_warns_when_duration_raises(self, tmp_path):
+        from src.quality_gate import check_audio
+        script = _script(num_scenes=1)
+        (tmp_path / "scene_00.mp3").touch()
+
+        with patch("src.quality_gate.ffmpeg_utils.duration", side_effect=Exception("codec error")):
+            report = check_audio(script, tmp_path, min_total_sec=1)
+
+        assert any("unreadable" in w for w in report.warnings)

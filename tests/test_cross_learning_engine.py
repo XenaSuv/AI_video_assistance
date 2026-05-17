@@ -411,3 +411,21 @@ class TestRandomCombo:
             assert c["scene_type"] in _SCENE_TYPES
             assert c["persona"]    in _PERSONAS
             assert c["pace"]       in _PACES
+
+
+class TestCrossLearningStoreErrorPaths:
+    def test_append_swallows_write_error(self, tmp_path):
+        store = CrossLearningStore(tmp_path)
+        # Make dir read-only so write fails
+        tmp_path.chmod(0o555)
+        try:
+            store.append({"combo": _COMBO_A, "result": {}})  # should not raise
+        finally:
+            tmp_path.chmod(0o755)
+
+    def test_load_swallows_read_error(self, tmp_path):
+        store = CrossLearningStore(tmp_path)
+        path = tmp_path / "cross_learning.jsonl"
+        path.write_text("not-json\n")
+        result = store.load()
+        assert result == []

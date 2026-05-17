@@ -263,18 +263,13 @@ class TestResolvePublishId:
             "expires_at": time.time() + 7200,
         }))
 
-        call_count = [0]
-        original_time = time.time
-
-        def fake_time():
-            call_count[0] += 1
-            if call_count[0] <= 2:
-                return original_time()
-            return original_time() + 120  # past deadline
+        # Sequence: token-check, deadline, while(enter loop), while(exit loop)
+        now = time.time()
+        times = [now, now, now, now + 120]
 
         with patch("src.tiktok_analytics.http_post", side_effect=Exception("network error")):
             with patch("src.tiktok_analytics.time") as mock_time:
-                mock_time.time.side_effect = fake_time
+                mock_time.time.side_effect = times
                 mock_time.sleep = MagicMock()
                 result = resolve_publish_id("pub_xyz", token_file)
 
