@@ -415,13 +415,10 @@ class TestRandomCombo:
 
 class TestCrossLearningStoreErrorPaths:
     def test_append_swallows_write_error(self, tmp_path):
+        from unittest.mock import patch
         store = CrossLearningStore(tmp_path)
-        # Make dir read-only so write fails
-        tmp_path.chmod(0o555)
-        try:
+        with patch("builtins.open", side_effect=OSError("disk full")):
             store.append({"combo": _COMBO_A, "result": {}})  # should not raise
-        finally:
-            tmp_path.chmod(0o755)
 
     def test_load_swallows_read_error(self, tmp_path):
         store = CrossLearningStore(tmp_path)
