@@ -341,11 +341,13 @@ def build_video(
         try:
             hook_audio = synthesize_hook(script, out_dir)
             if settings.heygen_enabled:
+                from src.avatar_engine import AvatarEngine as _AvatarEngine
+                _hook_avatar_id = _AvatarEngine().avatar_id(persona)
                 presenter_clip = generate_heygen_clip(
                     hook_audio,
                     out_dir / "assembled" / "heygen_hook.mp4",
                     api_key=settings.heygen_api_key,
-                    avatar_id=settings.heygen_avatar_id,
+                    avatar_id=_hook_avatar_id,
                     aspect=settings.heygen_aspect,
                     fallback_text=script.hook,
                     voice_id=settings.heygen_voice_id,

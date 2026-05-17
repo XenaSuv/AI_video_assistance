@@ -194,6 +194,49 @@ class TestRenderEnabled:
         call_kwargs = mock_hg.call_args.kwargs
         assert call_kwargs["avatar_style"] == "closeup"
 
+    def test_casual_persona_passes_casual_avatar_id(self, tmp_path):
+        """HEYGEN_AVATAR_ID_CASUAL must reach generate_heygen_clip as avatar_id."""
+        engine = self._engine_with_mock(tmp_path / "clip.mp4")
+        raw_path = tmp_path / "out_av_raw.mp4"
+        raw_path.write_bytes(b"fake")
+
+        with patch.dict(os.environ, {"HEYGEN_AVATAR_ID_CASUAL": "casual-avatar-xyz"}):
+            with patch("src.avatar_engine.generate_heygen_clip", return_value=raw_path) as mock_hg:
+                with patch("src.avatar_engine.ffmpeg_utils.burn_captions", side_effect=lambda v, t, o, **kw: v):
+                    with patch("shutil.copy2"):
+                        engine.render(
+                            tmp_path / "audio.mp3",
+                            tmp_path / "out.mp4",
+                            intent="shock",
+                            persona="casual",
+                            subtitle_text="text",
+                        )
+
+        assert mock_hg.call_args.kwargs["avatar_id"] == "casual-avatar-xyz"
+
+    def test_default_avatar_id_used_when_casual_env_not_set(self, tmp_path):
+        """Falls back to HEYGEN_AVATAR_ID when HEYGEN_AVATAR_ID_CASUAL is absent."""
+        engine = self._engine_with_mock(tmp_path / "clip.mp4")
+        engine._default_id = "default-fallback-id"
+        raw_path = tmp_path / "out_av_raw.mp4"
+        raw_path.write_bytes(b"fake")
+
+        env_without_casual = {k: v for k, v in os.environ.items()
+                              if k != "HEYGEN_AVATAR_ID_CASUAL"}
+        with patch.dict(os.environ, env_without_casual, clear=True):
+            with patch("src.avatar_engine.generate_heygen_clip", return_value=raw_path) as mock_hg:
+                with patch("src.avatar_engine.ffmpeg_utils.burn_captions", side_effect=lambda v, t, o, **kw: v):
+                    with patch("shutil.copy2"):
+                        engine.render(
+                            tmp_path / "audio.mp3",
+                            tmp_path / "out.mp4",
+                            intent="shock",
+                            persona="casual",
+                            subtitle_text="text",
+                        )
+
+        assert mock_hg.call_args.kwargs["avatar_id"] == "default-fallback-id"
+
     def test_calls_heygen_with_normal_style_for_explain(self, tmp_path):
         engine = self._engine_with_mock(tmp_path / "clip.mp4")
         raw_path = tmp_path / "out_av_raw.mp4"
