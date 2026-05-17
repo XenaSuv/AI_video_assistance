@@ -58,15 +58,20 @@ def _upload_audio(audio_path: Path, api_key: str) -> tuple[str, str]:
     """Upload a local MP3 to HeyGen's asset store.
 
     Returns (audio_url, asset_id) — either may be empty string if absent.
-    Uses upload.heygen.com/v1/asset (asset uploads use a dedicated subdomain).
+
+    upload.heygen.com/v1/asset expects raw binary body with Content-Type
+    set to the file's MIME type — NOT multipart/form-data.
     """
     with open(audio_path, "rb") as f:
         audio_bytes = f.read()
 
     resp = http_post(
         f"{_UPLOAD_BASE}/v1/asset",
-        headers={"X-Api-Key": api_key},
-        files={"file": (audio_path.name, audio_bytes, "audio/mpeg")},
+        headers={
+            "X-Api-Key":    api_key,
+            "Content-Type": "audio/mpeg",
+        },
+        data=audio_bytes,
         timeout=60,
     )
     data = resp.json().get("data", {})
