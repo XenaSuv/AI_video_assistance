@@ -15,6 +15,11 @@ def _mock_response(content: str) -> MagicMock:
     return resp
 
 
+def _mock_response_str(content: str) -> MagicMock:
+    """Same as _mock_response but for pick_best_title which returns a plain string."""
+    return _mock_response(content)
+
+
 # title_optimizer creates a module-level client; patch make_openai_client
 # before the module is imported so the module-level call succeeds.
 with patch("src.retry_utils.make_openai_client", return_value=MagicMock()):
@@ -81,3 +86,46 @@ class TestGenerateTitles:
             )
             result = generate_titles(_item())
         assert result == ["Valid title"]
+
+    def test_records_usage_when_present(self):
+        resp = _mock_response(json.dumps(["Title"]))
+        resp.usage = MagicMock(prompt_tokens=100, completion_tokens=20)
+        with patch("src.title_optimizer.client") as mock_client, \
+             patch("src.title_optimizer.get_ledger") as mock_ledger:
+            mock_client.chat.completions.create.return_value = resp
+            generate_titles(_item())
+        mock_ledger.return_value.record_llm.assert_called_once()
+
+
+from src.title_optimizer import pick_best_title  # noqa: E402
+
+
+class TestPickBestTitle:
+    def test_returns_best_title_from_response(self):
+        with patch("src.title_optimizer.client") as mock_client:
+            mock_client.chat.completions.create.return_value = _mock_response_str(
+                "This AI beats GPT-4"
+            )
+            result = pick_best_title(["Title A", "Title B", "This AI beats GPT-4"])
+        assert result == "This AI beats GPT-4"
+
+    def test_falls_back_to_first_when_empty_response(self):
+        with patch("src.title_optimizer.client") as mock_client:
+            mock_client.chat.completions.create.return_value = _mock_response_str("")
+            result = pick_best_title(["Fallback Title"])
+        assert result == "Fallback Title"
+
+    def test_falls_back_to_ai_news_when_empty_list_and_empty_response(self):
+        with patch("src.title_optimizer.client") as mock_client:
+            mock_client.chat.completions.create.return_value = _mock_response_str("")
+            result = pick_best_title([])
+        assert result == "AI NEWS"
+
+    def test_records_usage_when_present(self):
+        resp = _mock_response_str("Best title")
+        resp.usage = MagicMock(prompt_tokens=50, completion_tokens=5)
+        with patch("src.title_optimizer.client") as mock_client, \
+             patch("src.title_optimizer.get_ledger") as mock_ledger:
+            mock_client.chat.completions.create.return_value = resp
+            pick_best_title(["Some title"])
+        mock_ledger.return_value.record_llm.assert_called_once()

@@ -334,3 +334,59 @@ class TestNotifyFailure:
                 mock_settings.slack_webhook_url = ""
                 notify_failure(Exception("x"), "daily")
         mock_post.assert_not_called()
+
+
+class TestNotifySuccessOptionalFields:
+    def _run(self, summary: dict, pipeline: str = "daily"):
+        with patch("src.slack_notifier._http_post") as mock_post:
+            with patch("src.slack_notifier.settings") as mock_settings:
+                mock_settings.slack_webhook_url = "https://hooks.slack.com/test"
+                notify_success(summary, pipeline)
+        return mock_post
+
+    def _text(self, summary: dict) -> str:
+        mock_post = self._run(summary)
+        return mock_post.call_args[1]["json"]["attachments"][0]["text"]
+
+    def test_includes_num_scenes(self):
+        text = self._text({"num_scenes": 5})
+        assert "5 scenes" in text
+
+    def test_includes_thumbnail_style(self):
+        text = self._text({"thumbnail_style": "cinematic"})
+        assert "cinematic" in text
+
+    def test_includes_tool_name(self):
+        text = self._text({"tool": "claude"})
+        assert "claude" in text
+
+    def test_includes_short_id_link(self):
+        text = self._text({"short_id": "short999"})
+        assert "youtu.be/short999" in text
+
+    def test_includes_tiktok_id(self):
+        text = self._text({"tiktok_id": "tiktok777"})
+        assert "tiktok777" in text
+
+    def test_includes_ru_status(self):
+        text = self._text({"ru": {"status": "ok", "title": "RU Title"}})
+        assert "ok" in text
+        assert "RU Title" in text
+
+    def test_includes_ru_status_without_title(self):
+        text = self._text({"ru": {"status": "failed"}})
+        assert "failed" in text
+
+
+class TestNotifyFailureTraceback:
+    def test_includes_traceback_snippet(self):
+        with patch("src.slack_notifier._http_post") as mock_post:
+            with patch("src.slack_notifier.settings") as mock_settings:
+                mock_settings.slack_webhook_url = "https://hooks.slack.com/test"
+                notify_failure(
+                    RuntimeError("boom"),
+                    "daily",
+                    traceback_str="Traceback (most recent call last):\n  File x.py line 10\n    raise RuntimeError('boom')\nRuntimeError: boom",
+                )
+        text = mock_post.call_args[1]["json"]["attachments"][0]["text"]
+        assert "boom" in text
