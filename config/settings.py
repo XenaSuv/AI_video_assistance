@@ -121,6 +121,10 @@ class Settings:
     dedup_ttl_days: int = int(_env("DEDUP_TTL_DAYS", "30"))
     source_dir: Path = ROOT / _env("SOURCE_DIR", "source")
 
+    def __post_init__(self) -> None:
+        from src.config_validator import validate
+        validate(self)
+
 
 settings = Settings()
 settings.output_dir.mkdir(parents=True, exist_ok=True)
