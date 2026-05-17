@@ -10,6 +10,7 @@ import sys
 from collections.abc import Iterator
 from pathlib import Path
 
+from elevenlabs import VoiceSettings
 from elevenlabs.client import ElevenLabs
 from loguru import logger
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
@@ -60,12 +61,12 @@ def _tts_convert(client: ElevenLabs, text: str, voice_id: str, model_id: str, us
         model_id=model_id,
         text=text,
         output_format="mp3_44100_128",
-        voice_settings={
-            "stability": 0.5,
-            "similarity_boost": 0.75,
-            "style": 0.3,
-            "use_speaker_boost": True,
-        },
+        voice_settings=VoiceSettings(
+            stability=0.5,
+            similarity_boost=0.75,
+            style=0.3,
+            use_speaker_boost=True,
+        ),
     )
 
 
