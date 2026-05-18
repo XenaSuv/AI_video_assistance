@@ -110,8 +110,8 @@ def validate(cfg: Any) -> None:
             errors.append(
                 "TIKTOK_CLIENT_SECRET is required when TIKTOK_ENABLED=true"
             )
-    if cfg.presenter_enabled and not cfg.did_api_key:
-        errors.append("DID_API_KEY is required when PRESENTER_ENABLED=true")
+    if cfg.presenter_enabled and not cfg.heygen_enabled and not cfg.did_api_key:
+        errors.append("DID_API_KEY is required when PRESENTER_ENABLED=true and HEYGEN_ENABLED=false")
     if cfg.heygen_enabled:
         if not cfg.heygen_api_key:
             errors.append("HEYGEN_API_KEY is required when HEYGEN_ENABLED=true")
