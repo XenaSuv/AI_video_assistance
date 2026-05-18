@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from src.deduplicator import SeenStories
+from src.deduplicator import SeenStories, _MIGRATIONS, _SCHEMA_VERSION
 from src.scraper import NewsItem
 
 
@@ -194,3 +194,129 @@ class TestWALAndConcurrency:
         t2.join()
 
         assert not errors, f"Overlap simulation failed: {errors}"
+
+
+# ── schema versioning ────────────────────────────────────────────────────────
+
+def _user_version(db_path: Path) -> int:
+    """Read PRAGMA user_version directly without going through SeenStories."""
+    conn = sqlite3.connect(str(db_path))
+    v = conn.execute("PRAGMA user_version").fetchone()[0]
+    conn.close()
+    return v
+
+
+def _index_exists(db_path: Path, index_name: str) -> bool:
+    conn = sqlite3.connect(str(db_path))
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='index' AND name=?", (index_name,)
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
+class TestSchemaVersion:
+    def test_constants_consistent(self):
+        """_SCHEMA_VERSION must equal len(_MIGRATIONS) — each version has one entry."""
+        assert _SCHEMA_VERSION == len(_MIGRATIONS)
+
+    def test_fresh_db_has_current_schema_version(self, tmp_path):
+        SeenStories(tmp_path / "seen.db")
+        assert _user_version(tmp_path / "seen.db") == _SCHEMA_VERSION
+
+    def test_schema_version_stable_on_second_open(self, tmp_path):
+        """Re-opening a fully migrated DB must not change user_version."""
+        db_path = tmp_path / "seen.db"
+        SeenStories(db_path)
+        SeenStories(db_path)
+        assert _user_version(db_path) == _SCHEMA_VERSION
+
+    def test_legacy_db_at_v0_is_migrated(self, tmp_path):
+        """Legacy DB with the table but user_version=0 is upgraded in-place."""
+        db_path = tmp_path / "seen.db"
+        # Simulate a legacy database: table exists, but no user_version set (= 0).
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""CREATE TABLE seen_stories (
+            url TEXT PRIMARY KEY, title TEXT NOT NULL,
+            source TEXT NOT NULL, featured_date TEXT NOT NULL
+        )""")
+        conn.commit()
+        conn.close()
+        assert _user_version(db_path) == 0
+
+        SeenStories(db_path)
+        assert _user_version(db_path) == _SCHEMA_VERSION
+
+    def test_partial_migration_v1_to_current(self, tmp_path):
+        """DB at version 1 (no index yet) is upgraded to current version."""
+        db_path = tmp_path / "seen.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""CREATE TABLE seen_stories (
+            url TEXT PRIMARY KEY, title TEXT NOT NULL,
+            source TEXT NOT NULL, featured_date TEXT NOT NULL
+        )""")
+        conn.execute("PRAGMA user_version = 1")
+        conn.commit()
+        conn.close()
+        assert _user_version(db_path) == 1
+
+        SeenStories(db_path)
+        assert _user_version(db_path) == _SCHEMA_VERSION
+
+    def test_v2_index_exists_after_fresh_init(self, tmp_path):
+        SeenStories(tmp_path / "seen.db")
+        assert _index_exists(tmp_path / "seen.db", "idx_seen_featured_date")
+
+    def test_v2_index_created_when_upgrading_from_v1(self, tmp_path):
+        db_path = tmp_path / "seen.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""CREATE TABLE seen_stories (
+            url TEXT PRIMARY KEY, title TEXT NOT NULL,
+            source TEXT NOT NULL, featured_date TEXT NOT NULL
+        )""")
+        conn.execute("PRAGMA user_version = 1")
+        conn.commit()
+        conn.close()
+        assert not _index_exists(db_path, "idx_seen_featured_date")
+
+        SeenStories(db_path)
+        assert _index_exists(db_path, "idx_seen_featured_date")
+
+    def test_functional_after_migration_from_legacy(self, tmp_path):
+        """Full filter/mark cycle must work on a database that was just migrated."""
+        db_path = tmp_path / "seen.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""CREATE TABLE seen_stories (
+            url TEXT PRIMARY KEY, title TEXT NOT NULL,
+            source TEXT NOT NULL, featured_date TEXT NOT NULL
+        )""")
+        conn.commit()
+        conn.close()
+
+        seen = SeenStories(db_path)
+        # Mark 1 item seen; 5 remain fresh (≥ _MIN_FRESH=5) so the fallback
+        # to the full list doesn't trigger and dedup is observable.
+        items = [_story(f"https://migrated-{i}.com") for i in range(6)]
+        seen.mark_featured(items[:1])
+        fresh = seen.filter_new(items)
+        assert len(fresh) == 5   # one already-seen is filtered
+
+    def test_existing_data_preserved_after_migration(self, tmp_path):
+        """Rows inserted before the migration must still be queryable afterwards."""
+        db_path = tmp_path / "seen.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""CREATE TABLE seen_stories (
+            url TEXT PRIMARY KEY, title TEXT NOT NULL,
+            source TEXT NOT NULL, featured_date TEXT NOT NULL
+        )""")
+        conn.execute(
+            "INSERT INTO seen_stories VALUES (?,?,?,?)",
+            ("https://old.com", "Old Title", "Src", dt.date.today().isoformat()),
+        )
+        conn.commit()
+        conn.close()
+
+        seen = SeenStories(db_path)
+        assert seen.stats()["total_seen"] == 1
+        titles = seen.recent_titles()
+        assert "Old Title" in titles
