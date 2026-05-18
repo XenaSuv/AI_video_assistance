@@ -1329,21 +1329,36 @@ class TestConfigValidatorFfmpegTimeouts:
     """Validate that the three ffmpeg timeout settings are range-checked."""
 
     def _cfg(self, **overrides):
+        from pathlib import Path
         from types import SimpleNamespace
         base = dict(
             daily_run_hour_utc=8, topic_run_hour_utc=10,
             background_music_volume=0.1, shorts_music_volume=0.13,
             script_target_words=2200, dedup_ttl_days=30,
             daily_budget_usd=50.0, monthly_budget_usd=500.0,
-            end_card_duration=10.0,
+            end_card_duration=10.0, end_card_enabled=True,
             youtube_privacy="public", tiktok_privacy="PUBLIC_TO_EVERYONE",
             heygen_aspect="16:9",
             tiktok_enabled=False, tiktok_client_key="", tiktok_client_secret="",
-            presenter_enabled=False, did_api_key="",
+            tiktok_token_file=Path("config/tiktok_token.json"),
+            presenter_enabled=False, did_api_key="", presenter_avatar_path="assets/avatar.png",
             heygen_enabled=False, heygen_api_key="", heygen_avatar_id="",
             heygen_avatar_id_direct="", heygen_avatar_id_serious="",
             heygen_avatar_id_curious="", heygen_avatar_id_professional="",
-            heygen_avatar_id_casual="",
+            heygen_avatar_id_casual="", heygen_voice_id="",
+            ru_enabled=False, ru_elevenlabs_voice_id="voice_ru",
+            ru_elevenlabs_model="eleven_multilingual_v2",
+            ru_youtube_client_secrets=Path("config/client_secrets_ru.json"),
+            ru_youtube_token_file=Path("config/token_ru.json"),
+            openai_model="gpt-4o-mini",
+            elevenlabs_voice_id="Gfpl8Yo74Is0W6cPUWWT",
+            elevenlabs_model="eleven_turbo_v2_5",
+            channel_name="AI Today", channel_handle="@AIToday",
+            youtube_category_id="28",
+            youtube_client_secrets=Path("config/client_secrets.json"),
+            slack_webhook_url="",
+            telegram_rss_urls="https://rsshub.app/telegram/channel/ai_for_devs",
+            background_music_path="",
             ffmpeg_probe_timeout=30, ffmpeg_clip_timeout=300,
             ffmpeg_long_timeout=600,
         )

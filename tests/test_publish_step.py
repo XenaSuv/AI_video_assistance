@@ -1,0 +1,577 @@
+"""Tests for src/publish_step.py — _PublishStep class."""
+from __future__ import annotations
+
+import sys
+from contextlib import ExitStack
+from pathlib import Path
+from unittest.mock import MagicMock, patch, call
+
+# ── Stub heavy deps before any project import ─────────────────────────────────
+for _m in (
+    "google.oauth2.credentials",
+    "google.auth.exceptions",
+    "googleapiclient.http",
+    "elevenlabs",
+    "elevenlabs.client",
+):
+    sys.modules.setdefault(_m, MagicMock())
+
+import pytest
+from src.publish_step import _PublishStep
+from src.script_generator import Scene, VideoScript
+
+
+# ── Factories ─────────────────────────────────────────────────────────────────
+
+def _mock_script(n_scenes: int = 3, hook_variants: list[str] | None = None) -> VideoScript:
+    scenes = [
+        Scene(
+            idx=i,
+            heading=f"Scene {i}",
+            narration="word " * 80,
+            visual_prompt="some visual",
+            duration_sec=30,
+        )
+        for i in range(n_scenes)
+    ]
+    return VideoScript(
+        title="Test Episode",
+        description="A test description.",
+        tags=["ai", "test"],
+        hook="This will change everything.",
+        hook_variants=hook_variants if hook_variants is not None else ["Hook A", "Hook B"],
+        scenes=scenes,
+    )
+
+
+def _publisher(
+    tmp_path: Path,
+    *,
+    script: VideoScript | None = None,
+    skip_upload: bool = False,
+    cp: MagicMock | None = None,
+    summary: dict | None = None,
+    news: list | None = None,
+    thumbnail: Path | None = None,
+    long_video: Path | None = None,
+    feedback_history: list | None = None,
+) -> _PublishStep:
+    if script is None:
+        script = _mock_script()
+    if cp is None:
+        cp = MagicMock()
+        cp.is_done.return_value = False
+        cp.metadata.return_value = {}
+    if summary is None:
+        summary = {}
+    if news is None:
+        news = [MagicMock(title="Story 1")]
+    if thumbnail is None:
+        thumbnail = tmp_path / "thumbnail_bold.jpg"
+        thumbnail.touch()
+    if long_video is None:
+        long_video = tmp_path / "final_video.mp4"
+        long_video.touch()
+    if feedback_history is None:
+        feedback_history = []
+
+    observer = MagicMock()
+    live = MagicMock()
+    seen = MagicMock()
+
+    return _PublishStep(
+        script=script,
+        run_dir=tmp_path,
+        cp=cp,
+        observer=observer,
+        live=live,
+        seen=seen,
+        news=news,
+        summary=summary,
+        skip_upload=skip_upload,
+        auto_strategy=None,
+        auto_actions=[],
+        long_video=long_video,
+        short_video=None,
+        thumbnail=thumbnail,
+        subtitle_path=None,
+        feedback_history=feedback_history,
+    )
+
+
+# ── run_quality_gate tests ────────────────────────────────────────────────────
+
+class TestRunQualityGate:
+    def test_sets_quality_score_in_summary(self, tmp_path):
+        summary = {}
+        p = _publisher(tmp_path, summary=summary)
+        mock_report = MagicMock()
+        mock_report.score = 0.85
+        mock_report.warnings = []
+
+        with patch("src.publish_step.run_gate", return_value=mock_report):
+            p.run_quality_gate()
+
+        assert summary["quality_score"] == 0.85
+
+    def test_sets_quality_warnings_when_present(self, tmp_path):
+        summary = {}
+        p = _publisher(tmp_path, summary=summary)
+        mock_report = MagicMock()
+        mock_report.score = 0.6
+        mock_report.warnings = ["Hook too short", "Slow pacing"]
+
+        with patch("src.publish_step.run_gate", return_value=mock_report):
+            p.run_quality_gate()
+
+        assert summary["quality_warnings"] == ["Hook too short", "Slow pacing"]
+
+    def test_no_quality_warnings_key_when_empty(self, tmp_path):
+        summary = {}
+        p = _publisher(tmp_path, summary=summary)
+        mock_report = MagicMock()
+        mock_report.score = 0.9
+        mock_report.warnings = []
+
+        with patch("src.publish_step.run_gate", return_value=mock_report):
+            p.run_quality_gate()
+
+        assert "quality_warnings" not in summary
+
+    def test_calls_run_gate_with_audio_dir(self, tmp_path):
+        p = _publisher(tmp_path, feedback_history=[{"vid": 1}])
+        mock_report = MagicMock()
+        mock_report.score = 0.7
+        mock_report.warnings = []
+
+        with patch("src.publish_step.run_gate", return_value=mock_report) as mock_gate:
+            p.run_quality_gate()
+
+        mock_gate.assert_called_once_with(
+            p._script, tmp_path / "audio", [{"vid": 1}]
+        )
+
+
+# ── upload_en tests ───────────────────────────────────────────────────────────
+
+class TestUploadEn:
+    def test_checkpoint_done_skipped_sets_status_built_not_uploaded(self, tmp_path):
+        cp = MagicMock()
+        cp.is_done.return_value = True
+        cp.metadata.return_value = {"skipped": True}
+        summary = {}
+        p = _publisher(tmp_path, cp=cp, summary=summary)
+
+        p.upload_en()
+
+        assert summary["status"] == "built_not_uploaded"
+        p._observer.step_skip.assert_called_once_with("upload_en")
+
+    def test_checkpoint_done_published_sets_status_published(self, tmp_path):
+        cp = MagicMock()
+        cp.is_done.return_value = True
+        cp.metadata.return_value = {"skipped": False, "video_id": "abc123"}
+        summary = {}
+        p = _publisher(tmp_path, cp=cp, summary=summary)
+
+        p.upload_en()
+
+        assert summary["status"] == "published"
+        assert summary["video_id"] == "abc123"
+
+    def test_checkpoint_done_published_updates_summary_from_meta(self, tmp_path):
+        cp = MagicMock()
+        cp.is_done.return_value = True
+        cp.metadata.return_value = {"skipped": False, "video_id": "xyz", "playlist_id": "PL1"}
+        summary = {}
+        p = _publisher(tmp_path, cp=cp, summary=summary)
+
+        p.upload_en()
+
+        assert summary["video_id"] == "xyz"
+        assert summary["playlist_id"] == "PL1"
+
+    def test_skip_upload_sets_status_built_not_uploaded(self, tmp_path):
+        cp = MagicMock()
+        cp.is_done.return_value = False
+        summary = {}
+        p = _publisher(tmp_path, skip_upload=True, cp=cp, summary=summary)
+
+        p.upload_en()
+
+        assert summary["status"] == "built_not_uploaded"
+        cp.mark_done.assert_called_once_with("upload_en", {"skipped": True})
+        p._observer.step_done.assert_called_once_with("upload_en", skipped=True)
+
+    def test_skip_upload_does_not_call_publish_episode(self, tmp_path):
+        cp = MagicMock()
+        cp.is_done.return_value = False
+        p = _publisher(tmp_path, skip_upload=True, cp=cp)
+
+        with patch("src.publish_step.publish_episode") as mock_pub:
+            p.upload_en()
+
+        mock_pub.assert_not_called()
+
+    def test_fresh_upload_calls_publish_episode(self, tmp_path):
+        cp = MagicMock()
+        cp.is_done.return_value = False
+        summary = {}
+        p = _publisher(tmp_path, cp=cp, summary=summary)
+
+        with ExitStack() as stack:
+            mock_pub = stack.enter_context(
+                patch("src.publish_step.publish_episode", return_value={"video_id": "v1"})
+            )
+            stack.enter_context(patch("src.publish_step.get_recommendations", return_value=[]))
+            stack.enter_context(patch("src.publish_step.record_usage"))
+            stack.enter_context(patch("src.publish_step.record_thumbnail_usage"))
+            stack.enter_context(patch("src.publish_step.save_result"))
+            stack.enter_context(patch("src.publish_step.ThompsonBandit"))
+            stack.enter_context(patch("src.publish_step._classify_hook_type", return_value="curiosity"))
+            p.upload_en()
+
+        mock_pub.assert_called_once()
+
+    def test_fresh_upload_sets_status_published(self, tmp_path):
+        cp = MagicMock()
+        cp.is_done.return_value = False
+        summary = {}
+        p = _publisher(tmp_path, cp=cp, summary=summary)
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch("src.publish_step.publish_episode", return_value={"video_id": "v1"})
+            )
+            stack.enter_context(patch("src.publish_step.get_recommendations", return_value=[]))
+            stack.enter_context(patch("src.publish_step.record_usage"))
+            stack.enter_context(patch("src.publish_step.record_thumbnail_usage"))
+            stack.enter_context(patch("src.publish_step.save_result"))
+            stack.enter_context(patch("src.publish_step.ThompsonBandit"))
+            stack.enter_context(patch("src.publish_step._classify_hook_type", return_value="curiosity"))
+            p.upload_en()
+
+        assert summary["status"] == "published"
+
+    def test_fresh_upload_calls_record_usage_with_video_id(self, tmp_path):
+        cp = MagicMock()
+        cp.is_done.return_value = False
+        p = _publisher(tmp_path, cp=cp)
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch("src.publish_step.publish_episode", return_value={"video_id": "v42"})
+            )
+            stack.enter_context(patch("src.publish_step.get_recommendations", return_value=[]))
+            mock_rec = stack.enter_context(patch("src.publish_step.record_usage"))
+            stack.enter_context(patch("src.publish_step.record_thumbnail_usage"))
+            stack.enter_context(patch("src.publish_step.save_result"))
+            stack.enter_context(patch("src.publish_step.ThompsonBandit"))
+            stack.enter_context(patch("src.publish_step._classify_hook_type", return_value="curiosity"))
+            stack.enter_context(patch("src.publish_step.settings"))
+            p.upload_en()
+
+        mock_rec.assert_called_once()
+        args = mock_rec.call_args[0]
+        assert "v42" in args
+
+    def test_fresh_upload_calls_save_result(self, tmp_path):
+        cp = MagicMock()
+        cp.is_done.return_value = False
+        p = _publisher(tmp_path, cp=cp)
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch("src.publish_step.publish_episode", return_value={"video_id": "v99"})
+            )
+            stack.enter_context(patch("src.publish_step.get_recommendations", return_value=[]))
+            stack.enter_context(patch("src.publish_step.record_usage"))
+            stack.enter_context(patch("src.publish_step.record_thumbnail_usage"))
+            mock_save = stack.enter_context(patch("src.publish_step.save_result"))
+            stack.enter_context(patch("src.publish_step.ThompsonBandit"))
+            stack.enter_context(patch("src.publish_step._classify_hook_type", return_value="curiosity"))
+            stack.enter_context(patch("src.publish_step.settings"))
+            p.upload_en()
+
+        mock_save.assert_called_once()
+
+    def test_fresh_upload_marks_checkpoint_done(self, tmp_path):
+        cp = MagicMock()
+        cp.is_done.return_value = False
+        p = _publisher(tmp_path, cp=cp)
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch("src.publish_step.publish_episode", return_value={"video_id": "v1"})
+            )
+            stack.enter_context(patch("src.publish_step.get_recommendations", return_value=[]))
+            stack.enter_context(patch("src.publish_step.record_usage"))
+            stack.enter_context(patch("src.publish_step.record_thumbnail_usage"))
+            stack.enter_context(patch("src.publish_step.save_result"))
+            stack.enter_context(patch("src.publish_step.ThompsonBandit"))
+            stack.enter_context(patch("src.publish_step._classify_hook_type", return_value="curiosity"))
+            stack.enter_context(patch("src.publish_step.settings"))
+            p.upload_en()
+
+        cp.mark_done.assert_called_once()
+
+
+# ── run_shorts_experiments early-exit tests ───────────────────────────────────
+
+class TestRunShortsExperiments:
+    def test_returns_immediately_when_skip_upload(self, tmp_path):
+        p = _publisher(tmp_path, skip_upload=True)
+
+        with patch("src.publish_step.ShortsExperimentEngine") as mock_engine:
+            p.run_shorts_experiments()
+
+        mock_engine.assert_not_called()
+
+    def test_returns_immediately_when_no_news(self, tmp_path):
+        p = _publisher(tmp_path, news=[])
+
+        with patch("src.publish_step.ShortsExperimentEngine") as mock_engine:
+            p.run_shorts_experiments()
+
+        mock_engine.assert_not_called()
+
+    def test_returns_immediately_when_script_is_none(self, tmp_path):
+        p = _publisher(tmp_path)
+        p._script = None
+
+        with patch("src.publish_step.ShortsExperimentEngine") as mock_engine:
+            p.run_shorts_experiments()
+
+        mock_engine.assert_not_called()
+
+    def test_returns_immediately_when_checkpoint_done(self, tmp_path):
+        cp = MagicMock()
+        cp.is_done.return_value = True
+        p = _publisher(tmp_path, cp=cp)
+
+        with patch("src.publish_step.ShortsExperimentEngine") as mock_engine:
+            p.run_shorts_experiments()
+
+        mock_engine.assert_not_called()
+
+
+# ── upload_ru tests ───────────────────────────────────────────────────────────
+
+class TestUploadRu:
+    def test_ru_disabled_calls_step_skip(self, tmp_path):
+        cp = MagicMock()
+        cp.is_done.return_value = False
+        p = _publisher(tmp_path, cp=cp)
+
+        ms = MagicMock()
+        ms.ru_enabled = False
+
+        with patch("src.publish_step.settings", ms):
+            p.upload_ru()
+
+        p._observer.step_skip.assert_called_once_with("upload_ru")
+
+    def test_ru_enabled_already_done_calls_step_skip(self, tmp_path):
+        cp = MagicMock()
+        cp.is_done.return_value = True
+        cp.metadata.return_value = {"status": "published"}
+        summary = {}
+        p = _publisher(tmp_path, cp=cp, summary=summary)
+
+        ms = MagicMock()
+        ms.ru_enabled = True
+        ms.source_dir = tmp_path
+
+        with ExitStack() as stack:
+            stack.enter_context(patch("src.publish_step.settings", ms))
+            stack.enter_context(patch("src.publish_step._get_shared_outro", return_value=None))
+            p.upload_ru()
+
+        p._observer.step_skip.assert_called_once_with("upload_ru")
+        assert summary["ru"] == {"status": "published"}
+
+    def test_ru_enabled_fresh_calls_run_lang_variant(self, tmp_path):
+        cp = MagicMock()
+        cp.is_done.return_value = False
+        summary = {}
+        p = _publisher(tmp_path, cp=cp, summary=summary)
+
+        ms = MagicMock()
+        ms.ru_enabled = True
+        ms.source_dir = tmp_path
+        ms.ru_elevenlabs_voice_id = "voice-ru"
+        ms.ru_elevenlabs_model = "model-ru"
+        ms.ru_youtube_client_secrets = tmp_path / "secrets_ru.json"
+        ms.ru_youtube_token_file = tmp_path / "token_ru.pickle"
+
+        with ExitStack() as stack:
+            stack.enter_context(patch("src.publish_step.settings", ms))
+            stack.enter_context(patch("src.publish_step._get_shared_outro", return_value=None))
+            mock_run_variant = stack.enter_context(
+                patch("src.publish_step._run_lang_variant", return_value={"status": "published"})
+            )
+            p.upload_ru()
+
+        mock_run_variant.assert_called_once()
+        assert summary["ru"] == {"status": "published"}
+        cp.mark_done.assert_called_once()
+
+
+# ── _setup_thompson_variants tests ────────────────────────────────────────────
+
+class TestSetupThompsonVariants:
+    def test_registers_variants_and_calls_select(self, tmp_path):
+        script = _mock_script(hook_variants=["Hook A", "Hook B", "Hook C"])
+        p = _publisher(tmp_path, script=script)
+
+        mock_bandit_instance = MagicMock()
+        mock_bandit_instance.select_variant.return_value = None
+
+        with ExitStack() as stack:
+            mock_bandit_cls = stack.enter_context(
+                patch("src.publish_step.ThompsonBandit", return_value=mock_bandit_instance)
+            )
+            stack.enter_context(
+                patch("src.publish_step._classify_hook_type", return_value="curiosity")
+            )
+            stack.enter_context(patch("src.publish_step.ABTestVariant", wraps=__import__(
+                "src.ab_testing_engine", fromlist=["ABTestVariant"]
+            ).ABTestVariant))
+            p._setup_thompson_variants("video123")
+
+        mock_bandit_instance.register_variants.assert_called_once()
+        mock_bandit_instance.select_variant.assert_called_once()
+
+    def test_uses_hook_as_fallback_when_no_variants(self, tmp_path):
+        script = _mock_script(hook_variants=[])
+        p = _publisher(tmp_path, script=script)
+
+        mock_bandit_instance = MagicMock()
+        mock_bandit_instance.select_variant.return_value = None
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch("src.publish_step.ThompsonBandit", return_value=mock_bandit_instance)
+            )
+            stack.enter_context(
+                patch("src.publish_step._classify_hook_type", return_value="simple")
+            )
+            from src.ab_testing_engine import ABTestVariant
+            captured_variants = []
+            orig_abv = ABTestVariant
+
+            def capturing_abv(**kwargs):
+                v = orig_abv(**kwargs)
+                captured_variants.append(v)
+                return v
+
+            stack.enter_context(patch("src.publish_step.ABTestVariant", side_effect=capturing_abv))
+            p._setup_thompson_variants("vid_fallback")
+
+        assert len(captured_variants) == 1
+        assert captured_variants[0].hook == script.hook
+
+    def test_caps_variants_at_four(self, tmp_path):
+        script = _mock_script(hook_variants=["H1", "H2", "H3", "H4", "H5", "H6"])
+        p = _publisher(tmp_path, script=script)
+
+        mock_bandit_instance = MagicMock()
+        mock_bandit_instance.select_variant.return_value = None
+
+        registered = []
+
+        def capture_register(variants):
+            registered.extend(variants)
+
+        mock_bandit_instance.register_variants.side_effect = capture_register
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch("src.publish_step.ThompsonBandit", return_value=mock_bandit_instance)
+            )
+            stack.enter_context(
+                patch("src.publish_step._classify_hook_type", return_value="conflict")
+            )
+            from src.ab_testing_engine import ABTestVariant
+            stack.enter_context(
+                patch("src.publish_step.ABTestVariant", side_effect=lambda **kw: ABTestVariant(**kw))
+            )
+            p._setup_thompson_variants("vid_cap")
+
+        assert len(registered) == 4
+
+    def test_record_switch_called_when_best_variant_selected(self, tmp_path):
+        script = _mock_script(hook_variants=["Hook A"])
+        p = _publisher(tmp_path, script=script)
+
+        mock_best = MagicMock()
+        mock_best.variant_id = "A"
+        mock_best.type = "curiosity"
+        mock_best.hook = "Hook A"
+
+        mock_bandit_instance = MagicMock()
+        mock_bandit_instance.select_variant.return_value = mock_best
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch("src.publish_step.ThompsonBandit", return_value=mock_bandit_instance)
+            )
+            stack.enter_context(
+                patch("src.publish_step._classify_hook_type", return_value="curiosity")
+            )
+            from src.ab_testing_engine import ABTestVariant
+            stack.enter_context(
+                patch("src.publish_step.ABTestVariant", side_effect=lambda **kw: ABTestVariant(**kw))
+            )
+            p._setup_thompson_variants("vid_switch")
+
+        mock_bandit_instance.record_switch.assert_called_once()
+
+    def test_record_switch_not_called_when_no_best(self, tmp_path):
+        script = _mock_script(hook_variants=["Hook A"])
+        p = _publisher(tmp_path, script=script)
+
+        mock_bandit_instance = MagicMock()
+        mock_bandit_instance.select_variant.return_value = None
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch("src.publish_step.ThompsonBandit", return_value=mock_bandit_instance)
+            )
+            stack.enter_context(
+                patch("src.publish_step._classify_hook_type", return_value="curiosity")
+            )
+            from src.ab_testing_engine import ABTestVariant
+            stack.enter_context(
+                patch("src.publish_step.ABTestVariant", side_effect=lambda **kw: ABTestVariant(**kw))
+            )
+            p._setup_thompson_variants("vid_no_switch")
+
+        mock_bandit_instance.record_switch.assert_not_called()
+
+    def test_variant_ids_assigned_alphabetically(self, tmp_path):
+        script = _mock_script(hook_variants=["H1", "H2", "H3"])
+        p = _publisher(tmp_path, script=script)
+
+        mock_bandit_instance = MagicMock()
+        mock_bandit_instance.select_variant.return_value = None
+
+        created = []
+
+        def capture(**kwargs):
+            from src.ab_testing_engine import ABTestVariant
+            v = ABTestVariant(**kwargs)
+            created.append(v)
+            return v
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch("src.publish_step.ThompsonBandit", return_value=mock_bandit_instance)
+            )
+            stack.enter_context(
+                patch("src.publish_step._classify_hook_type", return_value="simple")
+            )
+            stack.enter_context(patch("src.publish_step.ABTestVariant", side_effect=capture))
+            p._setup_thompson_variants("vid_abc")
+
+        assert [v.id for v in created] == ["A", "B", "C"]

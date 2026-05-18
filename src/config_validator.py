@@ -6,6 +6,7 @@ Usage (already wired in config/settings.py):
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 
@@ -16,9 +17,10 @@ class ConfigurationError(ValueError):
     """
 
 
-_YOUTUBE_PRIVACY = frozenset({"public", "unlisted", "private"})
-_TIKTOK_PRIVACY  = frozenset({"PUBLIC_TO_EVERYONE", "MUTUAL_FOLLOW_FRIENDS", "SELF_ONLY"})
-_HEYGEN_ASPECT   = frozenset({"16:9", "9:16"})
+_YOUTUBE_PRIVACY    = frozenset({"public", "unlisted", "private"})
+_TIKTOK_PRIVACY     = frozenset({"PUBLIC_TO_EVERYONE", "MUTUAL_FOLLOW_FRIENDS", "SELF_ONLY"})
+_HEYGEN_ASPECT      = frozenset({"16:9", "9:16"})
+_OPENAI_MODEL_PREFIXES = ("gpt-", "o1", "o3", "o4", "claude-")
 
 
 def validate(cfg: Any) -> None:
@@ -29,7 +31,7 @@ def validate(cfg: Any) -> None:
     """
     errors: list[str] = []
 
-    # ── Numeric range checks ──────────────────────────────────────────────────
+    # ── Numeric lower bounds ──────────────────────────────────────────────────
 
     if not (0 <= cfg.daily_run_hour_utc <= 23):
         errors.append(
@@ -81,6 +83,39 @@ def validate(cfg: Any) -> None:
             f"FFMPEG_LONG_TIMEOUT must be > 0, got {cfg.ffmpeg_long_timeout}"
         )
 
+    # ── Numeric upper bounds ──────────────────────────────────────────────────
+
+    if cfg.script_target_words > 10_000:
+        errors.append(
+            f"SCRIPT_TARGET_WORDS must be <= 10000, got {cfg.script_target_words}"
+        )
+    if cfg.dedup_ttl_days > 365:
+        errors.append(
+            f"DEDUP_TTL_DAYS must be <= 365, got {cfg.dedup_ttl_days}"
+        )
+    if cfg.end_card_duration > 60:
+        errors.append(
+            f"END_CARD_DURATION must be <= 60, got {cfg.end_card_duration}"
+        )
+
+    # ── Numeric ordering ──────────────────────────────────────────────────────
+
+    if cfg.ffmpeg_clip_timeout < cfg.ffmpeg_probe_timeout:
+        errors.append(
+            f"FFMPEG_CLIP_TIMEOUT ({cfg.ffmpeg_clip_timeout}) must be "
+            f">= FFMPEG_PROBE_TIMEOUT ({cfg.ffmpeg_probe_timeout})"
+        )
+    if cfg.ffmpeg_long_timeout < cfg.ffmpeg_clip_timeout:
+        errors.append(
+            f"FFMPEG_LONG_TIMEOUT ({cfg.ffmpeg_long_timeout}) must be "
+            f">= FFMPEG_CLIP_TIMEOUT ({cfg.ffmpeg_clip_timeout})"
+        )
+    if cfg.monthly_budget_usd > 0 and cfg.daily_budget_usd > cfg.monthly_budget_usd:
+        errors.append(
+            f"DAILY_BUDGET_USD ({cfg.daily_budget_usd}) must be "
+            f"<= MONTHLY_BUDGET_USD ({cfg.monthly_budget_usd})"
+        )
+
     # ── Choice checks ─────────────────────────────────────────────────────────
 
     if cfg.youtube_privacy not in _YOUTUBE_PRIVACY:
@@ -99,6 +134,57 @@ def validate(cfg: Any) -> None:
             f"got {cfg.heygen_aspect!r}"
         )
 
+    # ── Non-empty and format checks ───────────────────────────────────────────
+
+    if not cfg.openai_model:
+        errors.append("OPENAI_MODEL must not be empty")
+    elif not any(cfg.openai_model.startswith(p) for p in _OPENAI_MODEL_PREFIXES):
+        errors.append(
+            f"OPENAI_MODEL {cfg.openai_model!r} does not match a known prefix "
+            f"{_OPENAI_MODEL_PREFIXES}"
+        )
+    if not cfg.elevenlabs_voice_id:
+        errors.append("ELEVENLABS_VOICE_ID must not be empty")
+    if not cfg.elevenlabs_model:
+        errors.append("ELEVENLABS_MODEL must not be empty")
+    if not cfg.channel_name:
+        errors.append("CHANNEL_NAME must not be empty")
+    if not str(cfg.channel_handle).startswith("@"):
+        errors.append(
+            f"CHANNEL_HANDLE must start with '@', got {cfg.channel_handle!r}"
+        )
+    _cat_id = str(cfg.youtube_category_id).strip()
+    if not _cat_id or not _cat_id.isdigit():
+        errors.append(
+            f"YOUTUBE_CATEGORY_ID must be a non-empty integer string, "
+            f"got {cfg.youtube_category_id!r}"
+        )
+
+    # ── URL format checks ─────────────────────────────────────────────────────
+
+    if cfg.slack_webhook_url and not cfg.slack_webhook_url.startswith("https://"):
+        errors.append(
+            f"SLACK_WEBHOOK_URL must start with 'https://', "
+            f"got {cfg.slack_webhook_url!r}"
+        )
+    if cfg.telegram_rss_urls:
+        for _url in cfg.telegram_rss_urls.split(","):
+            _url = _url.strip()
+            if _url and not _url.startswith("http"):
+                errors.append(
+                    f"TELEGRAM_RSS_URLS entry must start with 'http', "
+                    f"got {_url!r}"
+                )
+                break  # one error per field is enough
+
+    # ── Path suffix checks ────────────────────────────────────────────────────
+
+    if not str(cfg.youtube_client_secrets).endswith(".json"):
+        errors.append(
+            f"YOUTUBE_CLIENT_SECRETS must point to a .json file, "
+            f"got {cfg.youtube_client_secrets!r}"
+        )
+
     # ── Cross-field dependency checks ─────────────────────────────────────────
 
     if cfg.tiktok_enabled:
@@ -110,8 +196,19 @@ def validate(cfg: Any) -> None:
             errors.append(
                 "TIKTOK_CLIENT_SECRET is required when TIKTOK_ENABLED=true"
             )
+        if not str(cfg.tiktok_token_file).endswith(".json"):
+            errors.append(
+                f"TIKTOK_TOKEN_FILE must point to a .json file, "
+                f"got {cfg.tiktok_token_file!r}"
+            )
+
     if cfg.presenter_enabled and not cfg.heygen_enabled and not cfg.did_api_key:
         errors.append("DID_API_KEY is required when PRESENTER_ENABLED=true and HEYGEN_ENABLED=false")
+    if cfg.presenter_enabled and not cfg.heygen_enabled and not cfg.presenter_avatar_path:
+        errors.append(
+            "PRESENTER_AVATAR_PATH must not be empty when PRESENTER_ENABLED=true"
+        )
+
     if cfg.heygen_enabled:
         if not cfg.heygen_api_key:
             errors.append("HEYGEN_API_KEY is required when HEYGEN_ENABLED=true")
@@ -127,6 +224,43 @@ def validate(cfg: Any) -> None:
                 "HEYGEN_AVATAR_ID (or at least one HEYGEN_AVATAR_ID_<PERSONA>) "
                 "is required when HEYGEN_ENABLED=true"
             )
+        if not cfg.heygen_voice_id:
+            errors.append(
+                "HEYGEN_VOICE_ID is required when HEYGEN_ENABLED=true "
+                "(used as TTS fallback when audio upload fails)"
+            )
+
+    if cfg.ru_enabled:
+        if not cfg.ru_elevenlabs_voice_id:
+            errors.append(
+                "RU_ELEVENLABS_VOICE_ID is required when RU_ENABLED=true"
+            )
+        if not cfg.ru_elevenlabs_model:
+            errors.append(
+                "RU_ELEVENLABS_MODEL is required when RU_ENABLED=true"
+            )
+        if not str(cfg.ru_youtube_client_secrets).endswith(".json"):
+            errors.append(
+                f"RU_YOUTUBE_CLIENT_SECRETS must point to a .json file, "
+                f"got {cfg.ru_youtube_client_secrets!r}"
+            )
+        if not str(cfg.ru_youtube_token_file).endswith(".json"):
+            errors.append(
+                f"RU_YOUTUBE_TOKEN_FILE must point to a .json file, "
+                f"got {cfg.ru_youtube_token_file!r}"
+            )
+
+    if cfg.background_music_path and cfg.background_music_volume <= 0:
+        errors.append(
+            f"BACKGROUND_MUSIC_VOLUME must be > 0 when BACKGROUND_MUSIC_PATH "
+            f"is set, got {cfg.background_music_volume}"
+        )
+
+    if cfg.end_card_enabled and cfg.end_card_duration <= 0:
+        errors.append(
+            f"END_CARD_DURATION must be > 0 when END_CARD_ENABLED=true, "
+            f"got {cfg.end_card_duration}"
+        )
 
     if errors:
         bullet_list = "\n".join(f"  • {e}" for e in errors)

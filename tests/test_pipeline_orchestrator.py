@@ -649,11 +649,11 @@ class TestPipelineOrchestratorRun:
             patch("src.pipeline_orchestrator.SeenStories", return_value=mocks["seen"]),
             patch("src.pipeline_orchestrator.scrape_all", return_value=[]) as mock_scrape,
             patch("src.pipeline_orchestrator.pick_viral_news", return_value=[]),
-            patch("src.pipeline_orchestrator.generate_script") as mock_gen,
+            patch("src.pipeline_orchestrator._ScriptStep") as mock_step,
         ):
             PipelineOrchestrator().run(dry_run=True)
         mock_scrape.assert_called_once()
-        mock_gen.assert_not_called()
+        mock_step.assert_not_called()
 
     def test_exception_in_step_populates_summary_error(self, tmp_path):
         mocks = _patch_infra(tmp_path)
