@@ -11,10 +11,7 @@ ignore = ["F401", "F841"]
 [tool.mypy]
 python_version = "3.12"
 ignore_missing_imports = true
-# Don't require type annotations on all functions — codebase is untyped
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
-warn_return_any = false
+strict = true
 warn_unused_ignores = false
 # Exclude heavy modules that have known stub issues or are optional integrations
 exclude = [
@@ -23,11 +20,11 @@ exclude = [
     "src/debug_dashboard\\.py",
 ]
 
-# Per-module overrides for files with deep structural type mismatches that
-# would require significant refactoring to resolve (ContentStrategy vs dict,
-# overloaded return types, **kwargs unpacking).
+# Legacy modules with deep structural type mismatches — excluded from strict checks.
+# New modules added to this repo must NOT be added here; fix their types instead.
 [[tool.mypy.overrides]]
 module = [
+    # ── pre-existing ignores (structural/stub issues) ──────────────────────────
     "src.editorial_brain",
     "src.hook_optimizer",
     "src.hook_mutation_engine",
@@ -45,5 +42,65 @@ module = [
     "src.infographic_generator",
     "src.end_card",
     "src.quote_card",
+    # ── legacy modules: untyped pre-strict codebase ────────────────────────────
+    "src.ab_testing_engine",
+    "src.auto_action_engine",
+    "src.breaking_detector",
+    "src.breaking_main",
+    "src.breaking_script_generator",
+    "src.broll_fetcher",
+    "src.checkpoint",
+    "src.comment_magnet_agent",
+    "src.constants",
+    "src.cross_learning_engine",
+    "src.deduplicator",
+    "src.digest_main",
+    "src.digest_script_generator",
+    "src.drop_predictor",
+    "src.editorial.format_selector",
+    "src.feedback_analyzer",
+    "src.ffmpeg_utils",
+    "src.heygen_presenter",
+    "src.hook_selector",
+    "src.hooks_generator",
+    "src.image_cache",
+    "src.language_variant",
+    "src.live_state",
+    "src.main",
+    "src.media_builder",
+    "src.micro_hook_agent",
+    "src.narrative_conflict_engine",
+    "src.open_loop_agent",
+    "src.pacing_auditor",
+    "src.packaging_engine",
+    "src.pipeline_helpers",
+    "src.pipeline_observer",
+    "src.publish_step",
+    "src.response_validator",
+    "src.retention_correction_engine",
+    "src.retry_utils",
+    "src.scheduler",
+    "src.screenshot_capturer",
+    "src.script_generator",
+    "src.sequence_learning_engine",
+    "src.shared_types",
+    "src.shorts_engine_v2",
+    "src.shorts_pipeline",
+    "src.slack_notifier",
+    "src.subtitle_generator",
+    "src.system_orchestrator",
+    "src.tiktok_analytics",
+    "src.tiktok_uploader",
+    "src.title_optimizer",
+    "src.topic_main",
+    "src.topic_segment_generator",
+    "src.translator",
+    "src.viral_selector",
+    "src.voice_generator",
+    "src.weekly_main",
+    "src.weekly_script_generator",
+    "src.weekly_shorts_generator",
+    "src.youtube_analytics",
+    "src.youtube_quota_guard",
 ]
 ignore_errors = true

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -108,7 +109,7 @@ class _DeferredFeedbackCollector:
         adjustments = bandit.suggest_strategy_adjustments()
         return adjustments.get("preferred_variant_type")
 
-    def _update_perf_store(self, cp_data: dict, video_id: str, retention: float) -> None:
+    def _update_perf_store(self, cp_data: dict[str, Any], video_id: str, retention: float) -> None:
         prior_mode = (
             cp_data.get("steps", {}).get("script", {}).get("v3_mode", "stable")
         )
@@ -151,7 +152,7 @@ class _DeferredFeedbackCollector:
                 f"for {run_dir.name}: {exc}"
             )
 
-    def _learn_cross(self, run_dir: Path, cp_data: dict, retention: float) -> None:
+    def _learn_cross(self, run_dir: Path, cp_data: dict[str, Any], retention: float) -> None:
         cross_combo = (
             cp_data.get("steps", {}).get("script", {}).get("cross_combo")
         )

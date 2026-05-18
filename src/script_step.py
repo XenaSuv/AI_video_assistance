@@ -9,6 +9,7 @@ import datetime as dt
 import json
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
@@ -18,7 +19,7 @@ from src.auto_action_engine import AutoActionEngine
 from src.cross_learning_engine import CrossLearningEngine
 from src.decision_engine_v3 import DecisionEngineV3, UnifiedStrategy, PerformanceStore
 from src.digest_script_generator import save_for_digest
-from src.editorial_brain import EditorialBrain
+from src.editorial_brain import EditorialBrain, EditorialPlan
 from src.feedback_analyzer import FeedbackAnalyzer
 from src.hook_mutation_engine import HookMutationEngine
 from src.humanizer_agent import HumanizerAgent
@@ -42,6 +43,11 @@ from src.scraper import NewsItem
 from src.sequence_learning_engine import SequenceLearningEngine
 from src.shorts_experiment_engine import ShortsExperimentEngine
 
+if TYPE_CHECKING:
+    from src.checkpoint import PipelineCheckpoint
+    from src.live_state import LiveState
+    from src.pipeline_observer import PipelineObserver
+
 
 class _ScriptStep:
     """Runs editorial planning, script generation, humanization, and hook tuning.
@@ -57,10 +63,10 @@ class _ScriptStep:
         news: list[NewsItem],
         history: list[str],
         run_dir: Path,
-        cp,
-        observer,
-        live,
-        summary: dict,
+        cp: PipelineCheckpoint,
+        observer: PipelineObserver,
+        live: LiveState,
+        summary: dict[str, Any],
         thompson_preferred_type: str | None,
     ) -> None:
         self._news = news
@@ -75,13 +81,13 @@ class _ScriptStep:
 
         # Output attributes populated by run()
         self.script: VideoScript | None = None
-        self.feedback_history: list = []
-        self.auto_strategy: dict | None = None
-        self.auto_actions: list[dict] = []
-        self.auto_insights: list[dict] = []
+        self.feedback_history: list[Any] = []
+        self.auto_strategy: dict[str, Any] | None = None
+        self.auto_actions: list[dict[str, Any]] = []
+        self.auto_insights: list[dict[str, Any]] = []
 
     def run(self) -> None:
-        feedback_analyzer = FeedbackAnalyzer()
+        feedback_analyzer = FeedbackAnalyzer()  # type: ignore[no-untyped-call]
         feedback_analyzer.collect_deferred_feedback(min_age_hours=24.0)
         self.feedback_history = feedback_analyzer.load_feedback_history()
 
@@ -92,6 +98,7 @@ class _ScriptStep:
         else:
             self._run_cached(script_cache)
 
+        assert self.script is not None
         self._summary["title"] = self.script.title
         self._summary["num_scenes"] = len(self.script.scenes)
 
@@ -108,7 +115,7 @@ class _ScriptStep:
 
         _rce_state = _load_retention_state(settings.data_dir)
         _rce_adjustments = _rce_state.get("adjustments", {})
-        _rce_corrections_raw: list[dict] = _rce_state.get("corrections", [])
+        _rce_corrections_raw: list[dict[str, Any]] = _rce_state.get("corrections", [])
         _predicted_risks = [
             {
                 "scene_idx": c["scene_idx"],
@@ -272,7 +279,7 @@ class _ScriptStep:
 
             if _rce_corrections_raw:
                 _rce_engine = RetentionCorrectionEngine(data_dir=settings.data_dir)
-                _intent_to_c: dict[str, dict] = {}
+                _intent_to_c: dict[str, dict[str, Any]] = {}
                 for _rc in _rce_corrections_raw:
                     _ri = _rc.get("intent", "explain")
                     if (
@@ -373,7 +380,7 @@ class _ScriptStep:
 
     # ── script post-processing ────────────────────────────────────────────────
 
-    def _humanize_script(self, script: VideoScript, persona: dict) -> VideoScript:
+    def _humanize_script(self, script: VideoScript, persona: dict[str, Any]) -> VideoScript:
         from src.persona_engine import PersonaEngine
         pe = PersonaEngine()
         story_text = script.title + " " + (script.description or "")
@@ -426,7 +433,7 @@ class _ScriptStep:
         return script
 
     def _apply_micro_hooks(
-        self, script: VideoScript, editorial_plan, persona: dict
+        self, script: VideoScript, editorial_plan: EditorialPlan, persona: dict[str, Any]
     ) -> VideoScript:
         micro_hook_agent = MicroHookAgent()
         scene_plan = (

@@ -12,6 +12,7 @@ import json
 import sys
 import traceback
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
@@ -40,6 +41,9 @@ from src.slack_notifier import (
 )
 from src.viral_selector import pick_viral_news
 
+if TYPE_CHECKING:
+    from src.script_generator import VideoScript
+
 
 class PipelineOrchestrator:
     """Orchestrates the full daily AI news pipeline end-to-end.
@@ -49,7 +53,7 @@ class PipelineOrchestrator:
     each pipeline run.
     """
 
-    def run(self, dry_run: bool = False, skip_upload: bool = False) -> dict:
+    def run(self, dry_run: bool = False, skip_upload: bool = False) -> dict[str, Any]:
         """Execute the full pipeline. Returns a summary dict."""
         date_str = dt.date.today().isoformat()
         self._run_dir = settings.output_dir / date_str
@@ -59,7 +63,7 @@ class PipelineOrchestrator:
 
         self._dry_run = dry_run
         self._skip_upload = skip_upload
-        self._summary: dict = {"date": date_str, "run_dir": str(self._run_dir)}
+        self._summary: dict[str, Any] = {"date": date_str, "run_dir": str(self._run_dir)}
         self._ledger = reset_ledger()
         self._cp = PipelineCheckpoint(self._run_dir)
         self._live = LiveState(settings.data_dir / "live_state.json")
@@ -72,19 +76,19 @@ class PipelineOrchestrator:
             ttl_days=settings.dedup_ttl_days,
         )
         # Per-run state populated by step methods
-        self._script = None
+        self._script: VideoScript | None = None
         self._news: list[NewsItem] = []
         self._history: list[str] = []
-        self._feedback_history: list = []
+        self._feedback_history: list[Any] = []
         self._subtitle_path: Path | None = None
         self._en_intro: Path | None = None
         self._en_outro: Path | None = None
         self._long_video: Path | None = None
         self._short_video: Path | None = None
         self._thumbnail: Path | None = None
-        self._auto_strategy: dict | None = None
-        self._auto_actions: list[dict] = []
-        self._auto_insights: list[dict] = []
+        self._auto_strategy: dict[str, Any] | None = None
+        self._auto_actions: list[dict[str, Any]] = []
+        self._auto_insights: list[dict[str, Any]] = []
         self._thompson_preferred_type: str | None = None
 
         try:
