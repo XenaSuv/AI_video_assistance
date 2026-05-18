@@ -7,6 +7,7 @@ Safe to re-run: cached artifacts in output/YYYY-MM-DD/ are reused.
 """
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import json
 import sys
@@ -132,8 +133,7 @@ class PipelineOrchestrator:
             )
             self._step_quality_gate()
             self._step_upload_en()
-            self._step_shorts_experiments()
-            self._step_upload_ru()
+            self._step_shorts_and_ru()
             self._finalize()
 
         except QualityGateError as e:
@@ -269,6 +269,23 @@ class PipelineOrchestrator:
 
     def _step_upload_ru(self) -> None:
         self._publisher.upload_ru()
+
+    def _step_shorts_and_ru(self) -> None:
+        """Run Shorts experiments and RU upload concurrently.
+
+        Mirrors the _voice_and_images pattern from media_builder: both tasks
+        are dispatched to a thread-pool executor so the event loop can overlap
+        their blocking I/O (YouTube API calls, ElevenLabs TTS, FFmpeg encoding)
+        without needing native async code in the uploaders themselves.
+        """
+        async def _run() -> None:
+            loop = asyncio.get_running_loop()
+            await asyncio.gather(
+                loop.run_in_executor(None, self._step_shorts_experiments),
+                loop.run_in_executor(None, self._step_upload_ru),
+            )
+
+        asyncio.run(_run())
 
     def _finalize(self) -> None:
         cost_report = self._ledger.save(self._run_dir / "cost_report.json")
