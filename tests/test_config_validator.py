@@ -378,6 +378,18 @@ class TestCrossFieldDependencies:
     def test_presenter_disabled_no_key_required(self):
         validate(_cfg(presenter_enabled=False, did_api_key=""))
 
+    def test_presenter_enabled_with_heygen_active_no_did_key_required(self):
+        # When HeyGen is the active presenter, D-ID credentials are not needed
+        validate(_cfg(
+            presenter_enabled=True,
+            heygen_enabled=True,
+            heygen_api_key="key",
+            heygen_avatar_id="avatar123",
+            heygen_voice_id="voice123",
+            did_api_key="",
+            presenter_avatar_path="",
+        ))
+
     def test_heygen_enabled_requires_api_key(self):
         with pytest.raises(ConfigurationError, match="HEYGEN_API_KEY"):
             validate(_cfg(heygen_enabled=True, heygen_api_key="", heygen_avatar_id="avatar123"))
