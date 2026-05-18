@@ -4,6 +4,17 @@ Stories are excluded for a rolling TTL window (default 30 days).  After that
 window they become eligible again — so a paper from 6 weeks ago can reappear
 if it's still genuinely trending.
 
+Schema versioning
+-----------------
+The DB header field ``PRAGMA user_version`` stores the current schema version.
+``_MIGRATIONS`` is the authoritative migration list: index 0 is version 1, index 1
+is version 2, etc.  On every startup ``_init_db`` applies only the migrations
+that follow the stored version, so existing databases are upgraded in-place
+without requiring a manual file deletion.
+
+To add a new migration: append a SQL string to ``_MIGRATIONS`` and bump
+``_SCHEMA_VERSION`` by 1.
+
 Typical usage in the pipeline:
     seen = SeenStories(settings.data_dir / "seen_stories.db")
     news = seen.filter_new(news)          # drop already-featured items
@@ -24,6 +35,22 @@ from src.scraper import NewsItem
 
 _DEFAULT_TTL_DAYS = 30
 _MIN_FRESH = 5   # warn (but don't abort) if fewer fresh stories than this
+
+# Bump _SCHEMA_VERSION and append one SQL string to _MIGRATIONS for each change.
+# Migrations are applied once and never modified; they must be idempotent
+# (use IF NOT EXISTS / IF EXISTS guards) so a repeated startup is a no-op.
+_SCHEMA_VERSION = 2
+_MIGRATIONS: list[str] = [
+    # v1 — initial schema
+    """CREATE TABLE IF NOT EXISTS seen_stories (
+        url           TEXT PRIMARY KEY,
+        title         TEXT NOT NULL,
+        source        TEXT NOT NULL,
+        featured_date TEXT NOT NULL
+    )""",
+    # v2 — index for O(log n) TTL filtering instead of full-table scan
+    "CREATE INDEX IF NOT EXISTS idx_seen_featured_date ON seen_stories (featured_date)",
+]
 
 
 class SeenStories:
@@ -49,15 +76,15 @@ class SeenStories:
             # SQLITE_BUSY when daily and breaking-news pipelines overlap.
             # journal_mode is persistent in the DB file — only needs setting once.
             conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS seen_stories (
-                    url           TEXT PRIMARY KEY,
-                    title         TEXT NOT NULL,
-                    source        TEXT NOT NULL,
-                    featured_date TEXT NOT NULL
-                )
-            """)
-            conn.commit()
+            current = conn.execute("PRAGMA user_version").fetchone()[0]
+            for target, sql in enumerate(_MIGRATIONS, start=1):
+                if current < target:
+                    conn.execute(sql)
+                    # PRAGMA user_version cannot be parameterised; target is a
+                    # trusted internal integer, never derived from user input.
+                    conn.execute(f"PRAGMA user_version = {target}")
+                    conn.commit()
+                    logger.debug(f"DeduplicatorDB: schema upgraded to v{target}")
 
     def _cutoff(self) -> str:
         return (dt.date.today() - dt.timedelta(days=self.ttl_days)).isoformat()
