@@ -32,6 +32,9 @@ for _mod in (
     # arxiv pulls in feedparser which requires sgmllib (removed in Python 3)
     "arxiv",
     "feedparser",
+    # ElevenLabs SDK — pulled in transitively by voice_generator (video tests)
+    "elevenlabs",
+    "elevenlabs.client",
 ):
     sys.modules.setdefault(_mod, MagicMock())
 
