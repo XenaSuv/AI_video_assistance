@@ -4,14 +4,13 @@ from __future__ import annotations
 import pytest
 
 from src.hook_pattern_engine import (
+    ComboScore,
     HookPatternEngine,
     HookPatternRecord,
     PatternScore,
-    ComboScore,
-    extract_features,
     _most_common,
+    extract_features,
 )
-
 
 # ── extract_features ──────────────────────────────────────────────────────────
 

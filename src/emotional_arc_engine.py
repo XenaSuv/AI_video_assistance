@@ -40,7 +40,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import sys
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -51,7 +51,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.emotion_engine import AVATAR_STYLE_MAP
 from src.script_generator import Scene, VideoScript
-
 
 # ── Emotion name aliases (expressive arc names → EMOTIONS vocabulary) ─────────
 # Arcs use descriptive names ("tension", "realism") for readability.

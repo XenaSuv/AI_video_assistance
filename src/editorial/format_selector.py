@@ -10,7 +10,6 @@ Each format has:
 """
 from __future__ import annotations
 
-
 # ── Format definitions ────────────────────────────────────────────────────────
 
 FORMATS: dict[str, dict] = {

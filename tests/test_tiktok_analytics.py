@@ -1,7 +1,7 @@
 """Tests for tiktok_analytics — pure functions and HTTP-mocked API calls."""
 import json
-import time
 import tempfile
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -13,7 +13,6 @@ from src.tiktok_analytics import (
     get_video_metrics,
     resolve_publish_id,
 )
-
 
 # ── _estimate_avg_view_percentage() ──────────────────────────────────────────
 

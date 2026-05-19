@@ -1,7 +1,8 @@
 """Tests for quality gate checks."""
-import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from src.quality_gate import (
     QualityGateError,
@@ -11,7 +12,6 @@ from src.quality_gate import (
     check_script,
     run_gate,
 )
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 

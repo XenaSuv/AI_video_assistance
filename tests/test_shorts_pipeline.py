@@ -31,7 +31,7 @@ import pytest
 sys.modules.setdefault("elevenlabs", MagicMock())
 sys.modules.setdefault("src.youtube_uploader", MagicMock())
 
-from src.shorts_engine_v2 import ShortScript, ShortResult
+from src.shorts_engine_v2 import ShortResult, ShortScript
 from src.shorts_pipeline import (
     ShortsPipeline,
     _save_summary,
@@ -39,7 +39,6 @@ from src.shorts_pipeline import (
     _upload,
     render_short,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

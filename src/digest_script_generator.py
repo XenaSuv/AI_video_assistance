@@ -17,13 +17,14 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from loguru import logger
+
 from src.retry_utils import make_openai_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.cost_tracker import get_ledger
-from src.script_generator import Scene, VideoScript
 from src.response_validator import parse_llm_json, validate_llm_response
+from src.script_generator import Scene, VideoScript
 
 # Target word count for the digest (vs ~2200 for daily full episode)
 _DIGEST_WORDS = 950

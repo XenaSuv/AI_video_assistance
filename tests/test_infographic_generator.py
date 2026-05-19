@@ -20,7 +20,6 @@ from src.infographic_generator import (
     generate_infographic_clip,
 )
 
-
 # ── _ease_out ─────────────────────────────────────────────────────────────────
 
 class TestEaseOut:

@@ -12,6 +12,12 @@ from pathlib import Path
 from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from src.pipeline_helpers import (
+    _get_intro_duration,
+    _load_audio_durations,
+    _load_cached_script,
+    _needs_video_rebuild,
+)
 from src.script_generator import VideoScript
 from src.subtitle_generator import generate_subtitles
 from src.thumbnail_generator import generate_thumbnail
@@ -19,12 +25,6 @@ from src.translator import translate_script
 from src.video_generator import assemble_video
 from src.voice_generator import synthesize_script
 from src.youtube_uploader import publish_episode
-from src.pipeline_helpers import (
-    _get_intro_duration,
-    _load_audio_durations,
-    _load_cached_script,
-    _needs_video_rebuild,
-)
 
 
 def _run_language_variant(

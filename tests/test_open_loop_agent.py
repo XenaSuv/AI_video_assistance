@@ -6,14 +6,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.script_generator import Scene, VideoScript
 from src.open_loop_agent import (
-    apply_open_loops,
-    OpenLoopResult,
     OpenLoop,
-    _log_usage,
+    OpenLoopResult,
     _build_scenes_block,
+    _log_usage,
+    apply_open_loops,
 )
+from src.script_generator import Scene, VideoScript
 
 
 def _make_script(n_scenes: int = 4) -> VideoScript:

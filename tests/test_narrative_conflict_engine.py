@@ -4,16 +4,15 @@ from __future__ import annotations
 import pytest
 
 from src.narrative_conflict_engine import (
-    CONFLICT_TYPES,
-    ConflictEntry,
-    NarrativeConflictEngine,
-    ConflictMemory,
     _CONFLICT_TEMPLATES,
     _HIGH_THRESHOLD,
     _LOW_THRESHOLD,
+    CONFLICT_TYPES,
+    ConflictEntry,
+    ConflictMemory,
+    NarrativeConflictEngine,
     get_conflict_engine,
 )
-
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -47,8 +46,8 @@ class TestConflictTemplates:
                 assert len(templates) >= 2, f"{t}/{band} needs ≥2 templates"
 
     def test_all_templates_are_non_empty_strings(self):
-        for t, bands in _CONFLICT_TEMPLATES.items():
-            for band, templates in bands.items():
+        for _t, bands in _CONFLICT_TEMPLATES.items():
+            for _band, templates in bands.items():
                 for tmpl in templates:
                     assert isinstance(tmpl, str) and len(tmpl) > 0
 

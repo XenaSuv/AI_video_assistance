@@ -7,7 +7,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.editorial_brain import EditorialBrain, FORMAT_RULES, EditorialPlan, editorial_plan_to_prompt, ANGLE_CANDIDATES, CONFLICT_TERMS, AI_AUDIENCE_TERMS, STORY_TYPES
+from src.editorial_brain import (
+    AI_AUDIENCE_TERMS,
+    ANGLE_CANDIDATES,
+    CONFLICT_TERMS,
+    FORMAT_RULES,
+    STORY_TYPES,
+    EditorialBrain,
+    EditorialPlan,
+    editorial_plan_to_prompt,
+)
 from src.scraper import NewsItem
 from src.shared_types import ContentStrategy, PerformanceStats
 

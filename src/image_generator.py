@@ -22,17 +22,17 @@ from pathlib import Path
 
 import requests
 from loguru import logger
-from openai import BadRequestError, OpenAI, RateLimitError, APIStatusError
+from openai import APIStatusError, BadRequestError, OpenAI, RateLimitError
 from PIL import Image as PILImage
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import src.ffmpeg_utils as ffmpeg_utils
+import src.image_cache as image_cache
 from config import settings
 from src.circuit_breaker import openai_breaker
 from src.cost_tracker import get_ledger
 from src.retry_utils import http_get, http_post, make_openai_client
 from src.script_generator import Scene, VideoScript
-import src.ffmpeg_utils as ffmpeg_utils
-import src.image_cache as image_cache
 
 OUT_W, OUT_H = 1280, 720
 

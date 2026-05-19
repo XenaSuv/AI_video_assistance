@@ -6,13 +6,13 @@ Two tiers:
 """
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
-import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import src.ffmpeg_utils as ffmpeg_utils
 from src.exceptions import QualityCheckError

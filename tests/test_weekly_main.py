@@ -4,7 +4,7 @@ from __future__ import annotations
 import sys
 from contextlib import ExitStack
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 # ── Stub heavy deps before any project import ─────────────────────────────────
 for _m in (
@@ -18,10 +18,10 @@ for _m in (
     sys.modules.setdefault(_m, MagicMock())
 
 import pytest
-from src.script_generator import Scene, VideoScript
-import src.weekly_main as weekly_main
-from src.weekly_main import run_weekly_pipeline
 
+import src.weekly_main as weekly_main
+from src.script_generator import Scene, VideoScript
+from src.weekly_main import run_weekly_pipeline
 
 # ── Factories ─────────────────────────────────────────────────────────────────
 

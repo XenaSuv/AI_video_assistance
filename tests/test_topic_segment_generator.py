@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.topic_segment_generator import (
+    _REFILL_THRESHOLD,
     TopicIdea,
     _load_ideas,
     _load_used,
@@ -18,9 +19,7 @@ from src.topic_segment_generator import (
     generate_next_topic_ideas,
     generate_topic_script,
     pick_next_topic,
-    _REFILL_THRESHOLD,
 )
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 

@@ -20,7 +20,6 @@ from typing import Any
 
 from src.editorial.editorial_identity import EditorialIdentity
 
-
 # ── Angles ────────────────────────────────────────────────────────────────────
 
 ANGLES: list[str] = ["hype_vs_reality", "hidden_risks", "misuse", "impact"]

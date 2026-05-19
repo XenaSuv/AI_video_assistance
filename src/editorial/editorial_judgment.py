@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import json
 import sys
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -36,12 +36,11 @@ from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from config import settings
-from src.editorial.editorial_identity import EditorialIdentity
-from src.editorial.story_ranker import StoryRanker
 from src.editorial.angle_selector import AngleSelector
-from src.editorial.persona_mapper import PersonaMapper
+from src.editorial.editorial_identity import EditorialIdentity
 from src.editorial.format_selector import FormatSelector
-
+from src.editorial.persona_mapper import PersonaMapper
+from src.editorial.story_ranker import StoryRanker
 
 # ── Feedback threshold ────────────────────────────────────────────────────────
 

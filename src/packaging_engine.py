@@ -48,7 +48,6 @@ from loguru import logger
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 
-
 # ── Angle → core idea ─────────────────────────────────────────────────────────
 
 # Keyed by editorial_brain angle_key AND simplified aliases from spec

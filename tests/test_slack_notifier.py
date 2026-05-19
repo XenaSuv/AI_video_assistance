@@ -2,20 +2,24 @@
 from __future__ import annotations
 
 import sys
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
 # Stub requests so import succeeds without installing
 sys.modules.setdefault("requests", MagicMock())
 
-from src.slack_notifier import (
-    _duration_str, _yt_url, _spend_bar,
-    notify_success, notify_failure, notify_slow_steps,
-    notify_budget_alert, notify_budget_summary,
-)
 from src.budget_guard import BudgetStatus
-
+from src.slack_notifier import (
+    _duration_str,
+    _spend_bar,
+    _yt_url,
+    notify_budget_alert,
+    notify_budget_summary,
+    notify_failure,
+    notify_slow_steps,
+    notify_success,
+)
 
 # ── Pure helpers ──────────────────────────────────────────────────────────────
 

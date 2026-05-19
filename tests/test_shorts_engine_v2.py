@@ -8,21 +8,20 @@ from unittest.mock import patch
 import pytest
 
 from src.shorts_engine_v2 import (
-    HOOK_TYPES,
-    LearningRecord,
-    ShortResult,
-    ShortScript,
-    ShortsEngineV2,
     _HOOK_TEMPLATES,
     _LOOP_ENDINGS,
     _PERSONA_MAP,
     _STYLE_MAP,
     _WINNER_THRESHOLD,
+    HOOK_TYPES,
+    LearningRecord,
+    ShortResult,
+    ShortScript,
+    ShortsEngineV2,
     _build_script_from_editorial,
     _extract_topic,
     _pick_template,
 )
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 

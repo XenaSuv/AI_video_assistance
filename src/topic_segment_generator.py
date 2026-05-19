@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Literal
 
 from loguru import logger
+
 from src.retry_utils import make_openai_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))

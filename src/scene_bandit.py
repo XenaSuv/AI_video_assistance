@@ -58,7 +58,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.constants import RateLimitMixin
 
-
 # ── Built-in scene policies ───────────────────────────────────────────────────
 
 BUILTIN_POLICIES: list[dict[str, Any]] = [

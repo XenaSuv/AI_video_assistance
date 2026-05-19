@@ -12,7 +12,6 @@ from src.presentation_engine import (
 )
 from src.script_generator import Scene, VideoScript
 
-
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _scene(

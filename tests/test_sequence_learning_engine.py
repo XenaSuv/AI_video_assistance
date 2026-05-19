@@ -44,7 +44,6 @@ from src.sequence_learning_engine import (
     extract_patterns,
 )
 
-
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _tmp() -> Path:

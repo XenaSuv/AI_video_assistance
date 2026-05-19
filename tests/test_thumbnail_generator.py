@@ -13,16 +13,15 @@ for _mod in ("PIL", "PIL.Image", "PIL.ImageDraw", "PIL.ImageFont", "numpy"):
 
 # ── Module under test ─────────────────────────────────────────────────────────
 from src.thumbnail_generator import (
-    _score_frame,
-    _wrap_title,
+    THUMB_H,
+    THUMB_W,
     _load_font,
     _overlay_title,
     _sample_frames,
+    _score_frame,
+    _wrap_title,
     generate_thumbnail,
-    THUMB_W,
-    THUMB_H,
 )
-
 
 # ── numpy mock helpers ─────────────────────────────────────────────────────────
 

@@ -2,18 +2,18 @@
 from __future__ import annotations
 
 import time
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
+
 import pytest
 
 from src.circuit_breaker import (
     CircuitBreaker,
     CircuitOpenError,
     CircuitState,
-    openai_breaker,
     elevenlabs_breaker,
+    openai_breaker,
     youtube_breaker,
 )
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -303,7 +303,7 @@ class TestProductionWiring:
 
         # Trip the breaker
         for _ in range(openai_breaker.failure_threshold):
-            with pytest.raises(Exception):
+            with pytest.raises(RuntimeError):
                 openai_breaker.call(_failing(RuntimeError("simulated openai down")))
         assert openai_breaker.state is CircuitState.OPEN
 
@@ -315,13 +315,13 @@ class TestProductionWiring:
     def test_tts_convert_has_circuit_breaker(self):
         """_tts_convert should use elevenlabs_breaker."""
         for _ in range(elevenlabs_breaker.failure_threshold):
-            with pytest.raises(Exception):
+            with pytest.raises(RuntimeError):
                 elevenlabs_breaker.call(_failing(RuntimeError("11labs down")))
         assert elevenlabs_breaker.state is CircuitState.OPEN
 
     def test_upload_video_has_circuit_breaker(self):
         """upload_video should use youtube_breaker."""
         for _ in range(youtube_breaker.failure_threshold):
-            with pytest.raises(Exception):
+            with pytest.raises(RuntimeError):
                 youtube_breaker.call(_failing(RuntimeError("yt down")))
         assert youtube_breaker.state is CircuitState.OPEN

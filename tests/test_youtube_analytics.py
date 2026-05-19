@@ -6,7 +6,7 @@ import pickle
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
@@ -23,10 +23,9 @@ for _mod in (
 
 from src.youtube_analytics import (
     get_analytics_service,
-    get_video_metrics,
     get_retention_curve,
+    get_video_metrics,
 )
-
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 

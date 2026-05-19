@@ -33,16 +33,15 @@ performance dict shape (learn_from_feedback)
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
-import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
-
 
 # ── Cycle result ──────────────────────────────────────────────────────────────
 
@@ -187,6 +186,8 @@ class SystemOrchestrator:
         # ── 6. Drop risk prediction + pre-emptive corrections ──────────────
         from src.drop_predictor import (
             apply_preemptive_corrections,
+        )
+        from src.drop_predictor import (
             suggest_strategy_adjustments as drop_adjustments,
         )
         predictions  = self.drop_predictor.predict_scenes(scenes)
@@ -431,14 +432,14 @@ def create_orchestrator(data_dir: Path | None = None) -> SystemOrchestrator:
 
     All components read/write under *data_dir* so every video run is isolated.
     """
-    from src.decision_engine_v3     import DecisionEngineV3, PerformanceStore
-    from src.shared_types           import ScenePolicy, StrategyConfig
-    from src.packaging_engine       import PackagingEngine
-    from src.scene_bandit           import SceneBandit
-    from src.scene_variety_engine   import SceneVarietyEngineV2
-    from src.scene_strategy_engine  import SceneStrategyEngine
-    from src.drop_predictor         import DropPredictor
+    from src.decision_engine_v3 import DecisionEngineV3, PerformanceStore
+    from src.drop_predictor import DropPredictor
+    from src.packaging_engine import PackagingEngine
     from src.retention_correction_engine import RetentionCorrectionEngine
+    from src.scene_bandit import SceneBandit
+    from src.scene_strategy_engine import SceneStrategyEngine
+    from src.scene_variety_engine import SceneVarietyEngineV2
+    from src.shared_types import ScenePolicy, StrategyConfig
 
     d = data_dir or settings.data_dir
 

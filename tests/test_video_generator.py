@@ -5,13 +5,12 @@ Heavy image/voice/scene dependencies are stubbed in conftest.py and per-test pat
 """
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-import asyncio
 
 from src.script_generator import Scene, VideoScript
 from src.video_generator import (
@@ -24,7 +23,6 @@ from src.video_generator import (
     build_video,
     generate_clips_for_scene,
 )
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 

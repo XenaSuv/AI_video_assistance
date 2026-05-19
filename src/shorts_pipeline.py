@@ -46,11 +46,10 @@ from loguru import logger
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.scraper import scrape_all
-from src.viral_selector import pick_viral_news
-from src.shorts_engine_v2 import ShortsEngineV2, ShortScript, ShortResult
+from src.shorts_engine_v2 import ShortResult, ShortScript, ShortsEngineV2
 from src.shorts_experiment_engine import ShortsExperimentEngine
-from src.slack_notifier import notify_success, notify_failure
-
+from src.slack_notifier import notify_failure, notify_success
+from src.viral_selector import pick_viral_news
 
 SHORT_W, SHORT_H = 1080, 1920
 
@@ -148,6 +147,7 @@ def _render_text_short(
       5. Music      — optional background track at low volume
     """
     import shutil
+
     import src.ffmpeg_utils as ffmpeg_utils
     from src.broll_fetcher import fetch_broll_for_short
 

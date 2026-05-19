@@ -662,7 +662,7 @@ def frames_to_video(
         raise RuntimeError(
             f"frames_to_video ffmpeg timed out after {_LONG_TIMEOUT}s — "
             f"{len(frames)} frames at {fps}fps"
-        )
+        ) from None
     if proc.returncode != 0:
         err = proc.stderr.read().decode(errors="replace") if proc.stderr else ""
         raise RuntimeError(f"frames_to_video ffmpeg failed: {err}")

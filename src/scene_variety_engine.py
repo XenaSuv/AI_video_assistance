@@ -35,7 +35,7 @@ Scene intents:
 from __future__ import annotations
 
 import re
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
@@ -282,7 +282,13 @@ class SceneVarietyEngineV2:
         editorial_plan: Any | None = None,
     ) -> None:
         """Content + position + editorial-plan angle → scene_intent."""
-        from src.scene_strategy_engine import _ANGLE_INTENT, _DATA_RE, _EXPLAIN_RE, _SHOCK_RE, _REACTION_RE
+        from src.scene_strategy_engine import (
+            _ANGLE_INTENT,
+            _DATA_RE,
+            _EXPLAIN_RE,
+            _REACTION_RE,
+            _SHOCK_RE,
+        )
 
         plan_angle = self._extract_angle(editorial_plan)
 
@@ -316,6 +322,7 @@ class SceneVarietyEngineV2:
         pick_best() so the most important scenes always get the strongest type.
         """
         import random as _random
+
         from src.scene_strategy_engine import INTENT_TO_SCENE
 
         for scene in scenes:
@@ -338,7 +345,7 @@ class SceneVarietyEngineV2:
 
             r, cumulative = _random.random() * total, 0.0
             chosen = candidates[0]
-            for t, w in zip(candidates, weights):
+            for t, w in zip(candidates, weights, strict=False):
                 cumulative += w
                 if r <= cumulative:
                     chosen = t

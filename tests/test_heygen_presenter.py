@@ -18,7 +18,6 @@ from src.heygen_presenter import (
     generate_heygen_clip,
 )
 
-
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _mock_response(json_data: dict, status_code: int = 200) -> MagicMock:

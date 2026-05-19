@@ -12,18 +12,17 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.image_cache import (
-    _json_path,
-    _npy_path,
-    _load,
-    _save,
-    _embed,
-    find_similar,
-    add_entry,
+    _DIM,
     _JSON_NAME,
     _NPY_NAME,
-    _DIM,
+    _embed,
+    _json_path,
+    _load,
+    _npy_path,
+    _save,
+    add_entry,
+    find_similar,
 )
-
 
 # ── Path helpers ──────────────────────────────────────────────────────────────
 

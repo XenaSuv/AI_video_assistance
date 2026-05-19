@@ -17,20 +17,19 @@ from __future__ import annotations
 
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
+from src.ab_testing_engine import ABTestVariant
 from src.thompson_bandit import (
     ThompsonArm,
     ThompsonBandit,
     ThompsonState,
     ThompsonStore,
 )
-from src.ab_testing_engine import ABTestVariant
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 

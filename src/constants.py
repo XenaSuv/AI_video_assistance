@@ -6,7 +6,6 @@ from typing import Any, Protocol
 
 from loguru import logger
 
-
 # hook_aggressiveness adjustment per winning variant type
 # conflict  → viewers respond to explicit tension — push harder
 # curiosity → open loops work — moderate increase

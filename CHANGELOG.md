@@ -35,6 +35,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   active presenter (PR #115)
 
 ### Changed
+- `pyproject.toml`: ruff `select` expanded from `["E9", "F"]` to `["E9", "F", "B", "I"]`;
+  bugbear (B) and isort (I) now enforced in CI; all 281 pre-existing violations resolved:
+  259 import-order fixes auto-applied, 22 B violations fixed manually (B007 unused loop
+  vars → `_var`, B904 `raise … from None`, B905 `zip(strict=False)`, B017 specific
+  exception types, B011 `raise AssertionError`, B018 `_ = expr`)
 - `src/pipeline_orchestrator.py` refactored: 43 → 24 imports; orchestration split into
   three focused classes — `_ScriptStep`, `_MediaBuilder`, `_PublishStep`
 - `pyproject.toml`: `mypy --strict` now enforced globally; `src/media_builder.py`,

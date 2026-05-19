@@ -14,14 +14,15 @@ import sys
 from pathlib import Path
 
 from loguru import logger
+
 from src.retry_utils import make_openai_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.cost_tracker import get_ledger
+from src.response_validator import parse_llm_json, validate_llm_response
 from src.scraper import NewsItem
 from src.script_generator import Scene, VideoScript
-from src.response_validator import parse_llm_json, validate_llm_response
 
 _LONG_SYSTEM_PROMPT = """\
 You are a senior technology journalist specializing in artificial intelligence.

@@ -52,7 +52,7 @@ import json
 import sys
 import uuid
 from collections import defaultdict
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -64,7 +64,6 @@ from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
-
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -538,5 +537,5 @@ class ShortsEngineV2:
         Delegates to ShortsBeatEngine — imported lazily to avoid circular
         imports at module load time.
         """
-        from src.shorts_beat_engine import ShortsBeatEngine, ShortBeatPlan  # noqa: F401
+        from src.shorts_beat_engine import ShortBeatPlan, ShortsBeatEngine  # noqa: F401
         return ShortsBeatEngine().plan(script)

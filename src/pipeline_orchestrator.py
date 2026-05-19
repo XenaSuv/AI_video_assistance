@@ -31,8 +31,8 @@ from src.pipeline_helpers import _setup_logging as _setup_logging_helper
 from src.pipeline_observer import PipelineObserver
 from src.publish_step import _PublishStep
 from src.quality_gate import QualityGateError
+from src.scraper import NewsItem, scrape_all
 from src.script_step import _ScriptStep
-from src.scraper import scrape_all, NewsItem
 from src.slack_notifier import (
     notify_budget_alert,
     notify_budget_summary,

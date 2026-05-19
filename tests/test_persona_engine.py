@@ -4,17 +4,16 @@ from __future__ import annotations
 import pytest
 
 from src.persona_engine import (
+    _FORMAT_SIGNALS,
+    _SKEPTIC_ANGLE_BOOST,
     CONTENT_FORMATS,
     DEFAULT_PERSONA,
     SIGNATURES,
+    MemoryEntry,
     PersonaEngine,
     PersonaMemory,
-    MemoryEntry,
     get_default_engine,
-    _FORMAT_SIGNALS,
-    _SKEPTIC_ANGLE_BOOST,
 )
-
 
 # ── DEFAULT_PERSONA ───────────────────────────────────────────────────────────
 
@@ -48,7 +47,7 @@ class TestSignatures:
             assert len(phrases) >= 2, pos
 
     def test_phrases_are_non_empty_strings(self):
-        for pos, phrases in SIGNATURES.items():
+        for _pos, phrases in SIGNATURES.items():
             for phrase in phrases:
                 assert isinstance(phrase, str) and len(phrase) > 0
 

@@ -22,7 +22,6 @@ from typing import Any
 
 from loguru import logger
 
-
 # Unit costs from the official YouTube API quota calculator.
 QUOTA_COSTS: dict[str, int] = {
     "videos.insert":   1600,

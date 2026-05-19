@@ -21,10 +21,12 @@ import traceback
 from pathlib import Path
 
 from loguru import logger
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.digest_script_generator import collect_week_scripts, generate_digest_script
 from src.hook_selector import record_usage
+from src.language_variant import _run_language_variant
 from src.pipeline_helpers import (
     _get_intro_duration,
     _get_shared_outro,
@@ -33,7 +35,7 @@ from src.pipeline_helpers import (
     _needs_video_rebuild,
     _setup_logging,
 )
-from src.language_variant import _run_language_variant
+from src.slack_notifier import notify_failure, notify_success
 from src.subtitle_generator import generate_subtitles
 from src.thumbnail_ab import (
     generate_thumbnail_variants,
@@ -43,9 +45,6 @@ from src.thumbnail_ab import (
 from src.video_generator import build_video
 from src.voice_generator import synthesize_script
 from src.youtube_uploader import publish_episode
-from src.slack_notifier import notify_success, notify_failure
-
-
 
 
 def run_digest_pipeline(

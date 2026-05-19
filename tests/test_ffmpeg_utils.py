@@ -5,19 +5,40 @@ import sys
 import tempfile
 import unittest.mock as mock
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 # Stub numpy before importing the module (heavy dep not needed for these tests)
 _np_mock = MagicMock()
 sys.modules.setdefault("numpy", _np_mock)
 
 from src.ffmpeg_utils import (
-    _esc, _run, _PROBE_TIMEOUT, _CLIP_TIMEOUT, _LONG_TIMEOUT,
-    probe, duration, video_size, has_audio_stream, ensure_audio_stream,
-    get_frame, merge_av, concat, title_card, overlay_title_card,
-    quote_card_clip, end_card_clip, burn_chyron, ken_burns,
-    frames_to_video, mix_music, make_vertical, zoom_clip,
-    loop_and_trim, resize_video, black_clip, burn_captions,
+    _CLIP_TIMEOUT,
+    _LONG_TIMEOUT,
+    _PROBE_TIMEOUT,
+    _esc,
+    _run,
+    black_clip,
+    burn_captions,
+    burn_chyron,
+    concat,
+    duration,
+    end_card_clip,
+    ensure_audio_stream,
+    frames_to_video,
+    get_frame,
+    has_audio_stream,
+    ken_burns,
+    loop_and_trim,
+    make_vertical,
+    merge_av,
+    mix_music,
+    overlay_title_card,
+    probe,
+    quote_card_clip,
+    resize_video,
+    title_card,
+    video_size,
+    zoom_clip,
 )
 
 
@@ -115,7 +136,7 @@ class TestRunTimeout:
         with mock.patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd=["ffmpeg"], timeout=5)):
             try:
                 _run(["ffmpeg", "-i", "fake.mp4"], timeout=5)
-                assert False, "Expected RuntimeError"
+                raise AssertionError("Expected RuntimeError")
             except RuntimeError as exc:
                 assert "timed out" in str(exc).lower()
                 assert "5s" in str(exc)
@@ -223,7 +244,6 @@ class TestDuration:
 
 
 import pytest  # noqa: E402 — needed for pytest.approx and pytest.raises throughout
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # video_size()
@@ -1370,21 +1390,21 @@ class TestConfigValidatorFfmpegTimeouts:
         validate(self._cfg())
 
     def test_probe_timeout_zero_raises(self):
-        from src.config_validator import validate, ConfigurationError
+        from src.config_validator import ConfigurationError, validate
         with pytest.raises(ConfigurationError, match="FFMPEG_PROBE_TIMEOUT"):
             validate(self._cfg(ffmpeg_probe_timeout=0))
 
     def test_clip_timeout_zero_raises(self):
-        from src.config_validator import validate, ConfigurationError
+        from src.config_validator import ConfigurationError, validate
         with pytest.raises(ConfigurationError, match="FFMPEG_CLIP_TIMEOUT"):
             validate(self._cfg(ffmpeg_clip_timeout=0))
 
     def test_long_timeout_zero_raises(self):
-        from src.config_validator import validate, ConfigurationError
+        from src.config_validator import ConfigurationError, validate
         with pytest.raises(ConfigurationError, match="FFMPEG_LONG_TIMEOUT"):
             validate(self._cfg(ffmpeg_long_timeout=0))
 
     def test_negative_timeout_raises(self):
-        from src.config_validator import validate, ConfigurationError
+        from src.config_validator import ConfigurationError, validate
         with pytest.raises(ConfigurationError, match="FFMPEG_CLIP_TIMEOUT"):
             validate(self._cfg(ffmpeg_clip_timeout=-1))

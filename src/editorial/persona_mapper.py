@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 # ── Persona definitions ───────────────────────────────────────────────────────
 
 PERSONAS: dict[str, dict[str, Any]] = {

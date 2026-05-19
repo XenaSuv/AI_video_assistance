@@ -12,7 +12,6 @@ from src.scene_variety_engine import (
 )
 from src.script_generator import Scene
 
-
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _scene(idx: int, heading: str = "Heading", narration: str = "Normal text.", **kwargs) -> Scene:

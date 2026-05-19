@@ -6,6 +6,10 @@ import dataclasses
 import pytest
 
 from src.emotion_engine import (
+    _FLOW_DAMPING,
+    _HIGH_TENSION_THRESHOLD,
+    _SHORT_INTENSITY_MAP,
+    _TENSION_SCORE,
     AVATAR_STYLE_MAP,
     EMOTION_MAP,
     EMOTIONS,
@@ -14,14 +18,9 @@ from src.emotion_engine import (
     VOICE_MAP,
     EmotionEngine,
     EmotionStats,
-    _FLOW_DAMPING,
-    _HIGH_TENSION_THRESHOLD,
-    _SHORT_INTENSITY_MAP,
-    _TENSION_SCORE,
     get_emotion_engine,
 )
 from src.script_generator import Scene, VideoScript
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 

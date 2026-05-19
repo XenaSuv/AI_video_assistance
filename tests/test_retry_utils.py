@@ -1,9 +1,9 @@
 """Tests for retry_utils: http_get, http_post, make_openai_client."""
+from unittest.mock import MagicMock, call, patch
+
 import pytest
 import requests
 import requests.exceptions
-from unittest.mock import MagicMock, patch, call
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -69,6 +69,7 @@ class TestHttpGet:
         mock_resp = MagicMock(spec=requests.Response)
         mock_resp.raise_for_status = MagicMock()
         from tenacity import retry, retry_if_exception, stop_after_attempt, wait_none
+
         from src.retry_utils import _is_retryable_http
         # Build a fast-retry version (no sleep)
         @retry(retry=retry_if_exception(_is_retryable_http),

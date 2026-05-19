@@ -27,13 +27,13 @@ for _stub in (
     sys.modules.setdefault(_stub, MagicMock())
 
 from src.scheduler import (
+    MAX_RETRIES,
+    RETRY_DELAY_SEC,
     _run_with_retry,
     build_scheduler,
     job_daily_news,
     job_topic,
     main,
-    MAX_RETRIES,
-    RETRY_DELAY_SEC,
 )
 
 

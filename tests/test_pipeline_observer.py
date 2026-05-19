@@ -1,8 +1,10 @@
 """Tests for PipelineObserver."""
 import json
 import time
-import pytest
 from pathlib import Path
+
+import pytest
+
 from src.pipeline_observer import PipelineObserver
 
 

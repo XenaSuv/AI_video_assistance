@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, call, patch
 
 import pytest
 
@@ -16,9 +16,8 @@ for _m in (
 ):
     sys.modules.setdefault(_m, MagicMock())
 
-from src.youtube_uploader import _migrate_pickle, _fill_timestamps, _upload_with_retry
 from src.script_generator import Scene, VideoScript
-
+from src.youtube_uploader import _fill_timestamps, _migrate_pickle, _upload_with_retry
 
 # ── _upload_with_retry ────────────────────────────────────────────────────────
 
@@ -344,7 +343,7 @@ class TestMigratePickle:
         pickle_path = tmp_path / "bad.pickle"
         json_path   = tmp_path / "token.json"
         pickle_path.write_bytes(b"not-valid-pickle")
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017 — pickle raises varies by content
             _migrate_pickle(pickle_path, json_path)
 
 
@@ -456,8 +455,8 @@ class TestUploadVideoGuards:
 
     def test_quota_exhausted_raises_before_upload(self, tmp_path):
         """upload_video raises QuotaExhaustedError when quota guard says can't afford."""
-        from src.youtube_uploader import upload_video
         from src.exceptions import QuotaExhaustedError
+        from src.youtube_uploader import upload_video
 
         fake_video = tmp_path / "video.mp4"
         fake_video.write_bytes(b"fake")
@@ -546,8 +545,8 @@ class TestUploadVideoGuards:
 
     def test_upload_video_quota_error_during_upload(self, tmp_path, monkeypatch):
         """upload_video marks quota exhausted when quota error raised during upload."""
-        from src.youtube_uploader import upload_video
         from src.exceptions import QuotaExhaustedError
+        from src.youtube_uploader import upload_video
 
         monkeypatch.setattr("src.youtube_uploader.HttpError", _FakeHttpError)
 
@@ -1113,8 +1112,9 @@ class TestGetCredsEdgeCases:
 
     def test_get_creds_raises_runtime_error_on_headless_refresh_failure(self, tmp_path, monkeypatch):
         """_get_creds raises RuntimeError in headless CI when token refresh fails."""
-        from src.youtube_uploader import _get_creds
         import google.auth.exceptions as auth_exc
+
+        from src.youtube_uploader import _get_creds
 
         monkeypatch.setenv("CI", "true")
         monkeypatch.setenv("GITHUB_ACTIONS", "")

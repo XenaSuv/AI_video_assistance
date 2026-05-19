@@ -17,7 +17,7 @@ from config import settings
 from src.analytics import get_recommendations
 from src.auto_action_engine import AutoActionEngine
 from src.cross_learning_engine import CrossLearningEngine
-from src.decision_engine_v3 import DecisionEngineV3, UnifiedStrategy, PerformanceStore
+from src.decision_engine_v3 import DecisionEngineV3, PerformanceStore, UnifiedStrategy
 from src.digest_script_generator import save_for_digest
 from src.editorial_brain import EditorialBrain, EditorialPlan
 from src.feedback_analyzer import FeedbackAnalyzer
@@ -33,13 +33,13 @@ from src.pipeline_helpers import (
 )
 from src.presentation_engine import PresentationEngine
 from src.retention_correction_engine import (
-    RetentionCorrectionEngine,
     Correction,
-    FixType,
     DropPoint,
+    FixType,
+    RetentionCorrectionEngine,
 )
-from src.script_generator import VideoScript, generate_script
 from src.scraper import NewsItem
+from src.script_generator import VideoScript, generate_script
 from src.sequence_learning_engine import SequenceLearningEngine
 from src.shorts_experiment_engine import ShortsExperimentEngine
 
@@ -424,7 +424,7 @@ class _ScriptStep:
             original_counts = [len(s.narration.split()) for s in script.scenes]
             total_original = sum(original_counts) or 1
             pos = 0
-            for scene, orig_count in zip(script.scenes, original_counts):
+            for scene, orig_count in zip(script.scenes, original_counts, strict=False):
                 share = round(len(words) * orig_count / total_original)
                 chunk = words[pos: pos + share]
                 if chunk:

@@ -12,21 +12,21 @@ Covers:
 """
 from __future__ import annotations
 
-import pytest
 import tempfile
-from pathlib import Path
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
+import pytest
+
 from src.packaging_engine import (
-    PackagingEngine,
-    PackagingResult,
-    PackagingStore,
     _ANGLE_KEY_TO_IDEA,
     _CONFLICT_TO_IDEA,
     _DEFAULT_IDEA,
+    PackagingEngine,
+    PackagingResult,
+    PackagingStore,
 )
-
 
 # ── Fakes ──────────────────────────────────────────────────────────────────────
 

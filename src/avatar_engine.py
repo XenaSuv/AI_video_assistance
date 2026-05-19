@@ -58,10 +58,9 @@ from typing import Any
 from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from config import settings
 import src.ffmpeg_utils as ffmpeg_utils
+from config import settings
 from src.heygen_presenter import generate_heygen_clip
-
 
 # ── Intent mappings ───────────────────────────────────────────────────────────
 

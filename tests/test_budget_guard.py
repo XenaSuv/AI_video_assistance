@@ -8,7 +8,6 @@ import pytest
 
 from src.budget_guard import BudgetGuard, BudgetStatus
 
-
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _write_report(run_dir, total_usd: float) -> None:

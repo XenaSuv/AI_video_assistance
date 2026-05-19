@@ -34,10 +34,10 @@ from pathlib import Path
 from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import src.ffmpeg_utils as ffmpeg_utils
 from config import settings
 from src.retry_utils import http_get
 from src.script_generator import Scene
-import src.ffmpeg_utils as ffmpeg_utils
 
 _PEXELS_VIDEO_URL = "https://api.pexels.com/videos/search"
 _PIXABAY_VIDEO_URL = "https://pixabay.com/api/videos/"

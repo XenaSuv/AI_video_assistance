@@ -11,7 +11,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-
 # ── ScenePolicy / StrategyConfig ──────────────────────────────────────────────
 # Contract surface between the decision layer and SceneVarietyEngineV2.
 # Written by the decision engine; read by assign_from_config().

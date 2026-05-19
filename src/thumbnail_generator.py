@@ -12,8 +12,8 @@ import textwrap
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
 from loguru import logger
+from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import src.ffmpeg_utils as ffmpeg_utils

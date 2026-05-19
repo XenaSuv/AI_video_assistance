@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import json
 import tempfile
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -32,7 +32,6 @@ from src.scene_bandit import (
     SceneBanditStore,
     ScenePolicyArm,
 )
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -503,8 +502,8 @@ class TestFullPipeline:
 
     def test_two_bandits_are_independent(self):
         """Packaging bandit and scene bandit operate independently."""
-        from src.thompson_bandit import ThompsonBandit
         from src.ab_testing_engine import ABTestVariant
+        from src.thompson_bandit import ThompsonBandit
 
         tmp      = _tmp()
         scene_b  = SceneBandit(data_dir=tmp)

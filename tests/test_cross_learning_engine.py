@@ -28,14 +28,13 @@ from pathlib import Path
 import pytest
 
 from src.cross_learning_engine import (
-    CrossLearningEngine,
-    CrossLearningStore,
     _HOOK_TYPES,
     _PACES,
     _PERSONAS,
     _SCENE_TYPES,
+    CrossLearningEngine,
+    CrossLearningStore,
 )
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 

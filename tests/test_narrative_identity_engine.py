@@ -4,6 +4,9 @@ from __future__ import annotations
 import pytest
 
 from src.narrative_identity_engine import (
+    _BELIEF_ANGLE_MAP,
+    _BELIEF_SIGNALS,
+    _THEME_SIGNALS,
     ARCS,
     BELIEFS,
     CALLBACKS,
@@ -11,12 +14,8 @@ from src.narrative_identity_engine import (
     NarrativeEntry,
     NarrativeIdentityEngine,
     NarrativeMemory,
-    _BELIEF_ANGLE_MAP,
-    _BELIEF_SIGNALS,
-    _THEME_SIGNALS,
     get_narrative_engine,
 )
-
 
 # ── BELIEFS ───────────────────────────────────────────────────────────────────
 

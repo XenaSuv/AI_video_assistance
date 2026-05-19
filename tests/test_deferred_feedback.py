@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -23,7 +23,6 @@ for _m in (
     sys.modules.setdefault(_m, MagicMock())
 
 from src.deferred_feedback import _DeferredFeedbackCollector
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 

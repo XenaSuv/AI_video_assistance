@@ -20,7 +20,6 @@ for _m in (
 
 import pytest
 
-
 # ── Factories ─────────────────────────────────────────────────────────────────
 
 def _make_script(n_scenes: int = 3) -> MagicMock:

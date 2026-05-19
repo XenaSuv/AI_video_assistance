@@ -3,9 +3,9 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-# E9: syntax errors; F: pyflakes (undefined names, etc.)
-# Ignoring F401 (unused imports) and F841 (unused vars) — common in large pipelines
-select = ["E9", "F"]
+# E9: syntax errors; F: pyflakes; B: bugbear; I: isort
+# F401/F841 ignored — unused imports/vars common in large heterogeneous pipelines
+select = ["E9", "F", "B", "I"]
 ignore = ["F401", "F841"]
 
 [tool.mypy]

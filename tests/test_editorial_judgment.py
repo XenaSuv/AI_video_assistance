@@ -2,41 +2,41 @@
 from __future__ import annotations
 
 import json
+
 import pytest
 
-from src.editorial.editorial_identity import (
-    EDITORIAL_IDENTITY,
-    EditorialIdentity,
-)
-from src.editorial.story_ranker import (
-    StoryRanker,
-    _ANTI_HYPE_BONUS,
-    _CONTROVERSY_BONUS,
-    _PRIORITY_BONUS,
-    _SEEN_PENALTY,
-)
 from src.editorial.angle_selector import (
     ANGLE_INTENT,
     ANGLES,
     AngleSelector,
 )
-from src.editorial.persona_mapper import (
-    ANGLE_PERSONA,
-    PERSONAS,
-    PersonaMapper,
+from src.editorial.editorial_identity import (
+    EDITORIAL_IDENTITY,
+    EditorialIdentity,
+)
+from src.editorial.editorial_judgment import (
+    _RETENTION_WINNER_THRESHOLD,
+    EditorialJudgment,
+    JudgmentFeedback,
+    get_judgment_engine,
 )
 from src.editorial.format_selector import (
     ANGLE_FORMAT,
     FORMATS,
     FormatSelector,
 )
-from src.editorial.editorial_judgment import (
-    EditorialJudgment,
-    JudgmentFeedback,
-    _RETENTION_WINNER_THRESHOLD,
-    get_judgment_engine,
+from src.editorial.persona_mapper import (
+    ANGLE_PERSONA,
+    PERSONAS,
+    PersonaMapper,
 )
-
+from src.editorial.story_ranker import (
+    _ANTI_HYPE_BONUS,
+    _CONTROVERSY_BONUS,
+    _PRIORITY_BONUS,
+    _SEEN_PENALTY,
+    StoryRanker,
+)
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -526,7 +526,7 @@ class TestEditorialIdentityLoad:
         assert result is not None  # returns default
 
     def test_load_returns_default_when_from_dict_raises(self, tmp_path):
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
         good_file = tmp_path / "editorial_identity.json"
         good_file.write_text('{"bad": "schema"}')
         mock_default = MagicMock(spec=EditorialIdentity)

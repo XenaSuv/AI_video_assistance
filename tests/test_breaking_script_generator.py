@@ -6,13 +6,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.scraper import NewsItem
-from src.script_generator import VideoScript
 from src.breaking_script_generator import (
+    _log_usage,
     generate_breaking_script,
     generate_breaking_short_script,
-    _log_usage,
 )
+from src.scraper import NewsItem
+from src.script_generator import VideoScript
 
 
 def _make_item(

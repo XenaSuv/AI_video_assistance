@@ -20,9 +20,9 @@ from loguru import logger
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import src.ffmpeg_utils as ffmpeg_utils
 from config import settings
 from src.script_generator import Scene, VideoScript
-import src.ffmpeg_utils as ffmpeg_utils
 
 SHORT_MAX_SECONDS  = 58
 SHORT_W, SHORT_H   = 1080, 1920

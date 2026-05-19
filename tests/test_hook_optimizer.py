@@ -8,12 +8,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.hook_optimizer import (
-    HookPattern,
     HookOptimizer,
+    HookPattern,
     get_optimized_hooks,
 )
 from src.shared_types import HookOptimizationResult
-
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -156,7 +155,7 @@ class TestExtractPatterns:
         feedback = [_feedback_item(hook, s) for s in [0.5, 0.7, 0.9]]
         patterns = opt._extract_patterns(feedback)
         # Each feedback item contributes to the same phrase patterns
-        for phrase, scores in patterns.items():
+        for _phrase, scores in patterns.items():
             assert len(scores) >= 1
 
 

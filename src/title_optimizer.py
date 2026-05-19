@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 import re
-from src.retry_utils import make_openai_client
+
 from loguru import logger
 
 from config import settings
 from src.cost_tracker import get_ledger
-
+from src.retry_utils import make_openai_client
 
 client = make_openai_client()
 

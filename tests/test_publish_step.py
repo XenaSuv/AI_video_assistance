@@ -4,7 +4,7 @@ from __future__ import annotations
 import sys
 from contextlib import ExitStack
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 # ── Stub heavy deps before any project import ─────────────────────────────────
 for _m in (
@@ -17,9 +17,9 @@ for _m in (
     sys.modules.setdefault(_m, MagicMock())
 
 import pytest
+
 from src.publish_step import _PublishStep
 from src.script_generator import Scene, VideoScript
-
 
 # ── Factories ─────────────────────────────────────────────────────────────────
 

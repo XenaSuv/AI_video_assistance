@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import re
-from src.retry_utils import make_openai_client
+
 from loguru import logger
 
 from config import settings
 from src.cost_tracker import get_ledger
+from src.retry_utils import make_openai_client
 
 
 def generate_hooks(news_text: str, n: int = 3) -> list[str]:

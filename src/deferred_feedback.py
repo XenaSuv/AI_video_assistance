@@ -20,7 +20,7 @@ from src.retention_correction_engine import RetentionCorrectionEngine
 from src.sequence_learning_engine import SequenceLearningEngine
 from src.shorts_experiment_engine import ShortsExperimentEngine
 from src.thompson_bandit import ThompsonBandit
-from src.youtube_analytics import get_video_metrics, get_retention_curve
+from src.youtube_analytics import get_retention_curve, get_video_metrics
 
 
 class _DeferredFeedbackCollector:

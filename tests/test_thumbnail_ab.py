@@ -22,16 +22,15 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
-import pytest
+from unittest.mock import MagicMock, call, patch
 
 # ---------------------------------------------------------------------------
 # Stub numpy and PIL before importing the module under test (conftest.py
 # already stubs them as MagicMock, but thumbnail_ab uses them at module
 # level so we need real-ish mocks).
 # ---------------------------------------------------------------------------
-
 import numpy as _np_real  # won't be available; conftest replaces with MagicMock
+import pytest
 
 # We need numpy and PIL to be usable.  Since conftest stubs numpy as MagicMock,
 # we replace them with the real packages if available, otherwise skip.
@@ -47,10 +46,10 @@ except ImportError:
 # ---------------------------------------------------------------------------
 import src.thumbnail_ab as tab
 from src.thumbnail_ab import (
+    _ALL_STYLES,
     STYLE_BOTTOM,
     STYLE_IMPACT,
     STYLE_TOP,
-    _ALL_STYLES,
     _get_arm,
     _load_perf,
     _perf_file,
@@ -63,7 +62,6 @@ from src.thumbnail_ab import (
     record_thumbnail_usage,
     top_styles,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

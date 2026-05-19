@@ -27,7 +27,6 @@ import pytest
 
 from src.context_analyzer import ContentContext, ContextAnalyzer
 
-
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _analyzer() -> ContextAnalyzer:
@@ -325,6 +324,7 @@ class TestOrchestratorIntegration:
 
     def _make_orch(self, context_analyzer=None):
         import tempfile
+
         from src.system_orchestrator import SystemOrchestrator
 
         @dataclass

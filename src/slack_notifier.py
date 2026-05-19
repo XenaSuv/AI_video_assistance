@@ -7,17 +7,16 @@ silently skipped — the pipeline is never blocked by Slack being down.
 from __future__ import annotations
 
 import datetime as dt
+import sys
+from pathlib import Path
 from typing import Any, Optional
 
 from loguru import logger
 
-import sys
-from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.log_filter import scrub_message
 from src.retry_utils import http_post as _http_post
-
 
 _PIPELINE_EMOJI = {
     "daily":    "📰",

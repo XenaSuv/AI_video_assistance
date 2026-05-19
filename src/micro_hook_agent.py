@@ -6,12 +6,13 @@ from typing import Any
 
 from loguru import logger
 from openai import OpenAI
+
 from src.retry_utils import make_openai_client
 
 sys_path_insert = __import__("sys").path.insert
+import sys
 from pathlib import Path as _Path
 
-import sys
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 from src.hook_optimizer import HookOptimizer
 from src.shared_types import InsertedHook, MicroHookResult

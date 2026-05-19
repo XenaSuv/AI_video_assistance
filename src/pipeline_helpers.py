@@ -14,11 +14,10 @@ from loguru import logger
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import src.ffmpeg_utils as ffmpeg_utils
 from config import settings
-from src.decision_engine_v3 import DecisionEngineV3, UnifiedStrategy, PerformanceStore
+from src.decision_engine_v3 import DecisionEngineV3, PerformanceStore, UnifiedStrategy
 from src.retention_correction_engine import Correction
 from src.script_generator import Scene, VideoScript
 from src.shared_types import ContentStrategy
-
 
 # ── Stateless helpers ─────────────────────────────────────────────────────────
 
@@ -201,7 +200,7 @@ def _build_scene_map(scenes: list[dict], curve_len: int) -> dict[int, dict]:
     total = sum(durations) or len(scenes)
     scene_map: dict[int, dict] = {}
     bucket = 0
-    for scene_idx, (scene, dur) in enumerate(zip(scenes, durations)):
+    for scene_idx, (scene, dur) in enumerate(zip(scenes, durations, strict=False)):
         n_buckets = max(1, round(curve_len * dur / total))
         for b in range(bucket, min(bucket + n_buckets, curve_len)):
             scene_map[b] = {

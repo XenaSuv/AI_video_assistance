@@ -48,7 +48,6 @@ from loguru import logger
 
 from src.script_generator import Scene, VideoScript
 
-
 # ── Intent → presentation mapping ────────────────────────────────────────────
 
 INTENT_MAP: dict[str, dict[str, str]] = {

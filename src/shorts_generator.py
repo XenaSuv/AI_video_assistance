@@ -18,19 +18,18 @@ burn-in so it reads on mute (Shorts almost always autoplay muted).
 """
 from __future__ import annotations
 
+import shutil
 import sys
 import warnings
 from pathlib import Path
 
 import numpy as np
 from loguru import logger
-import shutil
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import src.ffmpeg_utils as ffmpeg_utils
 from config import settings
 from src.script_generator import VideoScript
-import src.ffmpeg_utils as ffmpeg_utils
-
 
 SHORT_MAX_SECONDS = 58   # YouTube Shorts hard-limit is 60
 SHORT_W, SHORT_H   = 1080, 1920

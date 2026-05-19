@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import json
 import random as _stdlib_random
+import sys
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -51,10 +52,8 @@ from typing import Any
 
 from loguru import logger
 
-import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
-
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 

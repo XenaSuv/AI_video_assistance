@@ -13,16 +13,16 @@ from pathlib import Path
 from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import src.ffmpeg_utils as ffmpeg_utils
 from config import settings
-from src.script_generator import Scene, VideoScript
-from src.image_generator import generate_scene_clip
-from src.quote_card import render_quote_card_png
-from src.presenter import generate_presenter_clip
 from src.heygen_presenter import generate_heygen_clip
+from src.image_generator import generate_scene_clip
+from src.presenter import generate_presenter_clip
+from src.quote_card import render_quote_card_png
 from src.scene_strategy_engine import SceneStrategyEngine
 from src.scene_variety_engine import SceneVarietyEngineV2
+from src.script_generator import Scene, VideoScript
 from src.voice_generator import synthesize_hook
-import src.ffmpeg_utils as ffmpeg_utils
 
 VIDEO_W, VIDEO_H = 1280, 720   # canonical output resolution
 
@@ -81,7 +81,7 @@ async def _async_build_clips(
         for s in script.scenes
     ]
     results = await asyncio.gather(*tasks)
-    return {s.idx: clips for s, clips in zip(script.scenes, results)}
+    return {s.idx: clips for s, clips in zip(script.scenes, results, strict=False)}
 
 
 # --------------------- Per-scene assembly (parallel) ---------------------

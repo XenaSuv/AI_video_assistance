@@ -14,19 +14,23 @@ Covers:
 from __future__ import annotations
 
 import json
-import sys
 import os
+import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
+
 import pytest
+
+import src.script_generator as _sg_module
+from src.scraper import NewsItem
 
 # ── env vars must be set BEFORE any project module is imported ──────────────
 # conftest.py already handles this, but be explicit for clarity.
-
 # ---------------------------------------------------------------------------
 # Module under test
 # ---------------------------------------------------------------------------
 from src.script_generator import (
+    _DAILY_SHORTS_FILL_PROMPT,
     Scene,
     VideoScript,
     _build_items_block,
@@ -36,11 +40,7 @@ from src.script_generator import (
     _log_usage,
     generate_script,
     generate_short_script,
-    _DAILY_SHORTS_FILL_PROMPT,
 )
-import src.script_generator as _sg_module
-from src.scraper import NewsItem
-
 
 # ---------------------------------------------------------------------------
 # Helpers

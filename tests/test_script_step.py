@@ -10,7 +10,7 @@ import json
 import sys
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -24,10 +24,9 @@ for _m in (
 ):
     sys.modules.setdefault(_m, MagicMock())
 
-from src.script_step import _ScriptStep
-from src.script_generator import VideoScript, Scene
 from src.decision_engine_v3 import UnifiedStrategy
-
+from src.script_generator import Scene, VideoScript
+from src.script_step import _ScriptStep
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
