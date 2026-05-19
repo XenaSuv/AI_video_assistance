@@ -17,8 +17,10 @@ THRESHOLD = 80
 NEW_MODULES = [
     "src/config_validator.py",
     "src/deferred_feedback.py",
+    "src/media_builder.py",
     "src/pipeline_orchestrator.py",
     "src/script_step.py",
+    "src/video_generator.py",
 ]
 
 
