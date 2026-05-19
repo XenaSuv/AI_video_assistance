@@ -8,6 +8,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased] — Architecture & Quality Sprint
 
 ### Added
+- `_run_language_variant()` in `src/language_variant.py` refactored to run two pairs of
+  steps concurrently via `asyncio.gather + loop.run_in_executor`:
+  - Steps 3+4: `generate_subtitles` and `assemble_video` overlap (both need only the audio
+    produced in step 2; neither writes to paths the other reads)
+  - Steps 5+6: `build_short` and `generate_thumbnail` overlap (both need only `long_video`
+    produced in step 4)
+  - Eliminates two sequential blocking-I/O waits from the RU variant wall-clock time
 - `_assemble_one_scene()` in `src/video_generator.py`: per-scene assembly extracted from
   `assemble_video` loop body (A/V merge, title overlay, chyron); safe for concurrent
   execution because every intermediate file is uniquely named by scene index
@@ -50,6 +57,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `test_publish_step.py`: 78% → 99% — added `TestRunShortsExperimentsExecution` (7 tests)
   covering main experiment loop, and `TestUploadEnOptionalEngines` (5 tests) covering
   all five post-upload optional engine except-handlers
+- `test_language_variant.py`: 8 → 13 tests; added `TestRunLanguageVariantConcurrency` (5
+  tests) verifying both subtitles+video run concurrently, subtitle failure does not block
+  video, thumbnail always runs, and subtitle_path is forwarded to publish_episode
 - `test_video_generator.py`: 13% → 97% — 45 smoke tests; `_FfmpegMocks` context manager
   patching all `src.ffmpeg_utils.*` functions; added `TestAssembleOneScene` (8 tests)
   and `TestAsyncAssembleScenes` (3 tests) covering the new parallel assembly functions

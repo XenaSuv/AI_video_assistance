@@ -5,6 +5,7 @@ variants. Shared by all pipelines (daily, weekly, digest).
 """
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 
@@ -70,21 +71,26 @@ def _run_language_variant(
         logger.info(f"Reusing cached {audio_subdir}; measuring durations")
         _load_audio_durations(script, audio_dir)
 
-    # 3. Subtitles — transcribe from translated audio
-    subtitle_path: Path | None = None
-    try:
-        subtitle_path = generate_subtitles(
-            script,
-            audio_dir,
-            run_dir / f"subtitles_{lang_code}.srt",
-            intro_duration=_get_intro_duration(intro_path),
-        )
-    except Exception as exc:
-        logger.warning(f"{lang_name}: subtitle generation failed (non-fatal): {exc}")
-
-    # 4. Video — reuse existing clips, reassemble with new audio
+    # 3 + 4 concurrently: subtitle transcription and video assembly both need
+    # only the audio files produced in step 2 — they don't share output paths.
     long_video = run_dir / f"final_video_{lang_code}.mp4"
-    if _needs_video_rebuild(long_video):
+
+    def _do_subtitles() -> Path | None:
+        try:
+            return generate_subtitles(
+                script,
+                audio_dir,
+                run_dir / f"subtitles_{lang_code}.srt",
+                intro_duration=_get_intro_duration(intro_path),
+            )
+        except Exception as exc:
+            logger.warning(f"{lang_name}: subtitle generation failed (non-fatal): {exc}")
+            return None
+
+    def _do_video() -> None:
+        if not _needs_video_rebuild(long_video):
+            logger.info(f"Reusing cached {long_video.name}")
+            return
         clip_dir = run_dir / "clips"
         clip_paths_by_scene = {
             s.idx: [clip_dir / f"scene_{s.idx:02d}_clip_0.mp4"]
@@ -98,27 +104,49 @@ def _run_language_variant(
             script, clip_paths_by_scene, audio_paths_by_scene, long_video,
             intro_path=intro_path, outro_path=outro_path,
         )
-    else:
-        logger.info(f"Reusing cached {long_video.name}")
 
-    short_video: Path | None = None
-    if include_short:
-        short_video = run_dir / f"shorts_{lang_code}.mp4"
-        if not short_video.exists():
+    async def _subtitles_and_video() -> tuple[Path | None, None]:
+        lp = asyncio.get_running_loop()
+        sub, _ = await asyncio.gather(
+            lp.run_in_executor(None, _do_subtitles),
+            lp.run_in_executor(None, _do_video),
+        )
+        return sub, None
+
+    subtitle_path, _ = asyncio.run(_subtitles_and_video())
+
+    # 5 + 6 concurrently: short generation and thumbnail both depend on
+    # long_video (written by step 4) but not on each other.
+    def _do_short() -> Path | None:
+        if not include_short:
+            return None
+        sv = run_dir / f"shorts_{lang_code}.mp4"
+        if not sv.exists():
             from src.shorts_generator import build_short
             build_short(
                 script, long_video, run_dir,
                 audio_subdir=audio_subdir,
-                out_name=short_video.name,
+                out_name=sv.name,
             )
         else:
-            logger.info(f"Reusing cached {short_video.name}")
+            logger.info(f"Reusing cached {sv.name}")
+        return sv
 
-    # 5. Thumbnail
-    thumbnail = generate_thumbnail(
-        long_video, script.title, run_dir,
-        out_name=f"thumbnail_{lang_code}.jpg",
-    )
+    def _do_thumbnail() -> Path:
+        return generate_thumbnail(
+            long_video, script.title, run_dir,
+            out_name=f"thumbnail_{lang_code}.jpg",
+        )
+
+    async def _short_and_thumbnail() -> tuple[Path | None, Path]:
+        lp = asyncio.get_running_loop()
+        sv, th = await asyncio.gather(
+            lp.run_in_executor(None, _do_short),
+            lp.run_in_executor(None, _do_thumbnail),
+        )
+        return sv, th
+
+    short_video, thumbnail = asyncio.run(_short_and_thumbnail())
 
     # 6. Upload
     if skip_upload:
