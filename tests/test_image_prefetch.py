@@ -14,9 +14,8 @@ sys.modules.setdefault("PIL.Image", MagicMock())
 sys.modules.setdefault("PIL.ImageDraw", MagicMock())
 sys.modules.setdefault("PIL.ImageFont", MagicMock())
 
+from src.image_generator import async_prefetch_scene_images, prefetch_scene_image
 from src.script_generator import Scene, VideoScript
-from src.image_generator import prefetch_scene_image, async_prefetch_scene_images
-
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 

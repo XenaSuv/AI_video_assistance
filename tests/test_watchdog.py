@@ -8,8 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.watchdog import find_last_success, check
-
+from src.watchdog import check, find_last_success
 
 UTC = dt.timezone.utc
 NOW = dt.datetime(2026, 5, 16, 12, 0, 0, tzinfo=UTC)

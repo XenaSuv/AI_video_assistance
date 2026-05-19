@@ -30,12 +30,11 @@ from src.breaking_script_generator import generate_breaking_short_script
 from src.pipeline_helpers import _load_audio_durations, _load_cached_script, _setup_logging
 from src.scraper import NewsItem
 from src.shorts_generator import build_short, create_short_video
+from src.slack_notifier import notify_failure, notify_success
 from src.translator import translate_script
 from src.video_generator import generate_clips_for_scene
 from src.voice_generator import synthesize_script
 from src.youtube_uploader import upload_short
-from src.slack_notifier import notify_success, notify_failure
-
 
 
 def run_breaking_pipeline(item: NewsItem, skip_upload: bool = False) -> dict:

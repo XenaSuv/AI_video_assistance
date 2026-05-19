@@ -8,6 +8,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased] — Architecture & Quality Sprint
 
 ### Added
+- `_run_language_variant()` in `src/language_variant.py` refactored to run two pairs of
+  steps concurrently via `asyncio.gather + loop.run_in_executor`:
+  - Steps 3+4: `generate_subtitles` and `assemble_video` overlap (both need only the audio
+    produced in step 2; neither writes to paths the other reads)
+  - Steps 5+6: `build_short` and `generate_thumbnail` overlap (both need only `long_video`
+    produced in step 4)
+  - Eliminates two sequential blocking-I/O waits from the RU variant wall-clock time
+- `_assemble_one_scene()` in `src/video_generator.py`: per-scene assembly extracted from
+  `assemble_video` loop body (A/V merge, title overlay, chyron); safe for concurrent
+  execution because every intermediate file is uniquely named by scene index
+- `_async_assemble_scenes()` in `src/video_generator.py`: assembles all scenes concurrently
+  via `asyncio.gather + loop.run_in_executor`; replaces the sequential `for scene in script.scenes`
+  loop in `assemble_video`, cutting wall-clock assembly time from O(N) to O(1) per
+  scene-count
 - `_step_shorts_and_ru()` in `PipelineOrchestrator`: Shorts experiments and RU upload
   now run concurrently via `asyncio.gather + loop.run_in_executor`, mirroring the
   `_voice_and_images` pattern already used in `_MediaBuilder`
@@ -21,6 +35,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   active presenter (PR #115)
 
 ### Changed
+- `pyproject.toml`: ruff `select` expanded from `["E9", "F"]` to `["E9", "F", "B", "I"]`;
+  bugbear (B) and isort (I) now enforced in CI; all 281 pre-existing violations resolved:
+  259 import-order fixes auto-applied, 22 B violations fixed manually (B007 unused loop
+  vars → `_var`, B904 `raise … from None`, B905 `zip(strict=False)`, B017 specific
+  exception types, B011 `raise AssertionError`, B018 `_ = expr`)
 - `src/pipeline_orchestrator.py` refactored: 43 → 24 imports; orchestration split into
   three focused classes — `_ScriptStep`, `_MediaBuilder`, `_PublishStep`
 - `pyproject.toml`: `mypy --strict` now enforced globally; `src/media_builder.py`,
@@ -43,8 +62,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `test_publish_step.py`: 78% → 99% — added `TestRunShortsExperimentsExecution` (7 tests)
   covering main experiment loop, and `TestUploadEnOptionalEngines` (5 tests) covering
   all five post-upload optional engine except-handlers
-- `test_video_generator.py`: 13% → 93% — 33 smoke tests with `_FfmpegMocks` context
-  manager patching all `src.ffmpeg_utils.*` functions
+- `test_shorts_generator.py`: new — 32 tests, 100% coverage of the deprecated module;
+  documents `_saliency_crop_x`, `_resolve_music_path`, `build_short`, `add_big_captions`,
+  `create_short_video` behavior so regressions are caught during caller migration
+- `test_language_variant.py`: 8 → 13 tests; added `TestRunLanguageVariantConcurrency` (5
+  tests) verifying both subtitles+video run concurrently, subtitle failure does not block
+  video, thumbnail always runs, and subtitle_path is forwarded to publish_episode
+- `test_video_generator.py`: 13% → 97% — 45 smoke tests; `_FfmpegMocks` context manager
+  patching all `src.ffmpeg_utils.*` functions; added `TestAssembleOneScene` (8 tests)
+  and `TestAsyncAssembleScenes` (3 tests) covering the new parallel assembly functions
 - `test_script_step.py`: 15% → 98% — 42 tests covering `__init__`, `run()` cached/fresh
   paths, `_humanize_script`, `_apply_micro_hooks`, `_apply_thompson_hook`, `_run_new()`
 - `test_deferred_feedback.py`: new — 30 tests, 100% coverage of `_DeferredFeedbackCollector`

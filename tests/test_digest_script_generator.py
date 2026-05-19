@@ -9,15 +9,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.digest_script_generator import (
-    _log_usage,
     _load_daily_script,
+    _log_usage,
     _summarise_daily,
-    save_for_digest,
     collect_week_scripts,
     generate_digest_script,
+    save_for_digest,
 )
 from src.script_generator import VideoScript
-
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 

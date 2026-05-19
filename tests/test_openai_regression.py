@@ -14,10 +14,9 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Helpers — build realistic mock responses matching SDK types
@@ -91,14 +90,14 @@ class TestSDKImports:
         assert client is not None
 
     def test_exception_classes_exist(self):
-        from openai import BadRequestError, RateLimitError, APIStatusError
+        from openai import APIStatusError, BadRequestError, RateLimitError
         assert issubclass(BadRequestError, Exception)
         assert issubclass(RateLimitError, Exception)
         assert issubclass(APIStatusError, Exception)
 
     def test_exception_hierarchy(self):
         """RateLimitError and BadRequestError must be subclasses of APIStatusError."""
-        from openai import BadRequestError, RateLimitError, APIStatusError
+        from openai import APIStatusError, BadRequestError, RateLimitError
         assert issubclass(RateLimitError, APIStatusError)
         assert issubclass(BadRequestError, APIStatusError)
 
@@ -390,7 +389,7 @@ class TestEmbeddings:
 
 class TestErrorHandling:
     def test_bad_request_error_is_not_retryable(self):
-        from openai import BadRequestError, RateLimitError, APIStatusError
+        from openai import APIStatusError, BadRequestError, RateLimitError
 
         def _is_retryable(exc: BaseException) -> bool:
             if isinstance(exc, BadRequestError):
@@ -409,7 +408,7 @@ class TestErrorHandling:
         from openai import RateLimitError
 
         def _is_retryable(exc: BaseException) -> bool:
-            from openai import BadRequestError, APIStatusError
+            from openai import APIStatusError, BadRequestError
             if isinstance(exc, BadRequestError):
                 return False
             if isinstance(exc, RateLimitError):
@@ -467,8 +466,9 @@ class TestErrorHandling:
 
 class TestMakeOpenAIClient:
     def test_returns_openai_client(self):
-        from src.retry_utils import make_openai_client
         from openai import OpenAI
+
+        from src.retry_utils import make_openai_client
         client = make_openai_client()
         assert isinstance(client, OpenAI)
 

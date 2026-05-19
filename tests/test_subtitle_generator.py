@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
@@ -12,9 +12,8 @@ import pytest
 _openai_mock = MagicMock()
 sys.modules.setdefault("openai", _openai_mock)
 
-from src.subtitle_generator import _srt_time, _transcribe_scene, generate_subtitles
 from src.script_generator import Scene, VideoScript
-
+from src.subtitle_generator import _srt_time, _transcribe_scene, generate_subtitles
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

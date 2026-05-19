@@ -68,7 +68,6 @@ from typing import Any
 
 from loguru import logger
 
-
 # ── Content type detection keywords ───────────────────────────────────────────
 
 _BREAKING_KW   = {"breaking", "just announced", "urgent", "live:", "developing", "exclusive"}

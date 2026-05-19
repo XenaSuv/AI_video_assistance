@@ -46,12 +46,12 @@ data/thompson_state.json — single JSON file, overwritten on every update.
 from __future__ import annotations
 
 import json
+import random as _stdlib_random
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-import random as _stdlib_random
 from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))

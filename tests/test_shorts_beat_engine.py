@@ -3,7 +3,12 @@ from __future__ import annotations
 
 import pytest
 
+from src.emotion_engine import EMOTIONS
 from src.shorts_beat_engine import (
+    _BEAT_SSML_PREFIX,
+    _BEAT_SSML_SUFFIX,
+    _FILLER_WORDS,
+    _SUBTITLE_MAX_WORDS,
     BEAT_AVATAR_MODE,
     BEAT_DURATIONS,
     BEAT_EMOTIONS,
@@ -12,15 +17,9 @@ from src.shorts_beat_engine import (
     ShortBeat,
     ShortBeatPlan,
     ShortsBeatEngine,
-    _BEAT_SSML_PREFIX,
-    _BEAT_SSML_SUFFIX,
-    _FILLER_WORDS,
-    _SUBTITLE_MAX_WORDS,
     get_beat_engine,
 )
-from src.emotion_engine import EMOTIONS
 from src.shorts_engine_v2 import ShortScript
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 

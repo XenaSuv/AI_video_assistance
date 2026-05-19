@@ -7,19 +7,19 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Any
 
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
-from google.auth.exceptions import RefreshError
 from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -29,7 +29,6 @@ from src.circuit_breaker import youtube_breaker
 from src.exceptions import QuotaExhaustedError
 from src.script_generator import VideoScript
 from src.youtube_quota_guard import YouTubeQuotaGuard
-
 
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",

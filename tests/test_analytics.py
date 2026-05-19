@@ -8,20 +8,19 @@ from unittest.mock import patch
 import pytest
 
 from src.analytics import (
-    top_hooks,
-    top_titles,
-    hook_keywords,
-    top_keywords,
-    recent_records,
-    get_trend_report,
-    worst_hooks,
     boost_if_pattern_works,
+    get_engagement_stats,
     get_proven_hooks,
     get_proven_titles,
-    get_engagement_stats,
     get_recommendations,
+    get_trend_report,
+    hook_keywords,
+    recent_records,
+    top_hooks,
+    top_keywords,
+    top_titles,
+    worst_hooks,
 )
-
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 

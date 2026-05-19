@@ -445,9 +445,9 @@ New modules **must not** be added to the `[[tool.mypy.overrides]]` ignore list i
 |------|--------|
 | 59 legacy modules in `ignore_errors` | Deep structural type mismatches; tackle module by module |
 | `topic_main.py`, `weekly_main.py` | 0% test coverage — production entry points |
-| `shorts_generator.py` (DEPRECATED) | 17% coverage; used by legacy callers `breaking_main`, `weekly_main`, `topic_main`, `language_variant` |
-| Build video I/O | DALL-E + FFmpeg scene generation is still sequential per scene |
-| `_PublishStep._run_language_variant` | ElevenLabs RU + FFmpeg + YouTube upload run sequentially within a single RU variant |
+| `shorts_generator.py` (DEPRECATED) | 100% coverage; 5 active callers must be migrated to `shorts_pipeline.ShortsPipeline` before this module can be deleted; emits `DeprecationWarning` at runtime |
+| Build video I/O | Scene assembly now parallel (`_async_assemble_scenes`); DALL-E clip generation also parallel (`_async_build_clips`) |
+| `topic_main.py`, `weekly_main.py` | 95%/99% test coverage — production entry points now tested |
 | All I/O synchronous at function level | `asyncio.gather` wraps thread-pool executors — not true async. Refactor heavy callers to native async before scaling to high volume |
 | SQLite has no migrations | If `deduplicator.py` schema changes beyond version bump, delete `data/seen_stories.db` |
 | OAuth tokens in `config/*.pickle` | Do not commit these files — they are in `.gitignore` |

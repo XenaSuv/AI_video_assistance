@@ -3,12 +3,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
 from src.script_generator import Scene
-
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -49,18 +48,17 @@ def _pixabay_video(url: str = "https://cdn.pixabay.com/video.mp4") -> dict:
 # ── import after stubs are in place ─────────────────────────────────────────
 
 from src.broll_fetcher import (
-    _pexels_search,
-    _pexels_best_file,
-    _pixabay_search,
-    _pixabay_best_url,
     _download,
+    _pexels_best_file,
+    _pexels_search,
+    _pixabay_best_url,
+    _pixabay_search,
     _process_clip,
-    save_pexels_credit,
-    get_pexels_credits,
     fetch_broll_clip,
     fetch_broll_for_short,
+    get_pexels_credits,
+    save_pexels_credit,
 )
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # _pexels_search

@@ -6,13 +6,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.script_generator import Scene, VideoScript
 from src.comment_magnet_agent import (
-    apply_comment_magnet,
     CommentMagnetResult,
-    _log_usage,
     _build_scenes_block,
+    _log_usage,
+    apply_comment_magnet,
 )
+from src.script_generator import Scene, VideoScript
 
 
 def _make_script(n_scenes: int = 4) -> VideoScript:
@@ -76,7 +76,7 @@ class TestApplyCommentMagnet:
         original_narrations = [s.narration for s in script.scenes]
         with patch("src.comment_magnet_agent.make_openai_client", return_value=_mock_client()):
             apply_comment_magnet(script)
-        for orig, scene in zip(original_narrations, script.scenes):
+        for orig, scene in zip(original_narrations, script.scenes, strict=False):
             assert scene.narration == orig
 
     def test_returns_unmodified_on_openai_exception(self):

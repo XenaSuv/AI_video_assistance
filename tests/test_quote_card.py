@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -11,14 +11,13 @@ import pytest
 for _mod in ("PIL", "PIL.Image", "PIL.ImageDraw", "PIL.ImageFont"):
     sys.modules.setdefault(_mod, MagicMock())
 
-from src.script_generator import Scene
 from src.quote_card import (
-    render_quote_card_png,
     _load_font,
-    _wrap,
     _quote_font_size,
+    _wrap,
+    render_quote_card_png,
 )
-
+from src.script_generator import Scene
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 

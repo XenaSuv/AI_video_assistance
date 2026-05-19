@@ -14,21 +14,21 @@ Covers:
 """
 from __future__ import annotations
 
-import pytest
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from src.ab_testing_engine import (
+    _VARIANT_TYPE_TO_PATTERN,
     ABTestingEngine,
     ABTestResult,
     ABTestStore,
     ABTestVariant,
-    _VARIANT_TYPE_TO_PATTERN,
 )
 from src.packaging_engine import PackagingEngine, PackagingStore
-
 
 # ── Fakes ──────────────────────────────────────────────────────────────────────
 

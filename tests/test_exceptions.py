@@ -16,7 +16,6 @@ from src.exceptions import (
     UploadError,
 )
 
-
 # ── Inheritance tree ──────────────────────────────────────────────────────────
 
 class TestInheritanceTree:

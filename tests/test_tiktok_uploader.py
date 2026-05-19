@@ -9,15 +9,15 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.tiktok_uploader import (
-    _load_tokens,
-    _save_tokens,
+    _CHUNK_SIZE,
+    _TOKEN_URL,
     _do_refresh,
     _get_access_token,
     _init_upload,
+    _load_tokens,
+    _save_tokens,
     _upload_chunks,
     post_short,
-    _TOKEN_URL,
-    _CHUNK_SIZE,
 )
 
 

@@ -420,9 +420,13 @@ def render_shorts_beat_template() -> None:
         import sys
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
         from src.shorts_beat_engine import (
-            BEAT_ROLES, BEAT_DURATIONS, BEAT_EMOTIONS,
-            BEAT_AVATAR_MODE, BEAT_VISUAL_TYPE,
-            _BEAT_SSML_PREFIX, _BEAT_SSML_SUFFIX,
+            _BEAT_SSML_PREFIX,
+            _BEAT_SSML_SUFFIX,
+            BEAT_AVATAR_MODE,
+            BEAT_DURATIONS,
+            BEAT_EMOTIONS,
+            BEAT_ROLES,
+            BEAT_VISUAL_TYPE,
         )
     except Exception:
         st.caption("Shorts beat engine not available.")
@@ -464,7 +468,8 @@ def render_emotional_arcs() -> None:
         import sys
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
         from src.emotional_arc_engine import (
-            EmotionalArcEngine, EMOTIONAL_ARCS,
+            EMOTIONAL_ARCS,
+            EmotionalArcEngine,
         )
         engine = EmotionalArcEngine()
         history = engine.load_stats(n=10)
@@ -573,7 +578,9 @@ def render_emotion_engine() -> None:
         import sys
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
         from src.emotion_engine import (
-            EmotionEngine, EMOTION_MAP, SHORT_EMOTION_FLOW,
+            EMOTION_MAP,
+            SHORT_EMOTION_FLOW,
+            EmotionEngine,
         )
         engine = EmotionEngine()
         history = engine.load_stats(n=10)
@@ -631,7 +638,8 @@ def render_narrative_conflicts() -> None:
         import sys
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
         from src.narrative_conflict_engine import (
-            NarrativeConflictEngine, CONFLICT_TYPES,
+            CONFLICT_TYPES,
+            NarrativeConflictEngine,
         )
         engine = NarrativeConflictEngine()
         stats  = engine.stats()
@@ -680,7 +688,10 @@ def render_narrative_identity() -> None:
         import sys
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
         from src.narrative_identity_engine import (
-            NarrativeIdentityEngine, BELIEFS, THEMES, CALLBACKS,
+            BELIEFS,
+            CALLBACKS,
+            THEMES,
+            NarrativeIdentityEngine,
         )
         engine = NarrativeIdentityEngine()
         arc_data = engine.arc_status()
@@ -703,7 +714,7 @@ def render_narrative_identity() -> None:
 
     st.subheader("Narrative Arcs")
     arc_rows = []
-    for arc_key, info in arc_data.items():
+    for _arc_key, info in arc_data.items():
         arc_rows.append({
             "Arc":      info["label"],
             "Status":   info["status"],

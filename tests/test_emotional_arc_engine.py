@@ -6,20 +6,19 @@ import json
 
 import pytest
 
+from src.emotion_engine import AVATAR_STYLE_MAP, EMOTIONS
 from src.emotional_arc_engine import (
+    _EMOTION_ALIAS,
+    _EMOTION_INTENT_SYNC,
+    _INTENT_SYNC_THRESHOLD,
     EMOTIONAL_ARCS,
     SHORT_ARC,
     ArcStats,
     EmotionalArcEngine,
-    _EMOTION_ALIAS,
-    _EMOTION_INTENT_SYNC,
-    _INTENT_SYNC_THRESHOLD,
     _resolve,
     get_arc_engine,
 )
-from src.emotion_engine import AVATAR_STYLE_MAP, EMOTIONS
 from src.script_generator import Scene, VideoScript
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -86,7 +85,7 @@ class TestArcConstants:
         assert len(SHORT_ARC) == 4
 
     def test_short_arc_intensities_in_range(self):
-        for emo, intensity in SHORT_ARC:
+        for _emo, intensity in SHORT_ARC:
             assert 0.0 <= intensity <= 1.0
 
     def test_intent_sync_values_are_valid_intents(self):

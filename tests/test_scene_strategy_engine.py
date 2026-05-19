@@ -8,15 +8,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.scene_strategy_engine import (
+    _DEFAULT_SCORES,
     INTENT_TO_SCENE,
     SceneStrategy,
     SceneStrategyEngine,
     SceneStrategyItem,
-    _DEFAULT_SCORES,
 )
 from src.scene_variety_engine import SceneVarietyEngineV2
 from src.script_generator import Scene
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -89,7 +88,7 @@ class TestBuildStrategy:
     def test_index_matches_scene_idx(self, engine):
         scenes = [_scene(i) for i in range(4)]
         strategy = engine.build_strategy(scenes)
-        for item, scene in zip(strategy.items, scenes):
+        for item, scene in zip(strategy.items, scenes, strict=False):
             assert item.index == scene.idx
 
     def test_accepts_none_performance_data(self, engine):

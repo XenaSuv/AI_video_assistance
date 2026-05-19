@@ -5,7 +5,6 @@ import pytest
 
 from src.log_filter import scrub, scrub_message
 
-
 # ── scrub_message: individual pattern coverage ────────────────────────────────
 
 class TestScrubMessage:

@@ -25,7 +25,6 @@ from loguru import logger
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 
-
 MAX_RETRIES    = 3
 RETRY_DELAY_SEC = 30 * 60
 

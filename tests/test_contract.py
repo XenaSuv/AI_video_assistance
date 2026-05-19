@@ -10,14 +10,14 @@ Covers:
 """
 from __future__ import annotations
 
-import pytest
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.shared_types import ScenePolicy, StrategyConfig
-from src.scene_variety_engine import SceneVarietyEngineV2
-from src.scene_strategy_engine import SceneStrategyEngine
+import pytest
 
+from src.scene_strategy_engine import SceneStrategyEngine
+from src.scene_variety_engine import SceneVarietyEngineV2
+from src.shared_types import ScenePolicy, StrategyConfig
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -350,5 +350,6 @@ class TestInfographicDataHonoured:
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _tmp_dir(tmp_path=None):
-    import tempfile, pathlib
+    import pathlib
+    import tempfile
     return pathlib.Path(tempfile.mkdtemp())

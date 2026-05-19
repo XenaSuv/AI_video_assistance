@@ -26,7 +26,10 @@ from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.comment_magnet_agent import apply_comment_magnet
 from src.hook_selector import record_usage
+from src.open_loop_agent import apply_open_loops
+from src.pacing_auditor import audit_pacing
 from src.pipeline_helpers import (
     _get_shared_outro,
     _load_audio_durations,
@@ -35,27 +38,24 @@ from src.pipeline_helpers import (
     _setup_logging,
 )
 from src.shorts_generator import build_short
+from src.slack_notifier import notify_failure, notify_success
 from src.subtitle_generator import generate_subtitles
 from src.thumbnail_ab import (
     generate_thumbnail_variants,
     pick_thumbnail,
     record_thumbnail_usage,
 )
-from src.video_generator import build_video
-from src.voice_generator import synthesize_script
-from src.youtube_uploader import publish_episode
-from src.slack_notifier import notify_success, notify_failure
 from src.topic_segment_generator import (
     TopicFormat,
     TopicIdea,
+    _load_ideas,
     generate_next_topic_ideas,
     generate_topic_script,
     pick_next_topic,
-    _load_ideas,
 )
-from src.open_loop_agent import apply_open_loops
-from src.comment_magnet_agent import apply_comment_magnet
-from src.pacing_auditor import audit_pacing
+from src.video_generator import build_video
+from src.voice_generator import synthesize_script
+from src.youtube_uploader import publish_episode
 
 
 def run_topic_pipeline(

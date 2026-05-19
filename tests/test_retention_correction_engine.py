@@ -20,14 +20,13 @@ from pathlib import Path
 import pytest
 
 from src.retention_correction_engine import (
-    CorrectionStore,
     Correction,
+    CorrectionStore,
     DropPoint,
     FixType,
     RetentionCorrectionEngine,
     detect_drops,
 )
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 

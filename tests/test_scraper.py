@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.scraper import (
+    OFFICIAL_SCORE,
     NewsItem,
     ScraperCache,
     _deep_collect,
@@ -18,9 +19,7 @@ from src.scraper import (
     scrape_all,
     scrape_hackernews,
     scrape_huggingface,
-    OFFICIAL_SCORE,
 )
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 

@@ -42,7 +42,6 @@ from src.drop_predictor import (
     suggest_strategy_adjustments,
 )
 
-
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _tmp() -> Path:
@@ -478,6 +477,7 @@ class TestDropPredictor:
     def test_injectable_model_used_for_prediction(self):
         """When a model is injected it takes priority over rule-based."""
         from unittest.mock import MagicMock
+
         from src import drop_predictor as dp
 
         mock_model          = MagicMock()

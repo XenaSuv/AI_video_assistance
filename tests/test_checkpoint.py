@@ -1,7 +1,9 @@
 """Tests for PipelineCheckpoint."""
 import json
-import pytest
 from pathlib import Path
+
+import pytest
+
 from src.checkpoint import PipelineCheckpoint
 
 

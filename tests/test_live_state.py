@@ -6,8 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from src.live_state import LiveState, _IDLE, _now_iso, _now_hms, MAX_LOG_EVENTS
-
+from src.live_state import _IDLE, MAX_LOG_EVENTS, LiveState, _now_hms, _now_iso
 
 # ── Helper functions ──────────────────────────────────────────────────────────
 

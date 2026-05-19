@@ -11,7 +11,6 @@ import pytest
 
 from src.presenter import _b64_uri, generate_presenter_clip
 
-
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _make_resp(json_data: dict, status_code: int = 200):

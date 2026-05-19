@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -24,6 +24,7 @@ for _m in (
 ):
     sys.modules.setdefault(_m, MagicMock())
 
+from src.decision_engine_v3 import UnifiedStrategy
 from src.pipeline_helpers import (
     _build_scene_map,
     _build_v3_context,
@@ -38,9 +39,7 @@ from src.pipeline_helpers import (
     _setup_logging,
     _unified_strategy_to_content_strategy,
 )
-from src.decision_engine_v3 import UnifiedStrategy
 from src.script_generator import Scene, VideoScript
-
 
 # ── _classify_hook_type ───────────────────────────────────────────────────────
 
@@ -477,8 +476,8 @@ class TestSetupLogging:
 # We test control-flow only: which methods get called, what ends up in
 # self._summary, and how errors propagate.
 
-from src.pipeline_orchestrator import PipelineOrchestrator
 from src.media_builder import _MediaBuilder
+from src.pipeline_orchestrator import PipelineOrchestrator
 from src.publish_step import _PublishStep
 from src.quality_gate import QualityGateError
 

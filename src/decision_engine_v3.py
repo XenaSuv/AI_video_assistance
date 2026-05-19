@@ -64,7 +64,6 @@ from loguru import logger
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 
-
 # ── PerformanceStore ──────────────────────────────────────────────────────────
 
 _DEFAULT_METRICS: dict[str, Any] = {

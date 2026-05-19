@@ -13,15 +13,16 @@ from typing import Any
 
 from loguru import logger
 from openai import OpenAI
+
 from src.retry_utils import make_openai_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
-from src.cost_tracker import get_ledger
 from src.analytics import get_proven_hooks, get_proven_titles, top_keywords
-from src.scraper import NewsItem
-from src.editorial_brain import editorial_plan_to_prompt, EditorialPlan
+from src.cost_tracker import get_ledger
+from src.editorial_brain import EditorialPlan, editorial_plan_to_prompt
 from src.response_validator import validate_llm_response
+from src.scraper import NewsItem
 
 
 @dataclass

@@ -30,7 +30,6 @@ from typing import Any, Callable
 
 from src.exceptions import ServiceUnavailableError
 
-
 # ── Public exception ──────────────────────────────────────────────────────────
 
 class CircuitOpenError(ServiceUnavailableError):

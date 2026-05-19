@@ -14,26 +14,30 @@ sys.modules.setdefault("apscheduler.schedulers.blocking", _apscheduler_mock)
 sys.modules.setdefault("apscheduler.triggers", _apscheduler_mock)
 sys.modules.setdefault("apscheduler.triggers.cron", _apscheduler_mock)
 
-# Stub deps pulled in by lazy imports inside job functions
+# Stub deps pulled in by lazy imports inside job functions.
+# NOTE: src.main and src.topic_main are NOT stubbed here at module level because
+# doing so would permanently replace those modules in sys.modules for the entire
+# test session, breaking test_topic_main.py tests that rely on the real
+# src.topic_main module.  Instead, each test that invokes the job functions
+# stubs those modules with patch.dict(sys.modules, ...) so the stub is
+# automatically removed when the test finishes.
 for _stub in (
     "elevenlabs",
     "elevenlabs.client",
     "google.oauth2.credentials",
     "google.auth.exceptions",
     "googleapiclient.http",
-    "src.main",
-    "src.topic_main",
 ):
     sys.modules.setdefault(_stub, MagicMock())
 
 from src.scheduler import (
+    MAX_RETRIES,
+    RETRY_DELAY_SEC,
     _run_with_retry,
     build_scheduler,
     job_daily_news,
     job_topic,
     main,
-    MAX_RETRIES,
-    RETRY_DELAY_SEC,
 )
 
 
@@ -116,14 +120,22 @@ class TestBuildScheduler:
 
 class TestJobFunctions:
     def test_job_daily_news_calls_run_pipeline(self):
-        with patch("src.scheduler._run_with_retry") as mock_retry:
-            job_daily_news()
+        # Stub src.main only for the duration of this test so the lazy import
+        # inside job_daily_news() succeeds without affecting other test modules.
+        with patch.dict(sys.modules, {"src.main": MagicMock()}):
+            with patch("src.scheduler._run_with_retry") as mock_retry:
+                job_daily_news()
         mock_retry.assert_called_once()
         assert mock_retry.call_args[0][0] == "daily_news"
 
     def test_job_topic_calls_run_topic_pipeline(self):
-        with patch("src.scheduler._run_with_retry") as mock_retry:
-            job_topic()
+        # Stub src.topic_main only for the duration of this test so the lazy
+        # import inside job_topic() succeeds without permanently replacing the
+        # real src.topic_main module in sys.modules (which would break
+        # test_topic_main.py tests that need the real run_topic_pipeline).
+        with patch.dict(sys.modules, {"src.topic_main": MagicMock()}):
+            with patch("src.scheduler._run_with_retry") as mock_retry:
+                job_topic()
         mock_retry.assert_called_once()
         assert mock_retry.call_args[0][0] == "topic"
 

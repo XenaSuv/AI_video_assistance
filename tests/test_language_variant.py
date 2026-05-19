@@ -151,3 +151,103 @@ class TestRunLanguageVariantHappyPath:
               patch("src.shorts_generator.build_short")):
             _call(run_dir=tmp_path)
         mock_assemble.assert_called_once()
+
+
+class TestRunLanguageVariantConcurrency:
+    """Verify that the parallel steps both execute and interact correctly."""
+
+    def test_subtitles_and_video_both_run(self, tmp_path):
+        """generate_subtitles and assemble_video are both called when video needs rebuild."""
+        with (patch("src.language_variant._load_cached_script", return_value=None),
+              patch("src.language_variant.translate_script", return_value=_script()),
+              patch("src.language_variant.synthesize_script"),
+              patch("src.language_variant.generate_subtitles",
+                    return_value=Path("/tmp/subs.srt")) as mock_subs,
+              patch("src.language_variant._needs_video_rebuild", return_value=True),
+              patch("src.language_variant.assemble_video") as mock_assemble,
+              patch("src.language_variant.generate_thumbnail", return_value=Path("/tmp/t.jpg")),
+              patch("src.language_variant.publish_episode", return_value={}),
+              patch("src.language_variant._load_audio_durations"),
+              patch("src.language_variant._get_intro_duration", return_value=0.0),
+              patch("src.shorts_generator.build_short")):
+            _call(run_dir=tmp_path)
+
+        mock_subs.assert_called_once()
+        mock_assemble.assert_called_once()
+
+    def test_subtitle_failure_does_not_block_video(self, tmp_path):
+        """Video assembly completes even when subtitle generation raises."""
+        with (patch("src.language_variant._load_cached_script", return_value=None),
+              patch("src.language_variant.translate_script", return_value=_script()),
+              patch("src.language_variant.synthesize_script"),
+              patch("src.language_variant.generate_subtitles",
+                    side_effect=RuntimeError("whisper down")),
+              patch("src.language_variant._needs_video_rebuild", return_value=True),
+              patch("src.language_variant.assemble_video") as mock_assemble,
+              patch("src.language_variant.generate_thumbnail", return_value=Path("/tmp/t.jpg")),
+              patch("src.language_variant.publish_episode", return_value={}),
+              patch("src.language_variant._load_audio_durations"),
+              patch("src.language_variant._get_intro_duration", return_value=0.0),
+              patch("src.shorts_generator.build_short")):
+            result = _call(run_dir=tmp_path)
+
+        assert result["status"] == "published"
+        mock_assemble.assert_called_once()
+
+    def test_short_and_thumbnail_both_called_when_include_short(self, tmp_path):
+        """When include_short=True, both build_short and generate_thumbnail are called."""
+        mock_build_short = MagicMock()
+        with (patch("src.language_variant._load_cached_script", return_value=None),
+              patch("src.language_variant.translate_script", return_value=_script()),
+              patch("src.language_variant.synthesize_script"),
+              patch("src.language_variant.generate_subtitles", return_value=None),
+              patch("src.language_variant._needs_video_rebuild", return_value=False),
+              patch("src.language_variant.generate_thumbnail",
+                    return_value=Path("/tmp/t.jpg")) as mock_thumb,
+              patch("src.language_variant.publish_episode", return_value={}),
+              patch("src.language_variant._load_audio_durations"),
+              patch("src.language_variant._get_intro_duration", return_value=0.0),
+              patch.dict("sys.modules", {"src.shorts_generator": MagicMock(
+                  build_short=mock_build_short
+              )})):
+            _call(run_dir=tmp_path, include_short=True)
+
+        mock_thumb.assert_called_once()
+        mock_build_short.assert_called_once()
+
+    def test_thumbnail_called_even_when_include_short_false(self, tmp_path):
+        """generate_thumbnail always runs regardless of include_short."""
+        with (patch("src.language_variant._load_cached_script", return_value=None),
+              patch("src.language_variant.translate_script", return_value=_script()),
+              patch("src.language_variant.synthesize_script"),
+              patch("src.language_variant.generate_subtitles", return_value=None),
+              patch("src.language_variant._needs_video_rebuild", return_value=False),
+              patch("src.language_variant.generate_thumbnail",
+                    return_value=Path("/tmp/t.jpg")) as mock_thumb,
+              patch("src.language_variant.publish_episode", return_value={}),
+              patch("src.language_variant._load_audio_durations"),
+              patch("src.language_variant._get_intro_duration", return_value=0.0),
+              patch("src.shorts_generator.build_short")):
+            result = _call(run_dir=tmp_path, include_short=False)
+
+        mock_thumb.assert_called_once()
+        assert result is not None
+
+    def test_subtitle_path_passed_to_upload(self, tmp_path):
+        """subtitle_path returned by generate_subtitles is forwarded to publish_episode."""
+        srt = Path("/tmp/sub.srt")
+        with (patch("src.language_variant._load_cached_script", return_value=None),
+              patch("src.language_variant.translate_script", return_value=_script()),
+              patch("src.language_variant.synthesize_script"),
+              patch("src.language_variant.generate_subtitles", return_value=srt),
+              patch("src.language_variant._needs_video_rebuild", return_value=False),
+              patch("src.language_variant.generate_thumbnail", return_value=Path("/tmp/t.jpg")),
+              patch("src.language_variant.publish_episode",
+                    return_value={"video_id": "v1"}) as mock_pub,
+              patch("src.language_variant._load_audio_durations"),
+              patch("src.language_variant._get_intro_duration", return_value=0.0),
+              patch("src.shorts_generator.build_short")):
+            _call(run_dir=tmp_path)
+
+        call_kwargs = mock_pub.call_args.kwargs
+        assert call_kwargs["subtitle_path"] == srt

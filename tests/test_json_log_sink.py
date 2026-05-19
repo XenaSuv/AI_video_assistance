@@ -11,7 +11,6 @@ from loguru import logger
 
 from src.json_log_sink import JsonSink, _safe
 
-
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _add(path: Path, **kwargs) -> int:
@@ -230,7 +229,7 @@ class TestExceptionField:
         sid = _add(p)
         try:
             try:
-                1 / 0
+                _ = 1 / 0
             except ZeroDivisionError:
                 logger.exception("div by zero")
         finally:

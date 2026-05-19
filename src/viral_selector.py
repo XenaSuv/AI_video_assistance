@@ -3,11 +3,11 @@ from __future__ import annotations
 import re
 from typing import Iterable
 
-from src.retry_utils import make_openai_client
 from loguru import logger
 
 from config import settings
 from src.cost_tracker import get_ledger
+from src.retry_utils import make_openai_client
 from src.scraper import NewsItem
 
 HIGH_IMPACT_KEYWORDS = [

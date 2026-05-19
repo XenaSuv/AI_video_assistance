@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch, AsyncMock, call
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 # Stub elevenlabs before import
 _elev_mock = MagicMock()
@@ -22,8 +22,7 @@ sys.modules.setdefault("tenacity", _tenacity)
 
 import pytest
 
-from src.voice_generator import annotated_to_ssml, _is_retryable_elevenlabs
-
+from src.voice_generator import _is_retryable_elevenlabs, annotated_to_ssml
 
 # ── annotated_to_ssml ─────────────────────────────────────────────────────────
 

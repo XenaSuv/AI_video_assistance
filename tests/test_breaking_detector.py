@@ -9,17 +9,17 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.breaking_detector import (
-    _seen_path,
-    _load_seen,
-    _save_seen,
-    _is_important,
-    _is_recent,
-    _circuit_breaker_ok,
-    check_for_breaking,
-    mark_published,
-    mark_publish_failed,
     _COOLDOWN_H,
     _MAX_PER_DAY,
+    _circuit_breaker_ok,
+    _is_important,
+    _is_recent,
+    _load_seen,
+    _save_seen,
+    _seen_path,
+    check_for_breaking,
+    mark_publish_failed,
+    mark_published,
 )
 from src.scraper import NewsItem
 

@@ -1,29 +1,31 @@
 """Media artifact construction — voice, subtitles, video, thumbnail."""
 from __future__ import annotations
+
 import asyncio
 import sys
 from pathlib import Path
 from typing import Any
+
 from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.checkpoint import PipelineCheckpoint
+from src.deduplicator import SeenStories
+from src.image_generator import async_prefetch_scene_images
+from src.live_state import LiveState
 from src.pipeline_helpers import (
     _get_intro_duration,
     _get_shared_outro,
     _load_audio_durations,
     _needs_video_rebuild,
 )
+from src.pipeline_observer import PipelineObserver
+from src.script_generator import VideoScript
 from src.subtitle_generator import generate_subtitles
+from src.thumbnail_ab import generate_thumbnail_variants, pick_thumbnail
 from src.video_generator import build_video
 from src.voice_generator import async_synthesize_script
-from src.image_generator import async_prefetch_scene_images
-from src.thumbnail_ab import generate_thumbnail_variants, pick_thumbnail
-from src.checkpoint import PipelineCheckpoint
-from src.pipeline_observer import PipelineObserver
-from src.live_state import LiveState
-from src.deduplicator import SeenStories
-from src.script_generator import VideoScript
 
 
 class _MediaBuilder:

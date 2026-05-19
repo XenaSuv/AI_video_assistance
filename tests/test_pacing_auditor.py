@@ -3,24 +3,24 @@ GPT interrupt generation, and the public audit_pacing() API."""
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from src.script_generator import Scene, VideoScript
 from src.pacing_auditor import (
-    _score_scene,
-    _find_flat_zones,
-    _log_usage,
-    _generate_interrupt,
-    audit_pacing,
-    SceneScore,
+    _FLAT_RUN_MIN,
+    _FLAT_THRESHOLD,
+    _MAX_INTERRUPTS,
     FlatZone,
     PacingAuditResult,
-    _FLAT_THRESHOLD,
-    _FLAT_RUN_MIN,
-    _MAX_INTERRUPTS,
+    SceneScore,
+    _find_flat_zones,
+    _generate_interrupt,
+    _log_usage,
+    _score_scene,
+    audit_pacing,
 )
+from src.script_generator import Scene, VideoScript
 
 
 def _scene(idx: int, narration: str, heading: str = "") -> Scene:

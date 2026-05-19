@@ -10,8 +10,8 @@ import pytest
 sys.modules.setdefault("elevenlabs", MagicMock())
 sys.modules.setdefault("elevenlabs.client", MagicMock())
 
-from src.viral_selector import keyword_score, is_boring, pick_viral_news, gpt_score
 from src.scraper import NewsItem
+from src.viral_selector import gpt_score, is_boring, keyword_score, pick_viral_news
 
 
 def _item(title: str, summary: str = "", source: str = "test") -> NewsItem:

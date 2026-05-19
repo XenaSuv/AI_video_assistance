@@ -26,10 +26,17 @@ from loguru import logger
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.hook_selector import record_usage
-from src.pipeline_helpers import _get_shared_outro, _load_audio_durations, _load_cached_script, _needs_video_rebuild, _setup_logging
 from src.language_variant import _run_language_variant
-from src.subtitle_generator import generate_subtitles
+from src.pipeline_helpers import (
+    _get_shared_outro,
+    _load_audio_durations,
+    _load_cached_script,
+    _needs_video_rebuild,
+    _setup_logging,
+)
 from src.shorts_generator import build_short
+from src.slack_notifier import notify_failure, notify_success
+from src.subtitle_generator import generate_subtitles
 from src.thumbnail_ab import (
     generate_thumbnail_variants,
     pick_thumbnail,
@@ -45,7 +52,6 @@ from src.weekly_script_generator import (
 )
 from src.weekly_shorts_generator import build_tutorial_shorts
 from src.youtube_uploader import publish_episode, upload_video
-from src.slack_notifier import notify_success, notify_failure
 
 _VALID_TOOLS = ["claude", "chatgpt", "gemini"]
 

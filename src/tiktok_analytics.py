@@ -20,6 +20,7 @@ from pathlib import Path
 
 import requests
 from loguru import logger
+
 from src.retry_utils import http_post
 
 _VIDEO_LIST_URL   = "https://open.tiktokapis.com/v2/video/list/"

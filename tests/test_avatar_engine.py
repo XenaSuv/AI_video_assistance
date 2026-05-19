@@ -8,12 +8,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.avatar_engine import (
-    AVATAR_INTENTS,
-    AvatarEngine,
     _INTENT_STYLE,
     _PERSONA_AVATAR_ATTR,
+    AVATAR_INTENTS,
+    AvatarEngine,
 )
-
 
 # ── AVATAR_INTENTS ────────────────────────────────────────────────────────────
 

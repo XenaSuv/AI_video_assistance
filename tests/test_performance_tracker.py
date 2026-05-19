@@ -12,12 +12,11 @@ import json
 import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 import src.performance_tracker as pt
-
 
 # ── Fixture: redirect DB path to a tmp file ───────────────────────────────────
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -24,21 +24,20 @@ for _mod in (
 
 # ── Module under test ─────────────────────────────────────────────────────────
 from src.image_generator import (
-    _normalize_visual_prompt,
-    _is_generic_prompt,
-    _photo_query,
-    _is_retryable_dalle,
     _PREAMBLE_RE,
-    generate_dalle_image,
-    generate_sd_image,
-    fetch_stock_photo,
-    generate_scene_clip,
-    _valid_video_clip,
     _black_placeholder,
+    _is_generic_prompt,
+    _is_retryable_dalle,
     _ken_burns_clip,
+    _normalize_visual_prompt,
+    _photo_query,
+    _valid_video_clip,
+    fetch_stock_photo,
+    generate_dalle_image,
+    generate_scene_clip,
+    generate_sd_image,
 )
 from src.script_generator import Scene, VideoScript
-
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 

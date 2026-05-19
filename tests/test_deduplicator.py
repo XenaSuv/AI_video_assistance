@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from src.deduplicator import SeenStories, _MIGRATIONS, _SCHEMA_VERSION
+from src.deduplicator import _MIGRATIONS, _SCHEMA_VERSION, SeenStories
 from src.scraper import NewsItem
 
 

@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import sys
 from pathlib import Path
 from typing import Optional
 
-import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from loguru import logger

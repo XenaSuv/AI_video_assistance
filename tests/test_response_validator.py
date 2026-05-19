@@ -5,9 +5,8 @@ import json
 
 import pytest
 
+from src.exceptions import AIVideoError, ScriptGenerationError
 from src.response_validator import parse_llm_json, validate_llm_response
-from src.exceptions import ScriptGenerationError, AIVideoError
-
 
 # ── parse_llm_json ────────────────────────────────────────────────────────────
 

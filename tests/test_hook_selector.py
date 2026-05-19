@@ -5,8 +5,7 @@ import json
 
 import pytest
 
-from src.hook_selector import pick_hook, record_usage, record_performance, top_hooks
-
+from src.hook_selector import pick_hook, record_performance, record_usage, top_hooks
 
 # ── pick_hook() ───────────────────────────────────────────────────────────────
 

@@ -18,15 +18,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.shorts_experiment_engine import (
+    _HOOK_AGG_BOOST,
+    _MIN_SIGNAL_COUNT,
+    _WINNER_THRESHOLD,
     ShortsExperiment,
     ShortsExperimentEngine,
     ShortsExperimentResult,
     ShortsExperimentStore,
-    _HOOK_AGG_BOOST,
-    _MIN_SIGNAL_COUNT,
-    _WINNER_THRESHOLD,
 )
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 

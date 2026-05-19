@@ -20,8 +20,8 @@ def get_analytics_service(token_file: str = "config/token.json") -> Any:
             json_path = pickle_path.with_suffix(".json")
             raw = pickle_path.read_bytes()
             try:
-                import pickle as _pickle
                 import io
+                import pickle as _pickle
                 creds = _pickle.load(io.BytesIO(raw))
                 token_json = creds.to_json()
             except Exception as exc:

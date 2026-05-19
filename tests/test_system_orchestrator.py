@@ -29,7 +29,6 @@ import pytest
 
 from src.system_orchestrator import CycleResult, SystemOrchestrator, create_orchestrator
 
-
 # ── Helpers / stubs ────────────────────────────────────────────────────────────
 
 def _tmp() -> Path:

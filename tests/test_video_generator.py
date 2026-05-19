@@ -5,6 +5,7 @@ Heavy image/voice/scene dependencies are stubbed in conftest.py and per-test pat
 """
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -15,12 +16,13 @@ from src.script_generator import Scene, VideoScript
 from src.video_generator import (
     VIDEO_H,
     VIDEO_W,
+    _assemble_one_scene,
+    _async_assemble_scenes,
     _resolve_music_path,
     assemble_video,
     build_video,
     generate_clips_for_scene,
 )
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -488,6 +490,179 @@ class TestAssembleVideoMusic:
             assemble_video(_script(scenes), clips, audio, tmp_path / "out.mp4")
 
         ff.mocks["mix_music"].assert_not_called()
+
+
+# ── _assemble_one_scene ───────────────────────────────────────────────────────
+
+def _one_scene_setup(
+    tmp_path: Path,
+    idx: int = 0,
+    source_quote: str | None = None,
+) -> tuple[Scene, dict, dict, Path]:
+    """Return (scene, clip_paths_by_scene, audio_paths_by_scene, assembled_dir)."""
+    scene = _scene(idx)
+    if source_quote is not None:
+        scene.source_quote = source_quote
+    clip = tmp_path / f"clip_{idx}.mp4"; clip.touch()
+    audio_dir = tmp_path / "audio"; audio_dir.mkdir(exist_ok=True)
+    audio = audio_dir / f"scene_{idx:02d}.mp3"; audio.touch()
+    assembled_dir = tmp_path / "assembled"; assembled_dir.mkdir(exist_ok=True)
+    return scene, {idx: [clip]}, {idx: audio}, assembled_dir
+
+
+class TestAssembleOneScene:
+    def test_happy_path_returns_idx_and_path(self, tmp_path: Path) -> None:
+        scene, clips, audios, asm_dir = _one_scene_setup(tmp_path, idx=0)
+
+        with _FfmpegMocks(), \
+             patch("src.video_generator.render_quote_card_png"):
+            idx, clip_path = _assemble_one_scene(scene, clips, audios, asm_dir)
+
+        assert idx == 0
+        assert isinstance(clip_path, Path)
+
+    def test_scene_0_no_title_overlay(self, tmp_path: Path) -> None:
+        scene, clips, audios, asm_dir = _one_scene_setup(tmp_path, idx=0)
+
+        with _FfmpegMocks() as ff, \
+             patch("src.video_generator.render_quote_card_png"):
+            _assemble_one_scene(scene, clips, audios, asm_dir)
+
+        ff.mocks["overlay_title_card"].assert_not_called()
+
+    def test_scene_1_has_title_overlay(self, tmp_path: Path) -> None:
+        scene, clips, audios, asm_dir = _one_scene_setup(tmp_path, idx=1)
+
+        with _FfmpegMocks() as ff, \
+             patch("src.video_generator.render_quote_card_png"):
+            _assemble_one_scene(scene, clips, audios, asm_dir)
+
+        ff.mocks["overlay_title_card"].assert_called_once()
+
+    def test_missing_clip_uses_black_placeholder(self, tmp_path: Path) -> None:
+        scene = _scene(0)
+        audio_dir = tmp_path / "audio"; audio_dir.mkdir()
+        audio = audio_dir / "scene_00.mp3"; audio.touch()
+        asm_dir = tmp_path / "assembled"; asm_dir.mkdir()
+        missing = tmp_path / "no_clip.mp4"  # not created
+
+        with _FfmpegMocks() as ff, \
+             patch("src.video_generator.render_quote_card_png"):
+            _assemble_one_scene(scene, {0: [missing]}, {0: audio}, asm_dir)
+
+        ff.mocks["black_clip"].assert_called_once()
+
+    def test_wrong_dimensions_uses_black_placeholder(self, tmp_path: Path) -> None:
+        scene, clips, audios, asm_dir = _one_scene_setup(tmp_path)
+
+        with _FfmpegMocks(video_w=640, video_h=480) as ff, \
+             patch("src.video_generator.render_quote_card_png"):
+            _assemble_one_scene(scene, clips, audios, asm_dir)
+
+        ff.mocks["black_clip"].assert_called_once()
+
+    def test_merge_av_failure_retries_with_placeholder(self, tmp_path: Path) -> None:
+        scene, clips, audios, asm_dir = _one_scene_setup(tmp_path)
+        calls = {"n": 0}
+
+        def _fail_first(video, audio_p, output, **kw):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("encode error")
+            return output
+
+        with _FfmpegMocks() as ff, \
+             patch("src.video_generator.render_quote_card_png"):
+            ff.mocks["merge_av"].side_effect = _fail_first
+            _assemble_one_scene(scene, clips, audios, asm_dir)
+
+        assert calls["n"] == 2
+        ff.mocks["black_clip"].assert_called_once()
+
+    def test_quote_card_skips_chyron(self, tmp_path: Path) -> None:
+        scene, clips, audios, asm_dir = _one_scene_setup(tmp_path, source_quote="AI is the future")
+
+        with _FfmpegMocks() as ff, \
+             patch("src.video_generator.render_quote_card_png"):
+            _assemble_one_scene(scene, clips, audios, asm_dir)
+
+        ff.mocks["burn_chyron"].assert_not_called()
+
+    def test_quote_card_failure_is_non_fatal(self, tmp_path: Path) -> None:
+        scene, clips, audios, asm_dir = _one_scene_setup(tmp_path, source_quote="AI is the future")
+
+        with _FfmpegMocks() as ff, \
+             patch("src.video_generator.render_quote_card_png", side_effect=OSError("png fail")):
+            _assemble_one_scene(scene, clips, audios, asm_dir)
+
+        ff.mocks["burn_chyron"].assert_called_once()
+
+    def test_multiple_clips_per_scene_calls_concat(self, tmp_path: Path) -> None:
+        scene = _scene(0)
+        c1 = tmp_path / "c1.mp4"; c1.touch()
+        c2 = tmp_path / "c2.mp4"; c2.touch()
+        audio_dir = tmp_path / "audio"; audio_dir.mkdir()
+        audio = audio_dir / "scene_00.mp3"; audio.touch()
+        asm_dir = tmp_path / "assembled"; asm_dir.mkdir()
+
+        with _FfmpegMocks() as ff, \
+             patch("src.video_generator.render_quote_card_png"):
+            _assemble_one_scene(scene, {0: [c1, c2]}, {0: audio}, asm_dir)
+
+        # concat called at least once for the multi-clip cat
+        ff.mocks["concat"].assert_called_once()
+
+
+# ── _async_assemble_scenes ────────────────────────────────────────────────────
+
+class TestAsyncAssembleScenes:
+    def test_single_scene_returns_one_clip(self, tmp_path: Path) -> None:
+        scenes = [_scene(0)]
+        script = _script(scenes)
+        clips, audio = _make_scene_files(tmp_path, scenes)
+        asm_dir = tmp_path / "assembled"; asm_dir.mkdir()
+
+        with _FfmpegMocks(), \
+             patch("src.video_generator.render_quote_card_png"):
+            result = asyncio.run(_async_assemble_scenes(script, clips, audio, asm_dir))
+
+        assert len(result) == 1
+
+    def test_multiple_scenes_returns_clips_in_order(self, tmp_path: Path) -> None:
+        scenes = [_scene(0), _scene(1, heading="Second"), _scene(2, heading="Third")]
+        script = _script(scenes)
+        clips, audio = _make_scene_files(tmp_path, scenes)
+        asm_dir = tmp_path / "assembled"; asm_dir.mkdir()
+
+        with _FfmpegMocks(), \
+             patch("src.video_generator.render_quote_card_png"):
+            result = asyncio.run(_async_assemble_scenes(script, clips, audio, asm_dir))
+
+        assert len(result) == 3
+        # Results must be Path objects in ascending scene-index order
+        assert all(isinstance(p, Path) for p in result)
+
+    def test_all_scenes_assembled_concurrently(self, tmp_path: Path) -> None:
+        """Every scene's _assemble_one_scene must be called exactly once."""
+        scenes = [_scene(i, heading=f"Scene {i}") for i in range(4)]
+        script = _script(scenes)
+        clips, audio = _make_scene_files(tmp_path, scenes)
+        asm_dir = tmp_path / "assembled"; asm_dir.mkdir()
+
+        assembled_idxs: list[int] = []
+
+        real_assemble = _assemble_one_scene
+
+        def _spy(scene, *args, **kwargs):  # type: ignore[no-untyped-def]
+            assembled_idxs.append(scene.idx)
+            return real_assemble(scene, *args, **kwargs)
+
+        with _FfmpegMocks(), \
+             patch("src.video_generator.render_quote_card_png"), \
+             patch("src.video_generator._assemble_one_scene", side_effect=_spy):
+            asyncio.run(_async_assemble_scenes(script, clips, audio, asm_dir))
+
+        assert sorted(assembled_idxs) == [0, 1, 2, 3]
 
 
 # ── build_video ───────────────────────────────────────────────────────────────

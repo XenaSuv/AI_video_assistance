@@ -7,14 +7,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.screenshot_capturer import (
+    _LIBRARY,
+    CAPTURE_H,
+    CAPTURE_W,
     available_keys,
-    has_key,
-    url_for,
     capture,
     capture_url,
-    _LIBRARY,
-    CAPTURE_W,
-    CAPTURE_H,
+    has_key,
+    url_for,
 )
 
 

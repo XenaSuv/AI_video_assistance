@@ -13,17 +13,18 @@ import json
 import re
 import sys
 import threading
+import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin, quote as _url_quote
-
-import xml.etree.ElementTree as ET
+from urllib.parse import quote as _url_quote
+from urllib.parse import urljoin
 
 import arxiv
 from bs4 import BeautifulSoup
-from src.retry_utils import http_get
 from loguru import logger
+
+from src.retry_utils import http_get
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings

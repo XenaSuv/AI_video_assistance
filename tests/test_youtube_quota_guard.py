@@ -8,9 +8,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.youtube_quota_guard import (
-    YouTubeQuotaGuard, QUOTA_COSTS, DEFAULT_DAILY_QUOTA, WARN_THRESHOLD,
+    DEFAULT_DAILY_QUOTA,
+    QUOTA_COSTS,
+    WARN_THRESHOLD,
+    YouTubeQuotaGuard,
 )
-
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 

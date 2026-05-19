@@ -27,13 +27,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from loguru import logger
+
 from src.retry_utils import make_openai_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.cost_tracker import get_ledger
 from src.script_generator import Scene, VideoScript
-
 
 # ── Config ────────────────────────────────────────────────────────────────────
 

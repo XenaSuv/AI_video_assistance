@@ -18,7 +18,6 @@ from typing import Any
 
 from loguru import logger
 
-
 _CHECKPOINT_FILE = "checkpoint.json"
 
 

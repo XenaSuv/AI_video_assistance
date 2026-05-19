@@ -13,7 +13,6 @@ import time as _time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-
 # ── stub streamlit before any import of src.dashboard ─────────────────────────
 
 class _StreamlitMock(MagicMock):
@@ -45,15 +44,14 @@ from src.dashboard import (  # noqa: E402
     _load_scene_retention,
     _load_state,
     _load_weekly_costs,
-    _steps_map,
     _status_badge,
-    render_hook_trend,
+    _steps_map,
     render_ctr_trend,
-    render_weekly_cost,
+    render_hook_trend,
     render_scene_retention,
     render_top_videos,
+    render_weekly_cost,
 )
-
 
 # ── _load_state ───────────────────────────────────────────────────────────────
 

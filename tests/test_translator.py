@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.script_generator import Scene, VideoScript
-from src.translator import translate_script, _log_usage
+from src.translator import _log_usage, translate_script
 
 
 def _make_script(n_scenes: int = 2) -> VideoScript:
@@ -83,7 +83,7 @@ class TestTranslateScript:
                 _mock_response(_translated_payload(script))
             )
             result = translate_script(script, "Russian")
-        for orig, translated in zip(script.scenes, result.scenes):
+        for orig, translated in zip(script.scenes, result.scenes, strict=False):
             assert translated.visual_prompt == orig.visual_prompt
 
     def test_duration_sec_preserved(self):
@@ -93,7 +93,7 @@ class TestTranslateScript:
                 _mock_response(_translated_payload(script))
             )
             result = translate_script(script, "Russian")
-        for orig, translated in zip(script.scenes, result.scenes):
+        for orig, translated in zip(script.scenes, result.scenes, strict=False):
             assert translated.duration_sec == orig.duration_sec
 
     def test_scene_count_preserved(self):
@@ -122,7 +122,7 @@ class TestTranslateScript:
                 _mock_response(_translated_payload(script))
             )
             result = translate_script(script, "Russian")
-        for orig, translated in zip(script.scenes, result.scenes):
+        for orig, translated in zip(script.scenes, result.scenes, strict=False):
             assert translated.idx == orig.idx
 
 

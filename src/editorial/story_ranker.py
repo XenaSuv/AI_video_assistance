@@ -13,7 +13,6 @@ from typing import Any
 
 from src.editorial.editorial_identity import EditorialIdentity
 
-
 # ── Scoring constants ─────────────────────────────────────────────────────────
 
 _CONTROVERSY_BONUS:  float = 2.0

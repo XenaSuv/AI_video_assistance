@@ -39,7 +39,9 @@ for _mod in (
     sys.modules.setdefault(_mod, MagicMock())
 
 import datetime
+
 import pytest
+
 from src.scraper import NewsItem
 
 

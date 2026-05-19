@@ -5,8 +5,7 @@ import json
 
 import pytest
 
-from src.latency_tracker import LatencyTracker, fmt_duration, STEP_THRESHOLDS, TOTAL_THRESHOLD
-
+from src.latency_tracker import STEP_THRESHOLDS, TOTAL_THRESHOLD, LatencyTracker, fmt_duration
 
 # ── fmt_duration ──────────────────────────────────────────────────────────────
 

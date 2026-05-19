@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from datetime import date, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -21,7 +21,6 @@ from src.weekly_script_generator import (
     pick_topic,
     save_used_topic,
 )
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
