@@ -8,6 +8,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased] — Architecture & Quality Sprint
 
 ### Added
+- `_assemble_one_scene()` in `src/video_generator.py`: per-scene assembly extracted from
+  `assemble_video` loop body (A/V merge, title overlay, chyron); safe for concurrent
+  execution because every intermediate file is uniquely named by scene index
+- `_async_assemble_scenes()` in `src/video_generator.py`: assembles all scenes concurrently
+  via `asyncio.gather + loop.run_in_executor`; replaces the sequential `for scene in script.scenes`
+  loop in `assemble_video`, cutting wall-clock assembly time from O(N) to O(1) per
+  scene-count
 - `_step_shorts_and_ru()` in `PipelineOrchestrator`: Shorts experiments and RU upload
   now run concurrently via `asyncio.gather + loop.run_in_executor`, mirroring the
   `_voice_and_images` pattern already used in `_MediaBuilder`
@@ -43,8 +50,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `test_publish_step.py`: 78% → 99% — added `TestRunShortsExperimentsExecution` (7 tests)
   covering main experiment loop, and `TestUploadEnOptionalEngines` (5 tests) covering
   all five post-upload optional engine except-handlers
-- `test_video_generator.py`: 13% → 93% — 33 smoke tests with `_FfmpegMocks` context
-  manager patching all `src.ffmpeg_utils.*` functions
+- `test_video_generator.py`: 13% → 97% — 45 smoke tests; `_FfmpegMocks` context manager
+  patching all `src.ffmpeg_utils.*` functions; added `TestAssembleOneScene` (8 tests)
+  and `TestAsyncAssembleScenes` (3 tests) covering the new parallel assembly functions
 - `test_script_step.py`: 15% → 98% — 42 tests covering `__init__`, `run()` cached/fresh
   paths, `_humanize_script`, `_apply_micro_hooks`, `_apply_thompson_hook`, `_run_new()`
 - `test_deferred_feedback.py`: new — 30 tests, 100% coverage of `_DeferredFeedbackCollector`
