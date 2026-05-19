@@ -62,6 +62,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `test_publish_step.py`: 78% → 99% — added `TestRunShortsExperimentsExecution` (7 tests)
   covering main experiment loop, and `TestUploadEnOptionalEngines` (5 tests) covering
   all five post-upload optional engine except-handlers
+- `test_shorts_generator.py`: new — 32 tests, 100% coverage of the deprecated module;
+  documents `_saliency_crop_x`, `_resolve_music_path`, `build_short`, `add_big_captions`,
+  `create_short_video` behavior so regressions are caught during caller migration
 - `test_language_variant.py`: 8 → 13 tests; added `TestRunLanguageVariantConcurrency` (5
   tests) verifying both subtitles+video run concurrently, subtitle failure does not block
   video, thumbnail always runs, and subtitle_path is forwarded to publish_episode
