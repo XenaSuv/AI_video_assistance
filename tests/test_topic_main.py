@@ -18,6 +18,17 @@ for _m in (
 ):
     sys.modules.setdefault(_m, MagicMock())
 
+# Force the real src.topic_main into sys.modules now, before test_scheduler.py
+# is collected.  test_scheduler stubs "src.topic_main" via setdefault(); if that
+# runs first (alphabetically it is after this file, but pytest collects all
+# modules before running any tests), the stub would be in sys.modules and the
+# lazy "from src.topic_main import run_topic_pipeline" inside _run_topic() would
+# return a MagicMock attribute instead of the real function.  Importing here
+# ensures sys.modules["src.topic_main"] is already populated with the real
+# module before setdefault() can replace it.
+import src.topic_main as _topic_main_module  # noqa: E402  (must be early)
+from src.topic_main import run_topic_pipeline  # noqa: E402
+
 import pytest
 
 # ── Factories ─────────────────────────────────────────────────────────────────
@@ -312,8 +323,6 @@ def _run_topic(
             patch("src.topic_main.notify_failure")
         )
         mocks["notify_failure"] = mock_notify_failure
-
-        from src.topic_main import run_topic_pipeline
 
         result = run_topic_pipeline(
             format_filter=format_filter,

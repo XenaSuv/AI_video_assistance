@@ -367,9 +367,23 @@ class TestFindSimilarNonEmpty:
         fake_matrix = MagicMock()
         fake_vec = MagicMock()
 
+        # Patch np so that argmax returns 1 (entries[1] == img1) regardless of
+        # any global numpy-mock state set by other test modules at import time
+        # (e.g. test_shorts_generator sets np.argmax.return_value = 40, which
+        # would cause "list index out of range" on a 2-element entries list).
+        mock_np = MagicMock()
+        mock_np.argmax.return_value = 1
+        mock_sims = MagicMock()
+        mock_sims.__getitem__ = MagicMock(return_value=0.98)
+        fake_matrix.__matmul__ = MagicMock(return_value=mock_sims)
+        mock_div = MagicMock()
+        mock_div.__getitem__ = MagicMock(return_value=0.98)
+        mock_sims.__truediv__ = MagicMock(return_value=mock_div)
+
         with patch("src.image_cache._load", return_value=(entries, fake_matrix)):
             with patch("src.image_cache._embed", return_value=fake_vec):
-                result_path, result_vec = find_similar("any prompt", tmp_path)
+                with patch("src.image_cache.np", mock_np):
+                    result_path, result_vec = find_similar("any prompt", tmp_path)
 
         assert result_path == img1
         assert result_vec is fake_vec
