@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
+from typing import Any
 from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -34,8 +35,8 @@ class _MediaBuilder:
         observer: PipelineObserver,
         live: LiveState,
         seen: SeenStories,
-        news: list,
-        summary: dict,
+        news: list[Any],
+        summary: dict[str, Any],
         thompson_preferred_type: str | None,
     ) -> None:
         self._script = script
