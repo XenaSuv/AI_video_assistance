@@ -70,15 +70,28 @@ News Sources
 | `src/presenter.py` | D-ID AI avatar integration (optional) |
 | `src/translator.py` | Script translation EN → RU |
 
+### Pipeline Orchestration
+
+| Module | Responsibility |
+|--------|---------------|
+| `src/pipeline_orchestrator.py` | Top-level control flow: runs steps 1–8 in order |
+| `src/script_step.py` | Step 2: editorial + humanization + hook tuning |
+| `src/media_builder.py` | Steps 3–6: voice / subtitles / video / thumbnail |
+| `src/publish_step.py` | Steps 7–8: quality gate + upload EN/RU/Shorts |
+
+`_MediaBuilder` and `_PublishStep` use `asyncio.gather + loop.run_in_executor` to overlap
+blocking I/O (ElevenLabs, DALL-E, YouTube API) across steps. See `build_voice()` and
+`_step_shorts_and_ru()` for the pattern.
+
 ### Shorts Stack (primary engine)
 
 | Module | Role |
 |--------|------|
-| `src/shorts_pipeline.py` | **PRIMARY** — standalone pipeline, entry point; run directly or call `ShortsPipeline().run()` |
+| `src/shorts_pipeline.py` | **PRIMARY** — standalone pipeline, entry point |
 | `src/shorts_engine_v2.py` | **PRIMARY** — editorial + hook-generation layer; produces `ShortScript` objects |
-| `src/shorts_experiment_engine.py` | **PRIMARY** — learning layer; stores per-experiment metrics, feeds best hooks back to daily pipeline |
+| `src/shorts_experiment_engine.py` | **PRIMARY** — learning layer; per-experiment metrics, feeds best hooks back |
 | `src/shorts_beat_engine.py` | Sub-component of v2; per-beat execution plan for 16-second Shorts |
-| `src/shorts_generator.py` | **DEPRECATED** — legacy "clip-the-video" approach; kept for backward-compat callers (breaking_main, weekly_main, topic_main, language_variant). New code must not import from this module. |
+| `src/shorts_generator.py` | **DEPRECATED** — legacy approach; kept for backward-compat callers only. New code must not import from this module. |
 
 ### Layer 3 — Learning System
 
@@ -99,11 +112,16 @@ News Sources
 | Module | Responsibility |
 |--------|---------------|
 | `src/checkpoint.py` | Resumable pipeline execution — reruns reuse cached artifacts |
-| `src/deduplicator.py` | SQLite DB, 30-day story deduplication |
+| `src/deduplicator.py` | SQLite DB with schema versioning, 30-day story deduplication |
 | `src/quality_gate.py` | Hard/soft checks; blocks publish on failures |
 | `src/pipeline_observer.py` | Step-by-step execution tracking |
 | `src/cost_tracker.py` | API usage ledger per run |
-| `src/slack_notifier.py` | Async Slack notifications on success/failure |
+| `src/budget_guard.py` | Daily/monthly spend limits; triggers Slack alert when exceeded |
+| `src/latency_tracker.py` | Records step timings, computes p95, detects slow steps |
+| `src/slack_notifier.py` | Async Slack notifications on success/failure/slow/budget |
+| `src/config_validator.py` | Validates 45 config fields at startup; raises on missing required values |
+| `src/live_state.py` | Real-time pipeline state (progress, cost, events) written to JSON |
+| `src/json_log_sink.py` | JSONL structured log sink for log aggregator integration |
 | `src/performance_tracker.py` | Logs video metadata for learning loop |
 | `config/settings.py` | Frozen dataclass; all env vars loaded once at import time |
 | `src/shared_types.py` | Cross-module dataclasses (`ContentStrategy`, `PerformanceStats`, etc.) |
@@ -115,17 +133,20 @@ News Sources
 
 ```
 AI_video_assistance/
-├── src/                    # All source modules
+├── src/                    # All source modules (106 files)
 ├── config/
 │   ├── settings.py         # Settings dataclass (frozen) — env-var driven
 │   ├── client_secrets.json # YouTube OAuth2 app credentials (EN channel)
 │   └── token.pickle        # YouTube OAuth2 token (generated on first auth)
 ├── tests/
 │   ├── conftest.py         # Fixtures + heavy-dep stubs (read this first)
-│   └── test_*.py           # 25 test files
+│   └── test_*.py           # 121 test files, 4 034 tests
+├── scripts/
+│   └── check_new_module_coverage.py  # Per-file coverage gate (≥80% for new modules)
 ├── data/
 │   ├── performance_store.json   # Video performance records
-│   └── scene_performance.json  # Per-scene retention metrics
+│   ├── scene_performance.json   # Per-scene retention metrics
+│   └── seen_stories.db          # SQLite dedup store
 ├── source/                 # Static media assets
 │   ├── ai-news-intro.mp4
 │   ├── ai-news-outro.mp4
@@ -167,8 +188,6 @@ OPENAI_API_KEY=sk-...
 ELEVENLABS_API_KEY=...
 
 # ── YouTube (EN channel) ──────────────────────────────────────────────────────
-# client_secrets.json: download from Google Cloud Console (OAuth2 Desktop app)
-# token.pickle: generated automatically on first run (requires browser auth)
 YOUTUBE_CLIENT_SECRETS=config/client_secrets.json
 YOUTUBE_TOKEN_FILE=config/token.pickle
 YOUTUBE_PRIVACY=public           # public | unlisted | private
@@ -180,10 +199,10 @@ RU_YOUTUBE_CLIENT_SECRETS=config/client_secrets_ru.json
 RU_YOUTUBE_TOKEN_FILE=config/token_ru.pickle
 
 # ── Stock media ───────────────────────────────────────────────────────────────
-PEXELS_API_KEY=...               # Primary B-roll source
-PIXABAY_API_KEY=...              # Fallback B-roll
-UNSPLASH_ACCESS_KEY=...          # Fallback stock photos
-STABILITY_API_KEY=...            # Breaking news clips (cheaper than DALL-E)
+PEXELS_API_KEY=...
+PIXABAY_API_KEY=...
+UNSPLASH_ACCESS_KEY=...
+STABILITY_API_KEY=...
 
 # ── TikTok (optional) ─────────────────────────────────────────────────────────
 TIKTOK_ENABLED=false
@@ -191,10 +210,10 @@ TIKTOK_CLIENT_KEY=...
 TIKTOK_CLIENT_SECRET=...
 
 # ── AI Presenter (optional) ───────────────────────────────────────────────────
-# DID_API_KEY: get "Basic <key>" from d-id.com, set just <key> here
 PRESENTER_ENABLED=false
 DID_API_KEY=...
 PRESENTER_AVATAR_PATH=assets/avatar.png
+HEYGEN_ENABLED=false           # HeyGen overrides D-ID when both are configured
 
 # ── Channel branding ──────────────────────────────────────────────────────────
 CHANNEL_NAME=AI Today
@@ -202,11 +221,13 @@ CHANNEL_HANDLE=@AIToday
 CHANNEL_CTA=Subscribe · Daily AI News
 
 # ── Pipeline tuning ───────────────────────────────────────────────────────────
-OPENAI_MODEL=gpt-4o-mini         # or gpt-4o for higher quality
+OPENAI_MODEL=gpt-4o-mini
 SCRIPT_TARGET_WORDS=2200
 DAILY_RUN_HOUR_UTC=8
 BACKGROUND_MUSIC_PATH=source/background_music.mp3
 BACKGROUND_MUSIC_VOLUME=0.10
+DAILY_BUDGET_USD=5.00
+MONTHLY_BUDGET_USD=120.00
 SLACK_WEBHOOK_URL=https://hooks.slack.com/...
 ```
 
@@ -225,13 +246,13 @@ python src/weekly_main.py --tool claude     # Monday
 python src/weekly_main.py --tool chatgpt   # Wednesday
 python src/weekly_main.py --tool gemini    # Friday
 
-# Breaking news (pass detected item JSON)
+# Breaking news
 python src/breaking_main.py --item data/breaking_current.json
 
 # Weekly digest
 python src/digest_main.py
 
-# Breaking news detector (checks sources, writes data/breaking_current.json)
+# Breaking news detector
 python src/breaking_detector.py --check
 
 # Automated scheduler (all pipelines on cron)
@@ -247,19 +268,17 @@ docker run --env-file .env ai-video
 
 ```
 scrape_all()
-  → deduplicate (SQLite, 30-day TTL)
+  → deduplicate (SQLite, 30-day TTL, schema-versioned)
   → pick_viral_news()
-  → EditorialBrain.run()        ← uses DecisionEngine + FeedbackAnalyzer
-  → generate_script()
-  → HumanizerAgent.run()
-  → MicroHookAgent.run()
-  → quality_gate.run_gate()     ← blocks publish on hard failures
-  → synthesize_script()         ← ElevenLabs TTS
-  → build_video()               ← DALL-E + B-roll + Ken Burns + music
-  → generate_thumbnail()
-  → publish_episode()           ← YouTube upload + captions
-  → [if RU_ENABLED] translate → ru-TTS → reassemble → ru-upload
-  → save_result()               ← feeds learning loop
+  → _ScriptStep.run()              ← EditorialBrain + FeedbackAnalyzer + HumanizerAgent
+  → _MediaBuilder.build_voice()    ← ElevenLabs + DALL-E (concurrent via asyncio.gather)
+  → _MediaBuilder.build_subtitles()
+  → _MediaBuilder.build_video()    ← FFmpeg + Ken Burns
+  → _MediaBuilder.build_thumbnail()
+  → _PublishStep.run_quality_gate()      ← blocks publish on hard failures
+  → _PublishStep.upload_en()             ← YouTube EN upload
+  → _PublishStep._step_shorts_and_ru()   ← Shorts + RU upload (concurrent)
+  → _finalize()                          ← cost report, latency tracking, Slack
 ```
 
 ---
@@ -273,20 +292,37 @@ python -m pytest tests/ -v
 # Run specific test file
 python -m pytest tests/test_decision_engine.py -v
 
-# With coverage (not yet in CI — run locally)
-python -m pytest tests/ --cov=src --cov-report=term-missing
+# With coverage
+python -m pytest tests/ --cov=src --cov-report=term-missing --cov-report=json
+
+# Coverage gate (new modules ≥80%)
+python scripts/check_new_module_coverage.py
 ```
 
 ### Test Architecture
 
 `tests/conftest.py` **must be read before writing new tests**. It:
 1. Sets dummy env vars (`OPENAI_API_KEY=test-key-openai`) before any module import
-2. Stubs all Google SDK modules and numpy as `MagicMock` to avoid install requirements
+2. Stubs all Google SDK, numpy, PIL, arxiv, feedparser, elevenlabs modules as `MagicMock`
 3. Provides shared fixtures: `fresh_story`, `feedback_history`, `high_performing_feedback`, etc.
 
-**Well-tested modules**: `decision_engine`, `feedback_analyzer`, `drop_predictor`, `scraper`, `thompson_bandit`, `scene_bandit`, `ab_testing_engine`, `quality_gate`, `checkpoint`
+**Patching patterns used in this codebase:**
+- `patch("src.module_name.function_name")` — for module-level imports
+- `patch.dict(sys.modules, {"src.heavy_module": MagicMock()})` — for inline imports inside methods (e.g., `from src.persona_engine import PersonaEngine` inside `upload_en`)
+- `patch("src.ffmpeg_utils.function_name")` — for `video_generator.py` which does `import src.ffmpeg_utils as ffmpeg_utils`
 
-**Untested modules** (gaps): `youtube_uploader`, `video_generator`, `voice_generator`, `humanizer_agent`, `breaking_main`
+**Module coverage highlights:**
+
+| Module | Coverage |
+|--------|---------|
+| `deferred_feedback.py` | 100% |
+| `media_builder.py` | 99% |
+| `publish_step.py` | 99% |
+| `script_step.py` | 98% |
+| `config_validator.py` | 94% |
+| `video_generator.py` | 93% |
+| `pipeline_orchestrator.py` | 85% |
+| Overall | 88% |
 
 ---
 
@@ -321,6 +357,7 @@ Core pipeline types in `src/script_generator.py`:
 - Changing env vars after import has no effect
 - Tests must set env vars **before** importing any project module (handled by `conftest.py`)
 - The singleton is accessed as `from config import settings` everywhere
+- `src/config_validator.py` validates 45 fields at startup and raises on bad config
 
 Key paths auto-created on startup: `output/`, `logs/`, `data/`.
 
@@ -363,24 +400,22 @@ All bandits use `RateLimitMixin` from `src/constants.py` to prevent too-frequent
 | `digest.yml` | Sun 10:00 UTC | 120 min |
 | `topic.yml` | Tue/Thu 10:00 UTC | 90 min |
 
+### CI Pipeline Steps
+
+```
+1. Lint (ruff)            ruff check src/
+2. Type check (mypy)      python -m mypy src/   [strict = true]
+3. Tests + coverage       pytest --cov-fail-under=75 --cov-report=json
+4. Coverage gate          python scripts/check_new_module_coverage.py  [≥80% new modules]
+```
+
 YouTube OAuth credentials are stored as base64-encoded GitHub Secrets (`YOUTUBE_TOKEN_PICKLE_B64`, `YOUTUBE_CLIENT_SECRETS_B64`) and decoded in each workflow.
-
----
-
-## Known Gaps
-
-- **No linting in CI** — `black`, `flake8`, `mypy` not enforced. Run locally before committing.
-- **No coverage gate** — `pytest --cov` not in CI. Target is >80% for new modules.
-- **`main.py` is large** (28.5K) — orchestration, caching, and variant logic are mixed. Extract to `PipelineOrchestrator` if adding features.
-- **All I/O is synchronous** — ElevenLabs, DALL-E, and YouTube calls block. Refactor to `asyncio` before scaling to higher volume.
-- **SQLite has no migrations** — if `deduplicator.py` schema changes, delete `data/dedup.db` and it recreates.
-- **OAuth tokens in `config/*.pickle`** — do not commit these files. They are in `.gitignore`.
 
 ---
 
 ## Adding a New Pipeline
 
-1. Create `src/your_main.py` modeled after `src/main.py`
+1. Create `src/your_main.py` modelled after `src/main.py`
 2. Use `PipelineCheckpoint` for resumability
 3. Use `PipelineObserver` for step tracking
 4. Call `run_gate()` before any upload step
@@ -391,3 +426,28 @@ YouTube OAuth credentials are stored as base64-encoded GitHub Secrets (`YOUTUBE_
 ## Adding a New Source to the Scraper
 
 `src/scraper.py` has per-source functions that return `list[NewsItem]`. Add a new function and register it in `scrape_all()`. The caching layer is source+date keyed — new sources get cached automatically.
+
+## Adding a New Module (Strict Typing Requirements)
+
+New modules **must not** be added to the `[[tool.mypy.overrides]]` ignore list in `pyproject.toml`. Write clean typed code from the start:
+
+- Use `from typing import Any` for genuinely heterogeneous collections
+- Use `from __future__ import annotations` for forward references
+- Annotate all parameters and return types (required by `--disallow-untyped-defs`)
+- Use `list[T]` / `dict[K, V]` — bare `list` / `dict` fail `--disallow-any-generics`
+- For optional heavy imports, use the inline `try: from X import Y / except: logger.debug(...)` pattern used in `publish_step.py`
+
+---
+
+## Known Technical Debt
+
+| Area | Detail |
+|------|--------|
+| 59 legacy modules in `ignore_errors` | Deep structural type mismatches; tackle module by module |
+| `topic_main.py`, `weekly_main.py` | 0% test coverage — production entry points |
+| `shorts_generator.py` (DEPRECATED) | 17% coverage; used by legacy callers `breaking_main`, `weekly_main`, `topic_main`, `language_variant` |
+| Build video I/O | DALL-E + FFmpeg scene generation is still sequential per scene |
+| `_PublishStep._run_language_variant` | ElevenLabs RU + FFmpeg + YouTube upload run sequentially within a single RU variant |
+| All I/O synchronous at function level | `asyncio.gather` wraps thread-pool executors — not true async. Refactor heavy callers to native async before scaling to high volume |
+| SQLite has no migrations | If `deduplicator.py` schema changes beyond version bump, delete `data/seen_stories.db` |
+| OAuth tokens in `config/*.pickle` | Do not commit these files — they are in `.gitignore` |
