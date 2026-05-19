@@ -729,8 +729,7 @@ class TestPipelineOrchestratorRun:
             o._step_thumbnail = MagicMock()
             o._step_quality_gate = MagicMock()
             o._step_upload_en = MagicMock()
-            o._step_shorts_experiments = MagicMock()
-            o._step_upload_ru = MagicMock()
+            o._step_shorts_and_ru = MagicMock()
             o._finalize = MagicMock()
             o.run()
         o._finalize.assert_called_once()
@@ -1046,3 +1045,35 @@ class TestFinalize:
     def test_notify_success_always_called(self, orch):
         _, _, mock_success, _ = self._run_finalize(orch)
         mock_success.assert_called_once()
+
+
+# ── _step_shorts_and_ru ───────────────────────────────────────────────────────
+
+class TestStepShortsAndRu:
+    """_step_shorts_and_ru runs shorts and RU upload concurrently via asyncio."""
+
+    def test_both_steps_called(self, orch):
+        orch._step_shorts_experiments = MagicMock()
+        orch._step_upload_ru = MagicMock()
+        orch._step_shorts_and_ru()
+        orch._step_shorts_experiments.assert_called_once()
+        orch._step_upload_ru.assert_called_once()
+
+    def test_shorts_exception_propagates(self, orch):
+        orch._step_shorts_experiments = MagicMock(side_effect=RuntimeError("shorts failed"))
+        orch._step_upload_ru = MagicMock()
+        with pytest.raises(RuntimeError, match="shorts failed"):
+            orch._step_shorts_and_ru()
+
+    def test_ru_exception_propagates(self, orch):
+        orch._step_shorts_experiments = MagicMock()
+        orch._step_upload_ru = MagicMock(side_effect=RuntimeError("ru failed"))
+        with pytest.raises(RuntimeError, match="ru failed"):
+            orch._step_shorts_and_ru()
+
+    def test_both_run_when_neither_raises(self, orch):
+        calls: list[str] = []
+        orch._step_shorts_experiments = MagicMock(side_effect=lambda: calls.append("shorts"))
+        orch._step_upload_ru = MagicMock(side_effect=lambda: calls.append("ru"))
+        orch._step_shorts_and_ru()
+        assert sorted(calls) == ["ru", "shorts"]

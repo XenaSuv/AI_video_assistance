@@ -2,6 +2,7 @@
 from __future__ import annotations
 import sys
 from pathlib import Path
+from typing import Any
 from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -33,16 +34,16 @@ class _PublishStep:
         observer: PipelineObserver,
         live: LiveState,
         seen: SeenStories,
-        news: list,
-        summary: dict,
+        news: list[Any],
+        summary: dict[str, Any],
         skip_upload: bool,
-        auto_strategy: dict | None,
-        auto_actions: list,
+        auto_strategy: dict[str, Any] | None,
+        auto_actions: list[Any],
         long_video: Path | None,
         short_video: Path | None,
         thumbnail: Path | None,
         subtitle_path: Path | None,
-        feedback_history: list,
+        feedback_history: list[Any],
     ) -> None:
         self._script = script
         self._run_dir = run_dir
@@ -321,7 +322,7 @@ class _PublishStep:
         intro_path: Path | None = None,
         outro_path: Path | None = None,
         include_short: bool = True,
-    ) -> dict:
+    ) -> dict[str, Any]:
         return _run_lang_variant(
             english_script=english_script,
             run_dir=self._run_dir,

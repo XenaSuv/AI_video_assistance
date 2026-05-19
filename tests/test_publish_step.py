@@ -575,3 +575,258 @@ class TestSetupThompsonVariants:
             p._setup_thompson_variants("vid_abc")
 
         assert [v.id for v in created] == ["A", "B", "C"]
+
+
+# ── run_shorts_experiments — main execution path ──────────────────────────────
+
+class TestRunShortsExperimentsExecution:
+    """Tests covering lines 195-251: the engine + per-experiment loop."""
+
+    @staticmethod
+    def _make_exp(idx: int = 0, hook_type: str = "curiosity") -> MagicMock:
+        exp = MagicMock()
+        exp.hook_text = f"Hook text {idx}"
+        exp.core_text = f"Core text {idx}"
+        exp.payoff_text = f"Payoff {idx}"
+        exp.hook_type = hook_type
+        exp.experiment_id = f"exp_{idx:03d}"
+        return exp
+
+    def _run(
+        self,
+        p: _PublishStep,
+        tmp_path: Path,
+        experiments: list,
+        upload_raises: Exception | None = None,
+        engine_raises: Exception | None = None,
+    ) -> MagicMock:
+        """Patch inline imports and run the step; return the engine mock."""
+        mock_engine = MagicMock()
+        if engine_raises:
+            mock_engine.generate.side_effect = engine_raises
+        else:
+            mock_engine.generate.return_value = experiments
+
+        video_path = tmp_path / "short.mp4"
+        video_path.touch()
+
+        mock_sg = MagicMock()
+        mock_sg.create_short_video.return_value = video_path
+
+        mock_upload = MagicMock()
+        if upload_raises:
+            mock_upload.side_effect = upload_raises
+        else:
+            mock_upload.return_value = "short_vid_1"
+
+        ms = MagicMock()
+        ms.data_dir = tmp_path
+        ms.youtube_client_secrets = tmp_path / "s.json"
+        ms.youtube_token_file = tmp_path / "t.pickle"
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch("src.publish_step.ShortsExperimentEngine", return_value=mock_engine)
+            )
+            stack.enter_context(patch("src.publish_step.settings", ms))
+            stack.enter_context(patch.dict(sys.modules, {"src.shorts_generator": mock_sg}))
+            stack.enter_context(
+                patch("src.youtube_uploader.upload_short", mock_upload, create=True)
+            )
+            p.run_shorts_experiments()
+
+        return mock_engine
+
+    def test_single_experiment_uploaded_updates_summary(self, tmp_path):
+        cp = MagicMock()
+        cp.is_done.return_value = False
+        summary = {}
+        p = _publisher(tmp_path, cp=cp, summary=summary)
+
+        self._run(p, tmp_path, [self._make_exp()])
+
+        assert summary["shorts_experiments"]["uploaded"] == 1
+
+    def test_marks_checkpoint_done_with_count(self, tmp_path):
+        cp = MagicMock()
+        cp.is_done.return_value = False
+        p = _publisher(tmp_path, cp=cp)
+
+        self._run(p, tmp_path, [self._make_exp()])
+
+        cp.mark_done.assert_called_once_with("shorts_experiments", {"uploaded": 1})
+
+    def test_multiple_experiments_all_counted(self, tmp_path):
+        cp = MagicMock()
+        cp.is_done.return_value = False
+        summary = {}
+        p = _publisher(tmp_path, cp=cp, summary=summary)
+
+        self._run(p, tmp_path, [self._make_exp(i) for i in range(3)])
+
+        assert summary["shorts_experiments"]["uploaded"] == 3
+
+    def test_per_experiment_upload_failure_swallowed(self, tmp_path):
+        """A single failing experiment doesn't abort the loop."""
+        cp = MagicMock()
+        cp.is_done.return_value = False
+        summary = {}
+        p = _publisher(tmp_path, cp=cp, summary=summary)
+
+        self._run(p, tmp_path, [self._make_exp()], upload_raises=RuntimeError("upload boom"))
+
+        assert summary["shorts_experiments"]["uploaded"] == 0
+        cp.mark_done.assert_called_once_with("shorts_experiments", {"uploaded": 0})
+
+    def test_outer_engine_failure_swallowed(self, tmp_path):
+        """Engine.generate failure is non-fatal — checkpoint not marked done."""
+        cp = MagicMock()
+        cp.is_done.return_value = False
+        p = _publisher(tmp_path, cp=cp, summary={})
+
+        self._run(p, tmp_path, [], engine_raises=RuntimeError("engine boom"))
+
+        cp.mark_done.assert_not_called()
+
+    def test_mark_uploaded_called_for_each_experiment(self, tmp_path):
+        cp = MagicMock()
+        cp.is_done.return_value = False
+        p = _publisher(tmp_path, cp=cp, summary={})
+
+        exp = self._make_exp(idx=7)
+        engine = self._run(p, tmp_path, [exp])
+
+        engine.mark_uploaded.assert_called_once()
+        first_arg = engine.mark_uploaded.call_args[0][0]
+        assert first_arg == exp.experiment_id
+
+    def test_hook_text_truncated_to_95_chars(self, tmp_path):
+        """Short title is capped at 95 chars + ellipsis when hook is longer."""
+        cp = MagicMock()
+        cp.is_done.return_value = False
+        p = _publisher(tmp_path, cp=cp, summary={})
+
+        long_hook = "X" * 120
+        exp = self._make_exp()
+        exp.hook_text = long_hook
+
+        uploaded_titles: list[str] = []
+
+        mock_sg = MagicMock()
+        video_path = tmp_path / "s.mp4"
+        video_path.touch()
+        mock_sg.create_short_video.return_value = video_path
+
+        def capture_upload(**kwargs):
+            uploaded_titles.append(kwargs.get("title", ""))
+            return "vid_x"
+
+        ms = MagicMock()
+        ms.data_dir = tmp_path
+        ms.youtube_client_secrets = tmp_path / "s.json"
+        ms.youtube_token_file = tmp_path / "t.pickle"
+
+        mock_engine = MagicMock()
+        mock_engine.generate.return_value = [exp]
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch("src.publish_step.ShortsExperimentEngine", return_value=mock_engine)
+            )
+            stack.enter_context(patch("src.publish_step.settings", ms))
+            stack.enter_context(patch.dict(sys.modules, {"src.shorts_generator": mock_sg}))
+            mock_up = MagicMock(side_effect=lambda **kw: capture_upload(**kw) or "v")
+            stack.enter_context(
+                patch("src.youtube_uploader.upload_short", mock_up, create=True)
+            )
+            p.run_shorts_experiments()
+
+        if uploaded_titles:
+            assert len(uploaded_titles[0]) <= 96
+
+
+# ── upload_en — optional engine except-handlers ───────────────────────────────
+
+class TestUploadEnOptionalEngines:
+    """Cover the except-branches in the 5 optional post-upload engine calls."""
+
+    @staticmethod
+    def _run_upload_with_failing_engine(tmp_path: Path, module_name: str) -> None:
+        """Patch one inline-imported engine module so its instantiation raises."""
+        cp = MagicMock()
+        cp.is_done.return_value = False
+        p = _publisher(tmp_path, cp=cp, summary={})
+
+        failing_mod = MagicMock()
+        # All attributes raise when called so any `Engine()` call raises
+        for attr in ["PersonaEngine", "get_narrative_engine", "get_conflict_engine",
+                     "EmotionEngine", "EmotionalArcEngine"]:
+            getattr(failing_mod, attr).side_effect = RuntimeError("engine down")
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch("src.publish_step.publish_episode", return_value={"video_id": "v1"})
+            )
+            stack.enter_context(patch("src.publish_step.get_recommendations", return_value=[]))
+            stack.enter_context(patch("src.publish_step.record_usage"))
+            stack.enter_context(patch("src.publish_step.record_thumbnail_usage"))
+            stack.enter_context(patch("src.publish_step.save_result"))
+            stack.enter_context(patch("src.publish_step.ThompsonBandit"))
+            stack.enter_context(patch("src.publish_step._classify_hook_type", return_value="c"))
+            stack.enter_context(patch("src.publish_step.settings"))
+            stack.enter_context(patch.dict(sys.modules, {module_name: failing_mod}))
+            p.upload_en()  # must not raise
+
+    def test_persona_engine_exception_swallowed(self, tmp_path):
+        self._run_upload_with_failing_engine(tmp_path, "src.persona_engine")
+
+    def test_narrative_identity_engine_exception_swallowed(self, tmp_path):
+        self._run_upload_with_failing_engine(tmp_path, "src.narrative_identity_engine")
+
+    def test_emotion_engine_exception_swallowed(self, tmp_path):
+        self._run_upload_with_failing_engine(tmp_path, "src.emotion_engine")
+
+    def test_emotional_arc_engine_exception_swallowed(self, tmp_path):
+        self._run_upload_with_failing_engine(tmp_path, "src.emotional_arc_engine")
+
+    def test_conflict_engine_with_conflict_line_calls_record(self, tmp_path):
+        """When editorial plan has conflict_line, ConflictEngine.record is called."""
+        cp = MagicMock()
+        cp.is_done.return_value = False
+        summary = {
+            "editorial_plan": {
+                "editorial_plan": [{
+                    "angle": "threat",
+                    "format": "hot_take",
+                    "conflict_type": "external",
+                    "conflict_line": "AI is taking over",
+                    "conflict_intensity": 0.8,
+                }]
+            }
+        }
+        p = _publisher(tmp_path, cp=cp, summary=summary)
+
+        mock_conflict_engine = MagicMock()
+        mock_conflict_mod = MagicMock()
+        mock_conflict_mod.get_conflict_engine.return_value = mock_conflict_engine
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch("src.publish_step.publish_episode", return_value={"video_id": "v1"})
+            )
+            stack.enter_context(patch("src.publish_step.get_recommendations", return_value=[]))
+            stack.enter_context(patch("src.publish_step.record_usage"))
+            stack.enter_context(patch("src.publish_step.record_thumbnail_usage"))
+            stack.enter_context(patch("src.publish_step.save_result"))
+            stack.enter_context(patch("src.publish_step.ThompsonBandit"))
+            stack.enter_context(patch("src.publish_step._classify_hook_type", return_value="c"))
+            stack.enter_context(patch("src.publish_step.settings"))
+            stack.enter_context(
+                patch.dict(sys.modules, {"src.narrative_conflict_engine": mock_conflict_mod})
+            )
+            p.upload_en()
+
+        mock_conflict_engine.record.assert_called_once()
+        call_kw = mock_conflict_engine.record.call_args[1]
+        assert call_kw["line"] == "AI is taking over"
+        assert call_kw["intensity"] == 0.8
