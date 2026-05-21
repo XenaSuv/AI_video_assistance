@@ -23,9 +23,9 @@ import sys
 import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Any
 from pathlib import Path
 from threading import Thread
+from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import requests

@@ -20,9 +20,9 @@ import json
 import sys
 import traceback
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
-from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
