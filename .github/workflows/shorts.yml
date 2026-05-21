@@ -102,7 +102,7 @@ jobs:
           RUNWAYML_API_KEY:                ${{ secrets.RUNWAYML_API_KEY }}
           YOUTUBE_PRIVACY:                 ${{ vars.YOUTUBE_PRIVACY || 'public' }}
           SLACK_WEBHOOK_URL:               ${{ vars.SLACK_WEBHOOK_URL }}
-          CHANNEL_NAME:                    ${{ secrets.CHANNEL_NAME }}
+          CHANNEL_NAME:                    ${{ vars.CHANNEL_NAME || 'AI Today' }}
         run: |
           ARGS=""
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
