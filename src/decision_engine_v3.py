@@ -55,7 +55,7 @@ import json
 import sys
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +63,11 @@ from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+
+# ── Rolling-window constants ──────────────────────────────────────────────────
+
+WINDOW_SHORT: int = 7   # days — short-term trend detection
+WINDOW_LONG:  int = 30  # days — strategic pattern calibration
 
 # ── PerformanceStore ──────────────────────────────────────────────────────────
 
@@ -105,8 +110,26 @@ class PerformanceStore:
     def load_recent(self, n: int = 10) -> list[dict[str, Any]]:
         return self._load_raw()[-n:]
 
-    def get_channel_metrics(self) -> dict[str, Any]:
-        recent = self.load_recent()
+    def load_within(self, days: int) -> list[dict[str, Any]]:
+        """Return entries whose timestamp falls within the last *days* days."""
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        result: list[dict[str, Any]] = []
+        for entry in self._load_raw():
+            try:
+                ts = datetime.fromisoformat(entry["timestamp"])
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                if ts >= cutoff:
+                    result.append(entry)
+            except Exception:
+                pass
+        return result
+
+    def get_channel_metrics(self, window_days: int = WINDOW_LONG) -> dict[str, Any]:
+        recent = self.load_within(window_days)
+        if len(recent) < 3:
+            # Fall back to last 10 entries when time window has too few data points
+            recent = self.load_recent(10)
         if not recent:
             return dict(_DEFAULT_METRICS)
         watch_pcts = [e["metrics"].get("avg_watch_pct",  0.5)  for e in recent]
@@ -294,32 +317,48 @@ class DecisionEngineV3:
 
     def _collect_signals(self, context: dict[str, Any]) -> dict[str, Any]:
         """Flatten all context layers into one uniform signal dict."""
-        metrics = context.get("metrics") or {}
-        bandit  = context.get("bandit")  or {}
-        pred    = context.get("prediction") or {}
+        metrics            = context.get("metrics")            or {}
+        strategic_metrics  = context.get("strategic_metrics")  or {}
+        bandit             = context.get("bandit")             or {}
+        pred               = context.get("prediction")         or {}
 
         high_risk = [
             r for r in (pred.get("risks") or [])
             if r.get("probability", 0.0) >= HIGH_RISK_THRESHOLD
         ]
 
+        short_retention = float(metrics.get("avg_watch_pct", 0.0))
+        long_retention  = float(strategic_metrics.get("avg_watch_pct", short_retention))
+
         return {
-            "retention":        float(metrics.get("avg_watch_pct", 0.0)),
-            "ctr":              float(metrics.get("ctr",           0.0)),
-            "drops":            list(metrics.get("drops",          [])),
-            "retention_30s":    float(metrics.get("retention_30s", 0.0)),
-            "scene_bandit":     bandit.get("scene")     or {},
-            "packaging_bandit": bandit.get("packaging") or {},
-            "predicted_risks":  high_risk,
+            "retention":           short_retention,
+            "strategic_retention": long_retention,
+            "ctr":                 float(metrics.get("ctr",           0.0)),
+            "drops":               list(metrics.get("drops",          [])),
+            "retention_30s":       float(metrics.get("retention_30s", 0.0)),
+            "scene_bandit":        bandit.get("scene")     or {},
+            "packaging_bandit":    bandit.get("packaging") or {},
+            "predicted_risks":     high_risk,
         }
 
     # ── Mode selection ─────────────────────────────────────────────────────────
 
     def _select_mode(self, s: dict[str, Any]) -> str:
-        """Rule priority: retention → CTR → drops → stable."""
-        if s["retention"] < 0.4:
+        """Rule priority: retention → CTR → drops → stable.
+
+        Hysteresis: a poor 7-day retention only triggers "growth" when the
+        30-day baseline also confirms weakness (r30 < 0.45).  A single bad
+        week shouldn't flip the entire strategy.
+        """
+        r7  = s["retention"]
+        r30 = s.get("strategic_retention") or r7
+        ctr = s["ctr"]
+
+        if r7 < 0.4 and r30 < 0.45:
             return "growth"
-        if s["ctr"] < 0.05:
+        if r7 < 0.4:
+            return "packaging_focus"
+        if ctr < 0.05:
             return "packaging_focus"
         if len(s["drops"]) > 2:
             return "retention_fix"

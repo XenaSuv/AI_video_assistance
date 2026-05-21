@@ -7,6 +7,7 @@ Returns the most common preferred hook type across recent videos, or None.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -23,8 +24,19 @@ from src.thompson_bandit import ThompsonBandit
 from src.youtube_analytics import get_retention_curve, get_video_metrics
 
 
+LONG_WINDOW_DAYS: int = 30   # calendar days to look back for feedback
+
+
+def _parse_dir_date(name: str) -> datetime | None:
+    """Parse YYYY-MM-DD from a run-directory name, return None on failure."""
+    try:
+        return datetime.strptime(name[:10], "%Y-%m-%d")
+    except Exception:
+        return None
+
+
 class _DeferredFeedbackCollector:
-    """Scan the 7 most-recent run dirs, fetch YouTube metrics, and update all
+    """Scan the last 30 days of run dirs, fetch YouTube metrics, and update all
     learning stores.  Returns the most common preferred hook type, or None.
     """
 
@@ -35,11 +47,16 @@ class _DeferredFeedbackCollector:
         """Run deferred feedback collection.  Returns preferred hook type or None."""
         preferred_types: list[str] = []
 
+        cutoff = datetime.now() - timedelta(days=LONG_WINDOW_DAYS)
         run_dirs = sorted(
-            [p.parent for p in settings.output_dir.glob("*/thompson_state.json")],
+            [
+                p.parent
+                for p in settings.output_dir.glob("*/thompson_state.json")
+                if (_parse_dir_date(p.parent.name) or datetime.min) >= cutoff
+            ],
             key=lambda p: p.name,
             reverse=True,
-        )[:7]
+        )
 
         for run_dir in run_dirs:
             if run_dir == self._current_run_dir:

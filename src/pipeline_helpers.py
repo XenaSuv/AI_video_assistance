@@ -15,7 +15,13 @@ from loguru import logger
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import src.ffmpeg_utils as ffmpeg_utils
 from config import settings
-from src.decision_engine_v3 import DecisionEngineV3, PerformanceStore, UnifiedStrategy
+from src.decision_engine_v3 import (
+    WINDOW_LONG,
+    WINDOW_SHORT,
+    DecisionEngineV3,
+    PerformanceStore,
+    UnifiedStrategy,
+)
 from src.retention_correction_engine import Correction
 from src.script_generator import Scene, VideoScript
 from src.shared_types import ContentStrategy
@@ -250,7 +256,8 @@ def _build_v3_context(
     PipelineOrchestrator instance.
     """
     return {
-        "metrics": perf_store.get_channel_metrics(),
+        "metrics":            perf_store.get_channel_metrics(WINDOW_SHORT),
+        "strategic_metrics":  perf_store.get_channel_metrics(WINDOW_LONG),
         "bandit": {
             "scene": {},
             "packaging": {
