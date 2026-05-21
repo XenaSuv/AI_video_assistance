@@ -54,8 +54,18 @@ jobs:
       - name: Restore YouTube token
         run: |
           mkdir -p config
-          echo "$YOUTUBE_TOKEN_JSON_B64" | base64 -d > config/token.json
-          echo "$YOUTUBE_CLIENT_SECRETS_B64" | base64 -d > config/client_secrets.json
+          if [ -z "$YOUTUBE_TOKEN_JSON_B64" ]; then
+            echo "::error::YOUTUBE_TOKEN_JSON_B64 secret is empty or not set." \
+                 "Run 'python src/youtube_uploader.py --auth' locally, then update the secret."
+            exit 1
+          fi
+          echo "$YOUTUBE_TOKEN_JSON_B64" | base64 --ignore-garbage -d > config/token.json
+
+          if [ -z "$YOUTUBE_CLIENT_SECRETS_B64" ]; then
+            echo "::error::YOUTUBE_CLIENT_SECRETS_B64 secret is empty or not set."
+            exit 1
+          fi
+          echo "$YOUTUBE_CLIENT_SECRETS_B64" | base64 --ignore-garbage -d > config/client_secrets.json
         env:
           YOUTUBE_TOKEN_JSON_B64: ${{ secrets.YOUTUBE_TOKEN_JSON_B64 }}
           YOUTUBE_CLIENT_SECRETS_B64: ${{ secrets.YOUTUBE_CLIENT_SECRETS_B64 }}
