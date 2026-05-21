@@ -52,23 +52,40 @@ jobs:
             shorts-data-${{ runner.os }}-
 
       - name: Restore YouTube token
-        run: |
-          mkdir -p config
-          if [ -z "$YOUTUBE_TOKEN_JSON_B64" ]; then
-            echo "::error::YOUTUBE_TOKEN_JSON_B64 secret is empty or not set." \
-                 "Run 'python src/youtube_uploader.py --auth' locally, then update the secret."
-            exit 1
-          fi
-          echo "$YOUTUBE_TOKEN_JSON_B64" | base64 --ignore-garbage -d > config/token.json
-
-          if [ -z "$YOUTUBE_CLIENT_SECRETS_B64" ]; then
-            echo "::error::YOUTUBE_CLIENT_SECRETS_B64 secret is empty or not set."
-            exit 1
-          fi
-          echo "$YOUTUBE_CLIENT_SECRETS_B64" | base64 --ignore-garbage -d > config/client_secrets.json
         env:
-          YOUTUBE_TOKEN_JSON_B64: ${{ secrets.YOUTUBE_TOKEN_JSON_B64 }}
+          YOUTUBE_TOKEN_JSON_B64:     ${{ secrets.YOUTUBE_TOKEN_JSON_B64 }}
           YOUTUBE_CLIENT_SECRETS_B64: ${{ secrets.YOUTUBE_CLIENT_SECRETS_B64 }}
+        run: |
+          python3 - <<'PYEOF'
+          import base64, os, pathlib, sys
+
+          def decode_secret(env_name, out_path):
+              val = os.environ.get(env_name, "").strip()
+              if not val:
+                  print(f"::error::{env_name} is empty or not set. "
+                        "Run 'python src/youtube_uploader.py --auth' locally "
+                        "and update the GitHub secret.", file=sys.stderr)
+                  sys.exit(1)
+              try:
+                  decoded = base64.b64decode(val)
+              except Exception as exc:
+                  print(f"::error::{env_name}: base64 decode failed — {exc}. "
+                        "Re-encode with: python3 -c \"import base64; "
+                        "print(base64.b64encode(open('config/token.json','rb').read()).decode())\"",
+                        file=sys.stderr)
+                  sys.exit(1)
+              if not decoded:
+                  print(f"::error::{env_name} decoded to 0 bytes — secret value may be corrupted.",
+                        file=sys.stderr)
+                  sys.exit(1)
+              p = pathlib.Path(out_path)
+              p.parent.mkdir(parents=True, exist_ok=True)
+              p.write_bytes(decoded)
+              print(f"  {out_path}: written ({len(decoded)} bytes)")
+
+          decode_secret("YOUTUBE_TOKEN_JSON_B64",     "config/token.json")
+          decode_secret("YOUTUBE_CLIENT_SECRETS_B64", "config/client_secrets.json")
+          PYEOF
 
       - name: Run Shorts Pipeline
         env:
