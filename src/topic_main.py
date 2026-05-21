@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import re
 import sys
 import traceback
 from pathlib import Path
@@ -68,7 +69,7 @@ def run_topic_pipeline(
     date_str = dt.date.today().isoformat()
 
     idea = idea_override or pick_next_topic(format_filter)
-    slug = idea.format + "_" + idea.subject[:30].replace(" ", "_").lower()
+    slug = idea.format + "_" + re.sub(r"[^\w\-]", "_", idea.subject[:30]).lower().strip("_")
     run_dir = settings.output_dir / "topic" / date_str / slug
     run_dir.mkdir(parents=True, exist_ok=True)
     _setup_logging(run_dir)

@@ -610,8 +610,8 @@ class TestRunShortsExperimentsExecution:
         video_path = tmp_path / "short.mp4"
         video_path.touch()
 
-        mock_sg = MagicMock()
-        mock_sg.create_short_video.return_value = video_path
+        mock_sp = MagicMock()
+        mock_sp.render_short.return_value = video_path
 
         mock_upload = MagicMock()
         if upload_raises:
@@ -629,7 +629,10 @@ class TestRunShortsExperimentsExecution:
                 patch("src.publish_step.ShortsExperimentEngine", return_value=mock_engine)
             )
             stack.enter_context(patch("src.publish_step.settings", ms))
-            stack.enter_context(patch.dict(sys.modules, {"src.shorts_generator": mock_sg}))
+            stack.enter_context(patch.dict(sys.modules, {
+                "src.shorts_pipeline": mock_sp,
+                "src.shorts_engine_v2": MagicMock(),
+            }))
             stack.enter_context(
                 patch("src.youtube_uploader.upload_short", mock_upload, create=True)
             )
@@ -712,10 +715,10 @@ class TestRunShortsExperimentsExecution:
 
         uploaded_titles: list[str] = []
 
-        mock_sg = MagicMock()
         video_path = tmp_path / "s.mp4"
         video_path.touch()
-        mock_sg.create_short_video.return_value = video_path
+        mock_sp = MagicMock()
+        mock_sp.render_short.return_value = video_path
 
         def capture_upload(**kwargs):
             uploaded_titles.append(kwargs.get("title", ""))
@@ -734,7 +737,10 @@ class TestRunShortsExperimentsExecution:
                 patch("src.publish_step.ShortsExperimentEngine", return_value=mock_engine)
             )
             stack.enter_context(patch("src.publish_step.settings", ms))
-            stack.enter_context(patch.dict(sys.modules, {"src.shorts_generator": mock_sg}))
+            stack.enter_context(patch.dict(sys.modules, {
+                "src.shorts_pipeline": mock_sp,
+                "src.shorts_engine_v2": MagicMock(),
+            }))
             mock_up = MagicMock(side_effect=lambda **kw: capture_upload(**kw) or "v")
             stack.enter_context(
                 patch("src.youtube_uploader.upload_short", mock_up, create=True)

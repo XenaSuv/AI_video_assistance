@@ -17,6 +17,7 @@ sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 from config import settings
 from src.performance_tracker import get_unanalyzed, mark_analyzed
 from src.shared_types import PerformanceStats
+from src.state_io import json_lock
 from src.tiktok_analytics import get_video_metrics as get_tiktok_video_metrics
 from src.youtube_analytics import get_retention_curve, get_video_metrics
 
@@ -228,24 +229,27 @@ class FeedbackAnalyzer:
         return recs
 
     def _save_feedback(self, result: dict[str, Any]) -> None:
-        """Save feedback to history database."""
+        """Save feedback to history database (locked read-modify-write)."""
         try:
-            history = []
-            if self.feedback_db.exists():
-                history = json.loads(self.feedback_db.read_text())
+            with json_lock(self.feedback_db):
+                history: list[dict[str, Any]] = []
+                if self.feedback_db.exists():
+                    history = json.loads(self.feedback_db.read_text())
 
-            history.append({
-                "timestamp": datetime.now().isoformat(),
-                "video_id": result["video_id"],
-                "platform": result["platform"],
-                "hook_score": result["hook_score"],
-                "avg_view_percentage": result["avg_view_percentage"],
-                "angle": result["angle"],
-                "format": result["format"],
-                "drop_point": result["drop_point"],
-            })
+                history.append({
+                    "timestamp": datetime.now().isoformat(),
+                    "video_id": result["video_id"],
+                    "platform": result["platform"],
+                    "hook_score": result["hook_score"],
+                    "avg_view_percentage": result["avg_view_percentage"],
+                    "angle": result["angle"],
+                    "format": result["format"],
+                    "drop_point": result["drop_point"],
+                })
 
-            self.feedback_db.write_text(json.dumps(history, indent=2))
+                tmp = self.feedback_db.with_suffix(".tmp")
+                tmp.write_text(json.dumps(history, indent=2))
+                tmp.replace(self.feedback_db)
             logger.info(f"Feedback saved for {result['video_id']}")
         except Exception as exc:
             logger.warning(f"Failed to save feedback: {exc}")

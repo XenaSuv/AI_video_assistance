@@ -183,7 +183,8 @@ class _PublishStep:
     def run_shorts_experiments(self) -> None:
         """Generate and upload hook-variant Shorts experiments for the top story.
 
-        Each experiment is an independent 25s Short with a different hook type.
+        Each experiment is an independent Short rendered via the modern pipeline:
+        ElevenLabs TTS audio + Pexels/Pixabay B-roll background + animated subtitles.
         Results are collected in the next run's deferred feedback loop via
         _collect_thompson_strategy() which calls ShortsExperimentEngine.collect_analytics().
 
@@ -196,7 +197,8 @@ class _PublishStep:
             return
 
         try:
-            from src.shorts_generator import create_short_video
+            from src.shorts_engine_v2 import ShortScript
+            from src.shorts_pipeline import render_short
             from src.youtube_uploader import upload_short
 
             shorts_engine = ShortsExperimentEngine(data_dir=settings.data_dir)
@@ -209,18 +211,28 @@ class _PublishStep:
 
             for exp in experiments:
                 try:
-                    exp_dir = self._run_dir / "shorts_experiments"
+                    exp_dir = self._run_dir / "shorts_experiments" / exp.experiment_id
                     exp_dir.mkdir(parents=True, exist_ok=True)
-                    script_text = "\n".join([exp.hook_text, exp.core_text, exp.payoff_text])
-                    video_path = create_short_video(
-                        script_text=script_text,
-                        out_dir=exp_dir,
-                        duration_sec=25,
+
+                    script = ShortScript(
+                        short_id=exp.experiment_id,
+                        topic=exp.story_title,
+                        hook_type=exp.hook_type,
+                        hook=exp.hook_text,
+                        core=exp.core_text,
+                        twist=exp.payoff_text,
+                        ending=exp.payoff_text,
+                        style="fast_cut",
+                        persona="direct",
                     )
-                    short_title = exp.hook_text[:95] + ("…" if len(exp.hook_text) > 95 else "")
+                    video_path = render_short(script, exp_dir)
+                    if video_path is None:
+                        raise RuntimeError("render_short returned None")
+
+                    title = script.hook[:95] + ("…" if len(script.hook) > 95 else "")
                     video_id = upload_short(
                         video_path=video_path,
-                        title=short_title,
+                        title=title,
                         description=(
                             f"{exp.hook_text}\n\n"
                             f"{exp.core_text}\n\n"

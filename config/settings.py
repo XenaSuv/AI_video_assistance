@@ -27,7 +27,7 @@ class Settings:
 
     # TTS
     elevenlabs_api_key:   str = _env("ELEVENLABS_API_KEY", required=True)
-    elevenlabs_voice_id:  str = _env("ELEVENLABS_VOICE_ID",  "Gfpl8Yo74Is0W6cPUWWT")
+    elevenlabs_voice_id:  str = _env("ELEVENLABS_VOICE_ID",  "qSeXEcewz7tA0Q0qk9fH")
     elevenlabs_model:     str = _env("ELEVENLABS_MODEL",     "eleven_turbo_v2_5")
 
     # Video (RunwayML no longer used; key kept optional for backward compat)
