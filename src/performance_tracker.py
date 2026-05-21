@@ -8,6 +8,7 @@ from typing import Any
 from loguru import logger
 
 from config import settings
+from src.state_io import json_lock
 
 
 def _get_db_path() -> Path:
@@ -31,11 +32,12 @@ def _load_db() -> list[dict[str, Any]]:
 
 
 def _save_db(data: list[dict[str, Any]]) -> None:
-    """Save performance records to disk."""
+    """Save performance records to disk atomically."""
     db_path = _get_db_path()
     try:
-        with open(db_path, "w") as f:
-            json.dump(data, f, indent=2)
+        tmp = db_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, indent=2, default=str))
+        tmp.replace(db_path)
     except Exception as exc:
         logger.error(f"Failed to save performance DB: {exc}")
 
@@ -77,9 +79,10 @@ def save_result(
         "avg_view_duration_sec": None,
         "avg_view_percentage": None,
     }
-    data = _load_db()
-    data.append(record)
-    _save_db(data)
+    with json_lock(_get_db_path()):
+        data = _load_db()
+        data.append(record)
+        _save_db(data)
     logger.info(f"Performance record saved: video_id={video_id}, hook={hook[:50]}")
 
 
@@ -95,41 +98,43 @@ def update_metrics(
     avg_view_percentage: float | None = None,
 ) -> None:
     """Update performance metrics for a published video."""
-    data = _load_db()
-    for record in data:
-        if record["video_id"] == video_id:
-            if views is not None:
-                record["views"] = views
-            if likes is not None:
-                record["likes"] = likes
-            if comments is not None:
-                record["comments"] = comments
-            if shares is not None:
-                record["shares"] = shares
-            if ctr is not None:
-                record["ctr"] = ctr
-            if watch_time_sec is not None:
-                record["watch_time_sec"] = watch_time_sec
-            if avg_view_duration_sec is not None:
-                record["avg_view_duration_sec"] = avg_view_duration_sec
-            if avg_view_percentage is not None:
-                record["avg_view_percentage"] = avg_view_percentage
-            record["updated"] = datetime.utcnow().isoformat()
-            _save_db(data)
-            logger.info(f"Performance metrics updated: video_id={video_id}")
-            return
+    with json_lock(_get_db_path()):
+        data = _load_db()
+        for record in data:
+            if record["video_id"] == video_id:
+                if views is not None:
+                    record["views"] = views
+                if likes is not None:
+                    record["likes"] = likes
+                if comments is not None:
+                    record["comments"] = comments
+                if shares is not None:
+                    record["shares"] = shares
+                if ctr is not None:
+                    record["ctr"] = ctr
+                if watch_time_sec is not None:
+                    record["watch_time_sec"] = watch_time_sec
+                if avg_view_duration_sec is not None:
+                    record["avg_view_duration_sec"] = avg_view_duration_sec
+                if avg_view_percentage is not None:
+                    record["avg_view_percentage"] = avg_view_percentage
+                record["updated"] = datetime.utcnow().isoformat()
+                _save_db(data)
+                logger.info(f"Performance metrics updated: video_id={video_id}")
+                return
     logger.warning(f"Video record not found for update: video_id={video_id}")
 
 
 def mark_analyzed(video_id: str) -> None:
     """Mark a video record as having had feedback collected."""
-    data = _load_db()
-    for record in data:
-        if record["video_id"] == video_id:
-            record["analyzed"] = True
-            record["updated"] = datetime.utcnow().isoformat()
-            _save_db(data)
-            return
+    with json_lock(_get_db_path()):
+        data = _load_db()
+        for record in data:
+            if record["video_id"] == video_id:
+                record["analyzed"] = True
+                record["updated"] = datetime.utcnow().isoformat()
+                _save_db(data)
+                return
     logger.warning(f"mark_analyzed: record not found for {video_id}")
 
 

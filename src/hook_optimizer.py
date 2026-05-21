@@ -18,6 +18,7 @@ from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 from config import settings
 from src.shared_types import HookOptimizationResult
+from src.state_io import json_lock
 
 
 @dataclass
@@ -275,24 +276,26 @@ class HookOptimizer:
         return bias
 
     def _save_patterns(self, result: HookOptimizationResult) -> None:
-        """Save pattern analysis for debugging."""
+        """Save pattern analysis for debugging (locked read-modify-write)."""
         try:
-            history = []
-            if self.hook_history.exists():
-                history = json.loads(self.hook_history.read_text())
+            with json_lock(self.hook_history):
+                history: list[dict[str, Any]] = []
+                if self.hook_history.exists():
+                    history = json.loads(self.hook_history.read_text())
 
-            history.append({
-                "timestamp": str(__import__("datetime").datetime.now()),
-                "recommended_patterns": result.recommended_patterns,
-                "avoid_patterns": result.avoid_patterns,
-                "context": result.context,
-                "style_bias": result.style_bias,
-            })
+                history.append({
+                    "timestamp": str(__import__("datetime").datetime.now()),
+                    "recommended_patterns": result.recommended_patterns,
+                    "avoid_patterns": result.avoid_patterns,
+                    "context": result.context,
+                    "style_bias": result.style_bias,
+                })
 
-            # Keep last 100 entries
-            history = history[-100:]
+                history = history[-100:]
 
-            self.hook_history.write_text(json.dumps(history, indent=2))
+                tmp = self.hook_history.with_suffix(".tmp")
+                tmp.write_text(json.dumps(history, indent=2))
+                tmp.replace(self.hook_history)
         except Exception as exc:
             logger.warning(f"Failed to save patterns: {exc}")
 

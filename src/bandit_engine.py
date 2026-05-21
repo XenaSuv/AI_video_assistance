@@ -53,6 +53,7 @@ from loguru import logger
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.constants import VARIANT_TYPE_DELTAS, RateLimitMixin
+from src.state_io import atomic_json_write
 
 if TYPE_CHECKING:
     from src.ab_testing_engine import ABTestVariant
@@ -145,8 +146,7 @@ class BanditStore:
         self._path = (data_dir or settings.data_dir) / "bandit_state.json"
 
     def save(self, state: BanditState) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps(state.to_dict(), indent=2))
+        atomic_json_write(self._path, state.to_dict())
         logger.debug("BanditStore: state persisted")
 
     def load(self) -> BanditState:

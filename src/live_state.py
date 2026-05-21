@@ -26,6 +26,8 @@ from typing import Any
 
 from loguru import logger
 
+from src.state_io import json_lock
+
 MAX_LOG_EVENTS = 100
 
 
@@ -178,8 +180,9 @@ class LiveState:
     def _write(self) -> None:
         tmp = self.path.with_suffix(".tmp")
         try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            tmp.write_text(json.dumps(self._state, indent=2, default=str))
-            tmp.replace(self.path)
+            with json_lock(self.path):
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                tmp.write_text(json.dumps(self._state, indent=2, default=str))
+                tmp.replace(self.path)
         except Exception as exc:
             logger.warning(f"LiveState._write: {exc}")

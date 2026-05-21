@@ -49,6 +49,7 @@ from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.state_io import atomic_json_write, json_lock
 
 # ── Data types ────────────────────────────────────────────────────────────────
 
@@ -135,11 +136,14 @@ class ABTestStore:
         self._path = (data_dir or settings.data_dir) / "ab_test_results.json"
 
     def save(self, result: ABTestResult) -> None:
-        """Append one completed test to the store."""
-        entries = self._load_raw()
-        entries.append(result.to_dict())
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps(entries, indent=2))
+        """Append one completed test to the store (locked read-modify-write)."""
+        with json_lock(self._path):
+            entries = self._load_raw()
+            entries.append(result.to_dict())
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self._path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(entries, indent=2))
+            tmp.replace(self._path)
         logger.debug(f"ABTestStore: saved result for {result.video_id!r}")
 
     def load_recent(self, n: int = 20) -> list[ABTestResult]:
