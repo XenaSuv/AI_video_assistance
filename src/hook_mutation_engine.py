@@ -150,7 +150,7 @@ Rules:
             if context.get("angle") and context["angle"] in lower:
                 score += 0.1
             scored.append({"hook": hook, "score": round(score, 2)})
-        scored.sort(key=lambda item: item["score"], reverse=True)
+        scored.sort(key=lambda item: item["score"], reverse=True)  # type: ignore[arg-type,return-value]
         return scored
 
 

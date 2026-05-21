@@ -46,14 +46,14 @@ _FONT  = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 _FONTR = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
 
-def _f(size: int) -> ImageFont.FreeTypeFont:
+def _f(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     try:
         return ImageFont.truetype(_FONT, size)
     except OSError:
         return ImageFont.load_default()
 
 
-def _fr(size: int) -> ImageFont.FreeTypeFont:
+def _fr(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     try:
         return ImageFont.truetype(_FONTR, size)
     except OSError:
@@ -71,14 +71,14 @@ def _anim_t(frame_t: float) -> float:
     return _ease_out(min(1.0, frame_t / ANIM_SHARE))
 
 
-def _cx(draw: ImageDraw.Draw, text: str, font, y: int, color=_WHITE) -> None:
+def _cx(draw: ImageDraw.ImageDraw, text: str, font: Any, y: int, color: Any = _WHITE) -> None:
     """Draw *text* centred horizontally at *y*."""
     bbox = font.getbbox(text)
     x = (OUT_W - (bbox[2] - bbox[0])) // 2
     draw.text((x, y), text, font=font, fill=color)
 
 
-def _title(draw: ImageDraw.Draw, text: str) -> None:
+def _title(draw: ImageDraw.ImageDraw, text: str) -> None:
     font  = _f(42)
     lines = []
     for width in (46, 60, 80):
@@ -90,13 +90,13 @@ def _title(draw: ImageDraw.Draw, text: str) -> None:
         _cx(draw, line, font, 28 + i * 50)
 
 
-def _accent_bar(draw: ImageDraw.Draw, y: int = 8) -> None:
+def _accent_bar(draw: ImageDraw.ImageDraw, y: int = 8) -> None:
     draw.rectangle([(0, y), (OUT_W, y + 6)], fill=_ACCENT)
 
 
 # ─────────────────── bar chart ────────────────────────────────────────────────
 
-def _bar_chart_frame(data: dict, t: float) -> Image.Image:
+def _bar_chart_frame(data: dict[str, Any], t: float) -> Image.Image:
     items  = data.get("items", [])
     title  = data.get("title", "")
     unit   = data.get("unit", "")
@@ -153,7 +153,7 @@ def _bar_chart_frame(data: dict, t: float) -> Image.Image:
 
 # ─────────────────── timeline ─────────────────────────────────────────────────
 
-def _timeline_frame(data: dict, t: float) -> Image.Image:
+def _timeline_frame(data: dict[str, Any], t: float) -> Image.Image:
     events = data.get("events", [])
     title  = data.get("title", "")
     n      = len(events)
@@ -205,9 +205,9 @@ def _timeline_frame(data: dict, t: float) -> Image.Image:
     return img
 
 
-def _centred_x(text: str, font) -> int:
+def _centred_x(text: str, font: Any) -> int:
     bbox = font.getbbox(text)
-    return (OUT_W - (bbox[2] - bbox[0])) // 2
+    return int((OUT_W - (bbox[2] - bbox[0])) // 2)
 
 
 # ─────────────────── stat card ────────────────────────────────────────────────
@@ -221,7 +221,7 @@ def _parse_numeric(s: str) -> tuple[float, str, str]:
     return 0.0, s, ""
 
 
-def _stat_card_frame(data: dict, t: float) -> Image.Image:
+def _stat_card_frame(data: dict[str, Any], t: float) -> Image.Image:
     value   = str(data.get("value", "0"))
     label   = data.get("label", "")
     context = data.get("context", "")
@@ -275,7 +275,7 @@ def _stat_card_frame(data: dict, t: float) -> Image.Image:
 
 # ─────────────────── comparison ───────────────────────────────────────────────
 
-def _comparison_frame(data: dict, t: float) -> Image.Image:
+def _comparison_frame(data: dict[str, Any], t: float) -> Image.Image:
     title = data.get("title", "")
     left  = data.get("left",  {"label": "A", "value": 50})
     right = data.get("right", {"label": "B", "value": 50})
@@ -348,7 +348,7 @@ _RENDERERS = {
 }
 
 
-def _render_frames(data: dict, total_seconds: float) -> list[np.ndarray]:
+def _render_frames(data: dict[str, Any], total_seconds: float) -> list[np.ndarray]:
     chart_type = data.get("type", "")
     renderer   = _RENDERERS.get(chart_type)
     if renderer is None:

@@ -47,26 +47,6 @@ _CAPTION_TRACK_NAMES: dict[str, str] = {
 }
 
 
-def _migrate_pickle(pickle_path: Path, json_path: Path) -> None:
-    """One-time migration from legacy pickle token to JSON. Deletes the pickle file."""
-    logger.warning(
-        "Migrating legacy pickle token %s → %s",
-        pickle_path.name, json_path.name,
-    )
-    raw = pickle_path.read_bytes()
-    try:
-        import pickle as _pickle  # scoped import — only used during migration
-        creds = _pickle.load(__import__("io").BytesIO(raw))
-        token_json = creds.to_json()
-    except Exception:
-        # File was already written as JSON (e.g. saved with wrong extension).
-        token_json = raw.decode()
-        json.loads(token_json)  # validate — raises if truly corrupt
-    json_path.write_text(token_json)
-    pickle_path.unlink()
-    logger.info("Token migration complete. Update YOUTUBE_TOKEN_FILE to %s in your env.", json_path.name)
-
-
 def _get_creds(
     client_secrets: Path | None = None,
     token_file: Path | None = None,
@@ -75,22 +55,10 @@ def _get_creds(
     client_secrets = client_secrets or settings.youtube_client_secrets
     token_file     = token_file     or settings.youtube_token_file
 
-    # Auto-migrate: env var still points to .pickle → switch to .json sibling.
-    if token_file.suffix == ".pickle":
-        json_path = token_file.with_suffix(".json")
-        if token_file.exists():
-            _migrate_pickle(token_file, json_path)
-        token_file = json_path
-    elif not token_file.exists():
-        # Expected .json but not found — check for legacy .pickle sibling.
-        pickle_sibling = token_file.with_suffix(".pickle")
-        if pickle_sibling.exists():
-            _migrate_pickle(pickle_sibling, token_file)
-
     creds: Credentials | None = None
     if token_file.exists():
         try:
-            creds = Credentials.from_authorized_user_info(
+            creds = Credentials.from_authorized_user_info(  # type: ignore[no-untyped-call]
                 json.loads(token_file.read_text()), SCOPES
             )
         except Exception as exc:
@@ -98,8 +66,8 @@ def _get_creds(
 
     if creds and creds.expired and creds.refresh_token:
         try:
-            creds.refresh(Request())
-            token_file.write_text(creds.to_json())
+            creds.refresh(Request())  # type: ignore[no-untyped-call]
+            token_file.write_text(creds.to_json())  # type: ignore[no-untyped-call]
         except RefreshError as exc:
             headless = (
                 os.getenv("CI", "").lower() in ("1", "true")
@@ -181,7 +149,7 @@ def _get_creds(
 def _youtube_client(
     client_secrets: Path | None = None,
     token_file: Path | None = None,
-):
+) -> Any:
     return build(
         "youtube", "v3",
         credentials=_get_creds(client_secrets, token_file),
@@ -195,7 +163,7 @@ _RETRYABLE_STATUS = (500, 502, 503, 504)
 _MAX_RETRIES = 5
 
 
-def _upload_with_retry(request: "Any", video_path: Path, max_retries: int = _MAX_RETRIES) -> dict:
+def _upload_with_retry(request: "Any", video_path: Path, max_retries: int = _MAX_RETRIES) -> dict[str, Any]:
     """Execute a resumable upload with exponential backoff and cross-run state persistence.
 
     State (upload URI + byte offset) is written to *video_path*.upload_state.json
@@ -220,7 +188,7 @@ def _upload_with_retry(request: "Any", video_path: Path, max_retries: int = _MAX
 
     http_retries = 0
     net_retries  = 0
-    response     = None
+    response: dict[str, Any] | None = None
 
     while response is None:
         try:
@@ -363,7 +331,7 @@ def upload_video(
             f"YouTube quota nearly exhausted: {guard.used_today()}/{guard.daily_limit} units used."
         )
 
-    video_id = response["id"]
+    video_id: str = response["id"]
     logger.info(f"Uploaded: https://youtu.be/{video_id}")
     return video_id
 
@@ -379,7 +347,7 @@ def upload_short(
     """Upload a Short to YouTube using the standard upload helper."""
     description = description or "#Shorts #AI #TechNews"
     tags = tags or ["shorts", "AI", "technews"]
-    return upload_video(
+    result: str = upload_video(
         video_path,
         title=title,
         description=description,
@@ -388,6 +356,7 @@ def upload_short(
         client_secrets=client_secrets,
         token_file=token_file,
     )
+    return result
 
 
 def set_thumbnail(
@@ -481,7 +450,7 @@ def publish_episode(
     subtitle_language: str = "en",
     client_secrets: Path | None = None,
     token_file: Path | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Upload both long-form and Short. Returns {long_id, short_id}.
 
     Pass *client_secrets* / *token_file* to publish to a channel other than
@@ -489,7 +458,7 @@ def publish_episode(
     Pass *subtitle_path* to upload an SRT caption track alongside the video.
     """
     desc = _fill_timestamps(script.description, script)
-    creds_kwargs = {"client_secrets": client_secrets, "token_file": token_file}
+    creds_kwargs: dict[str, Path | None] = {"client_secrets": client_secrets, "token_file": token_file}
 
     result = {}
     result["long_id"] = upload_video(
@@ -502,13 +471,13 @@ def publish_episode(
     )
 
     if thumbnail and thumbnail.exists():
-        set_thumbnail(result["long_id"], thumbnail, **creds_kwargs)
+        set_thumbnail(result["long_id"], thumbnail, **creds_kwargs)  # type: ignore[arg-type]
 
     if subtitle_path and subtitle_path.exists():
         upload_captions(
             result["long_id"], subtitle_path,
             language=subtitle_language,
-            **creds_kwargs,
+            **creds_kwargs,  # type: ignore[arg-type]
         )
 
     if short_video and short_video.exists():
@@ -525,7 +494,7 @@ def publish_episode(
 
 # --------------------- CLI ---------------------
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--auth",    action="store_true", help="Run OAuth flow only")
     parser.add_argument("--force",   action="store_true", help="Force browser-based OAuth even in headless environment")

@@ -31,6 +31,7 @@ import json
 import random
 import sys
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -43,12 +44,13 @@ def _perf_file(data_dir: Path) -> Path:
     return data_dir / "hook_performance.json"
 
 
-def _load(data_dir: Path) -> dict:
+def _load(data_dir: Path) -> dict[str, Any]:
     p = _perf_file(data_dir)
-    return json.loads(p.read_text()) if p.exists() else {}
+    data: dict[str, Any] = json.loads(p.read_text()) if p.exists() else {}
+    return data
 
 
-def _save(data: dict, data_dir: Path) -> None:
+def _save(data: dict[str, Any], data_dir: Path) -> None:
     _perf_file(data_dir).write_text(json.dumps(data, indent=2))
 
 
@@ -59,14 +61,15 @@ def _arm_key(hook_text: str) -> str:
     return hook_text[:80].strip()
 
 
-def _get_arm(ctx: dict, key: str) -> dict:
+def _get_arm(ctx: dict[str, Any], key: str) -> dict[str, Any]:
     """Return arm stats, initialising with Beta(1,1) = uniform prior."""
     if key not in ctx:
         ctx[key] = {"alpha": 1.0, "beta": 1.0, "uses": 0, "wins": 0.0}
-    return ctx[key]
+    arm: dict[str, Any] = ctx[key]
+    return arm
 
 
-def _sample(arm: dict) -> float:
+def _sample(arm: dict[str, Any]) -> float:
     return random.betavariate(arm["alpha"], arm["beta"])
 
 
@@ -165,7 +168,7 @@ def record_performance(
     _save(data, data_dir)
 
 
-def top_hooks(data_dir: Path, context_key: str, n: int = 5) -> list[dict]:
+def top_hooks(data_dir: Path, context_key: str, n: int = 5) -> list[dict[str, Any]]:
     """Return the top-n hooks by estimated mean CTR for *context_key* (for reporting)."""
     data = _load(data_dir)
     ctx  = data.get(context_key, {})

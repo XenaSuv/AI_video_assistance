@@ -15,6 +15,7 @@ import sys
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 from openai import OpenAI
@@ -30,7 +31,7 @@ from src.script_generator import Scene, VideoScript
 _REUSE_COOLDOWN_WEEKS = 26   # ~6 months before a topic repeats
 
 
-def _log_usage(usage, label: str = "") -> None:
+def _log_usage(usage: Any, label: str = "") -> None:
     if not usage:
         return
     details = usage.prompt_tokens_details
@@ -541,9 +542,10 @@ def _topics_file(data_dir: Path, tool_key: str) -> Path:
     return data_dir / f"weekly_topics_{tool_key}.json"
 
 
-def _load_used_topics(data_dir: Path, tool_key: str) -> list[dict]:
+def _load_used_topics(data_dir: Path, tool_key: str) -> list[dict[str, Any]]:
     path = _topics_file(data_dir, tool_key)
-    return json.loads(path.read_text()).get("used", []) if path.exists() else []
+    result: list[dict[str, Any]] = json.loads(path.read_text()).get("used", []) if path.exists() else []
+    return result
 
 
 def save_used_topic(data_dir: Path, tool_key: str, topic: str) -> None:
@@ -663,7 +665,7 @@ def generate_tutorial_script(
     )
     _log_usage(resp.usage, f"weekly-{tool_key}")
 
-    raw    = json.loads(resp.choices[0].message.content)
+    raw: dict[str, Any] = json.loads(resp.choices[0].message.content or "")
     scenes = []
     for i, s in enumerate(raw["scenes"]):
         key = s.get("screenshot_key") or None

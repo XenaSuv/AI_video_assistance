@@ -181,7 +181,7 @@ class PackagingEngine:
         self,
         editorial_plan: Any,
         strategy_config: Any,
-    ) -> list:
+    ) -> list[Any]:
         """Generate three packaging variants for A/B testing.
 
         Each variant tests a different emotional angle (curiosity / conflict /
@@ -357,11 +357,11 @@ class PackagingEngine:
     def _extract_mode(self, strategy_config: Any) -> str:
         """Return the mode string from a StrategyConfig object or dict."""
         try:
-            return strategy_config.mode
+            return str(strategy_config.mode)
         except AttributeError:
             pass
         if isinstance(strategy_config, dict):
-            return strategy_config.get("mode", "growth")
+            return str(strategy_config.get("mode", "growth"))
         return "growth"
 
     def _idea_to_family(self, text: str) -> str:

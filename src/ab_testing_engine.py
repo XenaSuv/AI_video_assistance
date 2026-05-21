@@ -345,7 +345,8 @@ class ABTestingEngine:
         if self.youtube is None:
             return {"ctr": 0.0, "retention_30s": 0.0}
         try:
-            return self.youtube.get_video_analytics(video_id)
+            metrics: dict[str, float] = self.youtube.get_video_analytics(video_id)
+            return metrics
         except Exception as exc:
             logger.warning(f"ABTest: _get_metrics failed ({exc})")
             return {"ctr": 0.0, "retention_30s": 0.0}

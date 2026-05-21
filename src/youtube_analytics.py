@@ -12,32 +12,11 @@ def get_analytics_service(token_file: str = "config/token.json") -> Any:
     from google.oauth2.credentials import Credentials  # lazy: avoids import at module level
 
     path = Path(token_file)
-
-    # Auto-migrate legacy pickle token if present.
-    if path.suffix == ".pickle" or not path.exists():
-        pickle_path = path if path.suffix == ".pickle" else path.with_suffix(".pickle")
-        if pickle_path.exists():
-            json_path = pickle_path.with_suffix(".json")
-            raw = pickle_path.read_bytes()
-            try:
-                import io
-                import pickle as _pickle
-                creds = _pickle.load(io.BytesIO(raw))
-                token_json = creds.to_json()
-            except Exception as exc:
-                logger.debug(f"_get_credentials: pickle load failed, trying JSON ({exc})")
-                # File was saved as JSON with a .pickle extension.
-                token_json = raw.decode()
-                json.loads(token_json)  # validate — raises if truly corrupt
-            json_path.write_text(token_json)
-            pickle_path.unlink()
-            path = json_path
-
-    credentials = Credentials.from_authorized_user_info(json.loads(path.read_text()))
+    credentials = Credentials.from_authorized_user_info(json.loads(path.read_text()))  # type: ignore[no-untyped-call]
     return build("youtubeAnalytics", "v2", credentials=credentials)
 
 
-def get_video_metrics(video_id: str) -> dict | None:
+def get_video_metrics(video_id: str) -> dict[str, Any] | None:
     """Get basic video metrics from YouTube Analytics.
 
     Args:

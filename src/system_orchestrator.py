@@ -98,17 +98,17 @@ class SystemOrchestrator:
 
     def __init__(
         self,
-        decision_engine,
-        packaging_engine,
-        scene_bandit,
-        scene_engine,
-        drop_predictor,
-        retention_engine,
-        video_renderer,
-        video_publisher,
-        performance_store,
+        decision_engine: Any,
+        packaging_engine: Any,
+        scene_bandit: Any,
+        scene_engine: Any,
+        drop_predictor: Any,
+        retention_engine: Any,
+        video_renderer: Any,
+        video_publisher: Any,
+        performance_store: Any,
         data_dir:         Path | None = None,
-        context_analyzer              = None,
+        context_analyzer: Any         = None,
     ) -> None:
         self.decision_engine   = decision_engine
         self.packaging_engine  = packaging_engine
@@ -383,7 +383,7 @@ class SystemOrchestrator:
         """Insert or merge-update the run_history.json record for patch["video_id"]."""
         try:
             self._run_history_path.parent.mkdir(parents=True, exist_ok=True)
-            runs: list[dict] = []
+            runs: list[dict[str, Any]] = []
             if self._run_history_path.exists():
                 try:
                     runs = json.loads(self._run_history_path.read_text())
@@ -419,7 +419,8 @@ class SystemOrchestrator:
                 for line in f:
                     record = json.loads(line.strip())
                     if record.get("video_id") == video_id:
-                        return record
+                        result: dict[str, Any] = record
+                        return result
         except Exception as exc:
             logger.warning(f"SystemOrchestrator: could not load cycle ({exc})")
         return None
@@ -446,12 +447,12 @@ def create_orchestrator(data_dir: Path | None = None) -> SystemOrchestrator:
     strat_engine  = SceneStrategyEngine()
     scene_engine  = SceneVarietyEngineV2(strat_engine)
 
-    def _null_renderer(scenes, packaging, strategy, editorial_input):
+    def _null_renderer(scenes: Any, packaging: Any, strategy: Any, editorial_input: Any) -> None:
         """Override in production with build_video()."""
         logger.warning("SystemOrchestrator: no video_renderer configured")
         return None
 
-    def _null_publisher(video_path, packaging):
+    def _null_publisher(video_path: Any, packaging: Any) -> None:
         logger.warning("SystemOrchestrator: no video_publisher configured")
         return None
 
@@ -459,7 +460,7 @@ def create_orchestrator(data_dir: Path | None = None) -> SystemOrchestrator:
         def __init__(self, path: Path) -> None:
             self._path = path
 
-        def save(self, record: dict) -> None:
+        def save(self, record: dict[str, Any]) -> None:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             records = []
             if self._path.exists():
@@ -483,7 +484,7 @@ def create_orchestrator(data_dir: Path | None = None) -> SystemOrchestrator:
             self._v3    = DecisionEngineV3(data_dir=data_dir)
             self._store = PerformanceStore(data_dir=data_dir)
 
-        def decide(self, metrics: dict | None = None, scene_bandit=None) -> StrategyConfig:
+        def decide(self, metrics: dict[str, Any] | None = None, scene_bandit: Any = None) -> StrategyConfig:
             scene_sig: dict[str, Any] = {}
             if scene_bandit is not None:
                 arm = scene_bandit.select_policy()

@@ -17,6 +17,7 @@ import os
 import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -46,17 +47,18 @@ def _seen_path(data_dir: Path) -> Path:
     return data_dir / _SEEN_FILE
 
 
-def _load_seen(data_dir: Path) -> dict:
+def _load_seen(data_dir: Path) -> dict[str, Any]:
     p = _seen_path(data_dir)
     if p.exists():
         try:
-            return json.loads(p.read_text())
+            data: dict[str, Any] = json.loads(p.read_text())
+            return data
         except Exception as exc:
             logger.debug(f"BreakingDetector._load_seen: {exc}")
     return {"seen_urls": [], "videos": []}
 
 
-def _save_seen(data_dir: Path, seen: dict) -> None:
+def _save_seen(data_dir: Path, seen: dict[str, Any]) -> None:
     data_dir.mkdir(parents=True, exist_ok=True)
     _seen_path(data_dir).write_text(json.dumps(seen, indent=2))
 
@@ -77,7 +79,7 @@ def _is_recent(published_iso: str) -> bool:
     return pub >= date.today() - timedelta(days=1)
 
 
-def _circuit_breaker_ok(seen: dict) -> bool:
+def _circuit_breaker_ok(seen: dict[str, Any]) -> bool:
     """Return False if we've already published too many breaking videos today
     or published one within the cooldown window."""
     videos = seen.get("videos", [])

@@ -37,7 +37,8 @@ class PipelineCheckpoint:
 
     def is_done(self, step: str) -> bool:
         """Return True if *step* completed successfully in a prior run."""
-        return self._state.get("steps", {}).get(step, {}).get("status") == "done"
+        result: bool = self._state.get("steps", {}).get(step, {}).get("status") == "done"
+        return result
 
     def mark_done(self, step: str, metadata: dict[str, Any] | None = None) -> None:
         """Record *step* as successfully completed and persist to disk."""
@@ -77,7 +78,7 @@ class PipelineCheckpoint:
     def _load(self) -> dict[str, Any]:
         if self._path.exists():
             try:
-                data = json.loads(self._path.read_text())
+                data: dict[str, Any] = json.loads(self._path.read_text())
                 done = [k for k, v in data.get("steps", {}).items() if v.get("status") == "done"]
                 if done:
                     logger.info(f"Checkpoint: resuming — already done: {done}")

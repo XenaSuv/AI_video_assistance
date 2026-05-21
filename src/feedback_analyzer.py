@@ -43,7 +43,7 @@ class RetentionAnalysis:
 class FeedbackAnalyzer:
     """Analyzes video performance metrics and generates editorial feedback."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.youtube = None
         self.feedback_db = Path(settings.data_dir) / "feedback_history.json"
         self.feedback_db.parent.mkdir(parents=True, exist_ok=True)
@@ -289,7 +289,8 @@ class FeedbackAnalyzer:
         """Load saved feedback history from storage."""
         try:
             if self.feedback_db.exists():
-                return json.loads(self.feedback_db.read_text())
+                data: list[dict[str, Any]] = json.loads(self.feedback_db.read_text())
+                return data
         except Exception as exc:
             logger.warning(f"Failed to load feedback history: {exc}")
         return []

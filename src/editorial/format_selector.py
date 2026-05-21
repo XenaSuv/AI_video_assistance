@@ -12,7 +12,7 @@ from __future__ import annotations
 
 # ── Format definitions ────────────────────────────────────────────────────────
 
-FORMATS: dict[str, dict] = {
+FORMATS: dict[str, dict[str, object]] = {
     "hot_take": {
         "type":        "hot_take",
         "pacing":      "fast",
@@ -51,7 +51,7 @@ ANGLE_FORMAT: dict[str, str] = {
 class FormatSelector:
     """Select the production format for a given angle."""
 
-    def select(self, angle: str) -> dict:
+    def select(self, angle: str) -> dict[str, object]:
         """Return the full format dict for this angle."""
         fmt_key = ANGLE_FORMAT.get(angle, "explainer")
         return dict(FORMATS[fmt_key])

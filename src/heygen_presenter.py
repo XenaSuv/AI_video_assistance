@@ -28,6 +28,7 @@ from __future__ import annotations
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -94,7 +95,7 @@ def _create_video(
     dim = _DIMENSIONS.get(aspect, _DIMENSIONS["16:9"])
     # Prefer asset_id (server-side reference) over public URL when both available
     if audio_asset_id:
-        voice_block: dict = {"type": "audio", "audio_asset_id": audio_asset_id}
+        voice_block: dict[str, Any] = {"type": "audio", "audio_asset_id": audio_asset_id}
     else:
         voice_block = {"type": "audio", "audio_url": audio_url}
     payload = {
@@ -120,7 +121,7 @@ def _create_video(
         timeout=30,
     )
     body = resp.json()
-    video_id = (body.get("data") or {}).get("video_id") or body.get("video_id", "")
+    video_id: str = str((body.get("data") or {}).get("video_id") or body.get("video_id") or "")
     if not video_id:
         raise RuntimeError(f"HeyGen video creation failed: {resp.text}")
     return video_id
@@ -164,7 +165,7 @@ def _create_video_text(
         timeout=30,
     )
     body = resp.json()
-    video_id = (body.get("data") or {}).get("video_id") or body.get("video_id", "")
+    video_id: str = str((body.get("data") or {}).get("video_id") or body.get("video_id") or "")
     if not video_id:
         raise RuntimeError(f"HeyGen text video creation failed: {resp.text}")
     return video_id
@@ -184,7 +185,7 @@ def _poll_video(api_key: str, video_id: str) -> str:
         data   = (resp.json().get("data") or {})
         status = data.get("status", "")
         if status == "completed":
-            url = data.get("video_url", "")
+            url: str = str(data.get("video_url") or "")
             if not url:
                 raise RuntimeError(f"HeyGen video {video_id} completed but no URL")
             return url

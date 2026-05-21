@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -40,14 +41,14 @@ def _run_language_variant(
     intro_path: Path | None = None,
     outro_path: Path | None = None,
     include_short: bool = True,
-) -> dict:
+) -> dict[str, Any]:
     """Translate + re-voice + reassemble for a non-English language variant.
 
     DALL-E images and Ken Burns clips are fully reused — only TTS is re-run.
     Shared by all pipelines (daily, weekly, digest).
     """
     logger.info(f"=== {lang_name} variant ===")
-    summary: dict = {}
+    summary: dict[str, Any] = {}
 
     # 1. Translate
     script_cache = run_dir / f"script_{lang_code}.json"

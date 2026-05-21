@@ -43,7 +43,7 @@ def _load_font(path: str, size: int) -> ImageFont.FreeTypeFont:
     try:
         return ImageFont.truetype(path, size)
     except OSError:
-        return ImageFont.load_default()
+        return ImageFont.load_default()  # type: ignore[return-value]
 
 
 def _wrap(text: str, font: ImageFont.FreeTypeFont, max_px: int) -> list[str]:

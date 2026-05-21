@@ -48,7 +48,7 @@ class _StepRecord:
     error: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         d = {
             "name":         self.name,
             "status":       self.status,
@@ -104,7 +104,7 @@ class PipelineObserver:
             self._live.step_running(name)
         self._persist()
 
-    def step_done(self, name: str, **metadata) -> None:
+    def step_done(self, name: str, **metadata: Any) -> None:
         """Call after a step completes successfully."""
         rec = self._steps.get(name)
         if rec is None:
@@ -120,7 +120,7 @@ class PipelineObserver:
             self._live.step_done(name, duration_sec=elapsed)
         self._persist()
 
-    def step_skip(self, name: str, **metadata) -> None:
+    def step_skip(self, name: str, **metadata: Any) -> None:
         """Call when a step is skipped because it was already done."""
         rec = self._steps.get(name)
         now_ts = time.time()
@@ -157,7 +157,7 @@ class PipelineObserver:
 
     # ── pipeline lifecycle ────────────────────────────────────────────────────
 
-    def finish(self, status: str = "success", **extra) -> dict:
+    def finish(self, status: str = "success", **extra: Any) -> dict[str, Any]:
         """Mark the pipeline as finished and return the full trace dict."""
         self._status      = status
         self._finished_at = _now_iso()
@@ -174,7 +174,7 @@ class PipelineObserver:
 
     # ── persistence ───────────────────────────────────────────────────────────
 
-    def _to_dict(self) -> dict:
+    def _to_dict(self) -> dict[str, Any]:
         total_sec = time.time() - self._started_ts
         return {
             "pipeline":    self.pipeline,
@@ -186,7 +186,7 @@ class PipelineObserver:
             **self._extra,
         }
 
-    def _persist(self) -> dict:
+    def _persist(self) -> dict[str, Any]:
         trace = self._to_dict()
         path  = self.run_dir / _TRACE_FILE
         tmp   = path.with_suffix(".tmp")

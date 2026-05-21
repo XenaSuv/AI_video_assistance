@@ -76,7 +76,8 @@ class HookOptimizer:
         try:
             if not Path(self.feedback_path).exists():
                 return []
-            return json.loads(Path(self.feedback_path).read_text())
+            data: list[dict[str, Any]] = json.loads(Path(self.feedback_path).read_text())
+            return data
         except Exception as exc:
             logger.warning(f"Failed to load feedback: {exc}")
             return []
@@ -324,7 +325,7 @@ class HookOptimizer:
 def get_optimized_hooks(
     editorial_context: dict[str, Any],
     feedback_path: str | None = None,
-) -> dict[str, Any]:
+) -> HookOptimizationResult:
     """Convenience function to get optimized hooks."""
     optimizer = HookOptimizer(feedback_path=feedback_path)
     return optimizer.run(editorial_context)

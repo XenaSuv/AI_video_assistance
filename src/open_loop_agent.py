@@ -18,6 +18,7 @@ import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -147,7 +148,7 @@ Add a short closing line to each loop's target scene.
 
 # ── Agent ─────────────────────────────────────────────────────────────────────
 
-def _log_usage(usage, label: str = "") -> None:
+def _log_usage(usage: Any, label: str = "") -> None:
     if not usage:
         return
     details = usage.prompt_tokens_details

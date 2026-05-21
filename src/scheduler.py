@@ -17,6 +17,7 @@ import argparse
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -31,7 +32,7 @@ RETRY_DELAY_SEC = 30 * 60
 
 # ── Retry wrapper ─────────────────────────────────────────────────────────────
 
-def _run_with_retry(label: str, fn, **kwargs) -> None:
+def _run_with_retry(label: str, fn: Any, **kwargs: Any) -> None:
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             logger.info(f"[{label}] attempt {attempt}/{MAX_RETRIES}")

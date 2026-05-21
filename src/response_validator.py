@@ -12,11 +12,12 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Any
 
 from src.exceptions import ScriptGenerationError
 
 
-def parse_llm_json(content: str | None, context: str = "") -> dict:
+def parse_llm_json(content: str | None, context: str = "") -> dict[str, Any]:
     """Parse JSON from an LLM response string.
 
     Handles the two common formatting quirks from OpenAI:
@@ -44,7 +45,8 @@ def parse_llm_json(content: str | None, context: str = "") -> dict:
     text = re.sub(r"```\s*$", "", text).strip()
 
     try:
-        return json.loads(text)
+        result: dict[str, Any] = json.loads(text)
+        return result
     except json.JSONDecodeError as exc:
         snippet = text[:200] + ("…" if len(text) > 200 else "")
         raise ScriptGenerationError(
@@ -54,7 +56,7 @@ def parse_llm_json(content: str | None, context: str = "") -> dict:
 
 
 def validate_llm_response(
-    data: dict,
+    data: dict[str, Any],
     required_keys: list[str],
     context: str = "",
 ) -> None:

@@ -163,7 +163,8 @@ class CorrectionStore:
     def _load(self) -> list[dict[str, Any]]:
         try:
             if self._path.exists():
-                return json.loads(self._path.read_text())
+                data: list[dict[str, Any]] = json.loads(self._path.read_text())
+                return data
         except Exception as exc:
             logger.warning(f"CorrectionStore: could not load ({exc}), starting fresh")
         return []

@@ -16,7 +16,7 @@ import sys
 from dataclasses import asdict, dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from loguru import logger
 
@@ -51,11 +51,11 @@ class TopicIdea:
     suggested_title: str    # draft YouTube title
     created: str = field(default_factory=lambda: date.today().isoformat())
 
-    def to_dict(self) -> dict:
-        return asdict(self)
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)  # type: ignore[return-value]
 
     @classmethod
-    def from_dict(cls, d: dict) -> "TopicIdea":
+    def from_dict(cls, d: dict[str, Any]) -> "TopicIdea":
         return cls(**d)
 
 
@@ -394,7 +394,8 @@ def _save_ideas(ideas: list[TopicIdea]) -> None:
 def _load_used() -> list[str]:
     if not _USED_FILE.exists():
         return []
-    return json.loads(_USED_FILE.read_text())
+    result: list[str] = json.loads(_USED_FILE.read_text())
+    return result
 
 
 def _mark_used(idea: TopicIdea) -> None:
@@ -404,7 +405,7 @@ def _mark_used(idea: TopicIdea) -> None:
     _USED_FILE.write_text(json.dumps(used, indent=2))
 
 
-def _log_usage(usage, label: str = "") -> None:
+def _log_usage(usage: Any, label: str = "") -> None:
     if not usage:
         return
     details = usage.prompt_tokens_details

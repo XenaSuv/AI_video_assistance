@@ -201,7 +201,7 @@ class SequenceLearningEngine:
         m     = min_count or self.min_count
         data  = self._store.load()
 
-        ret_lists: dict[tuple, list[float]] = defaultdict(list)
+        ret_lists: dict[tuple[str, ...], list[float]] = defaultdict(list)
         for item in data:
             for pat in extract_patterns(item["sequence"], window=w):
                 ret_lists[pat].append(float(item["retention"]))
@@ -243,7 +243,7 @@ class SequenceLearningEngine:
         threshold: float      = BAD_RETENTION_THRESHOLD,
         min_count: int | None = None,
         window:    int | None = None,
-    ) -> frozenset[tuple]:
+    ) -> frozenset[tuple[str, ...]]:
         """Return bad pattern tuples as a frozenset for O(1) lookup."""
         return frozenset(x["pattern"] for x in self.get_bad_patterns(
             threshold=threshold, min_count=min_count, window=window

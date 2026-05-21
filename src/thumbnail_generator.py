@@ -128,7 +128,7 @@ def generate_thumbnail(
     logger.info(f"Best frame at t={best_t:.1f}s (score={score:.1f})")
 
     img = Image.fromarray(best_frame.astype(np.uint8)).convert("RGB")
-    img = img.resize((THUMB_W, THUMB_H), Image.LANCZOS)
+    img = img.resize((THUMB_W, THUMB_H), Image.LANCZOS)  # type: ignore[attr-defined]
     img = _overlay_title(img, title)
     img.save(str(out_path), "JPEG", quality=92, optimize=True)
 

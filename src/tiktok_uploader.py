@@ -25,6 +25,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from threading import Thread
+from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import requests
@@ -44,15 +45,16 @@ _REDIRECT   = "http://localhost:8080/callback"
 
 # ─────────────────── Token management ───────────────────
 
-def _load_tokens(token_file: Path) -> dict:
-    return json.loads(token_file.read_text())
+def _load_tokens(token_file: Path) -> dict[str, Any]:
+    result: dict[str, Any] = json.loads(token_file.read_text())
+    return result
 
 
-def _save_tokens(token_file: Path, tokens: dict) -> None:
+def _save_tokens(token_file: Path, tokens: dict[str, Any]) -> None:
     token_file.write_text(json.dumps(tokens, indent=2))
 
 
-def _do_refresh(client_key: str, client_secret: str, refresh_token: str) -> dict:
+def _do_refresh(client_key: str, client_secret: str, refresh_token: str) -> dict[str, Any]:
     resp = http_post(
         _TOKEN_URL,
         data={
@@ -63,7 +65,8 @@ def _do_refresh(client_key: str, client_secret: str, refresh_token: str) -> dict
         },
         timeout=30,
     )
-    return resp.json()
+    result: dict[str, Any] = resp.json()
+    return result
 
 
 def _get_access_token(client_key: str, client_secret: str, token_file: Path) -> str:
@@ -80,7 +83,8 @@ def _get_access_token(client_key: str, client_secret: str, token_file: Path) -> 
         _save_tokens(token_file, tokens)
         logger.info("TikTok: token refreshed and saved")
 
-    return tokens["access_token"]
+    token: str = tokens["access_token"]
+    return token
 
 
 # ─────────────────── First-run OAuth2 ───────────────────
@@ -103,10 +107,10 @@ def run_auth_flow(client_key: str, client_secret: str, token_file: Path) -> None
         "code_challenge_method": "S256",
     })
 
-    code_holder: dict = {}
+    code_holder: dict[str, str] = {}
 
     class _Handler(BaseHTTPRequestHandler):
-        def do_GET(self):
+        def do_GET(self) -> None:
             qs = parse_qs(urlparse(self.path).query)
             if "code" in qs:
                 code_holder["code"] = qs["code"][0]
@@ -114,7 +118,7 @@ def run_auth_flow(client_key: str, client_secret: str, token_file: Path) -> None
             self.end_headers()
             self.wfile.write(b"<h2>TikTok auth complete - you can close this tab.</h2>")
 
-        def log_message(self, *_):
+        def log_message(self, *_: Any) -> None:
             pass
 
     server = HTTPServer(("localhost", 8080), _Handler)

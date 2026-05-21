@@ -57,8 +57,8 @@ class AutoActionEngine:
         }
 
     def load_strategy(self) -> dict[str, Any]:
-        store = _load_json(_strategy_path(), {"strategies": {}})
-        strategy = store.get("strategies", {}).get(self.run_type)
+        store: dict[str, Any] = _load_json(_strategy_path(), {"strategies": {}})
+        strategy: dict[str, Any] | None = store.get("strategies", {}).get(self.run_type)
         if not strategy:
             strategy = self.default_strategy()
             self.save_strategy(strategy)
@@ -70,13 +70,15 @@ class AutoActionEngine:
         _save_json(_strategy_path(), store)
 
     def load_action_log(self) -> dict[str, Any]:
-        return _load_json(_actions_path(), {"entries": [], "scores": {}})
+        result: dict[str, Any] = _load_json(_actions_path(), {"entries": [], "scores": {}})
+        return result
 
     def save_action_log(self, payload: dict[str, Any]) -> None:
         _save_json(_actions_path(), payload)
 
     def load_stats(self) -> dict[str, dict[str, int]]:
-        return _load_json(_stats_path(), {})
+        result: dict[str, dict[str, int]] = _load_json(_stats_path(), {})
+        return result
 
     def save_stats(self, payload: dict[str, dict[str, int]]) -> None:
         _save_json(_stats_path(), payload)

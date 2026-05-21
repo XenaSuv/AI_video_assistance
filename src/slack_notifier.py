@@ -26,7 +26,7 @@ _PIPELINE_EMOJI = {
 }
 
 
-def _post(payload: dict) -> None:
+def _post(payload: dict[str, Any]) -> None:
     url = settings.slack_webhook_url
     if not url:
         return
@@ -45,7 +45,7 @@ def _yt_url(video_id: str | None) -> str | None:
     return f"https://youtu.be/{video_id}" if video_id else None
 
 
-def notify_success(summary: dict, pipeline: str, step_timings: list[dict] | None = None) -> None:
+def notify_success(summary: dict[str, Any], pipeline: str, step_timings: list[dict[str, Any]] | None = None) -> None:
     """Post a green success card with key run stats."""
     emoji = _PIPELINE_EMOJI.get(pipeline, "🎬")
     date  = summary.get("date", dt.date.today().isoformat())
@@ -166,7 +166,7 @@ def _spend_bar(spent: float, limit: float, width: int = 10) -> str:
     return "█" * filled + "░" * (width - filled)
 
 
-def notify_slow_steps(slow: list[dict], pipeline: str, date: str) -> None:
+def notify_slow_steps(slow: list[dict[str, Any]], pipeline: str, date: str) -> None:
     """Post a yellow warning when one or more steps exceeded their latency threshold."""
     if not slow:
         return
@@ -245,7 +245,7 @@ def notify_watchdog_alert(
 def notify_failure(
     exc: BaseException,
     pipeline: str,
-    summary: dict | None = None,
+    summary: dict[str, Any] | None = None,
     traceback_str: str | None = None,
 ) -> None:
     """Post a red failure alert with error message and traceback tail."""

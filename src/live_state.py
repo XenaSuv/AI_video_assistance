@@ -120,7 +120,7 @@ class LiveState:
     # ── enrichment ────────────────────────────────────────────────────────────
 
     def log_event(self, msg: str) -> None:
-        logs: list = self._state.get("logs", [])
+        logs: list[dict[str, Any]] = self._state.get("logs", [])
         logs.append({"time": _now_hms(), "msg": msg})
         if len(logs) > MAX_LOG_EVENTS:
             logs = logs[-MAX_LOG_EVENTS:]
@@ -128,17 +128,17 @@ class LiveState:
         self._state["updated_at"] = _now_iso()
         self._write()
 
-    def set_strategy(self, strategy: dict) -> None:
+    def set_strategy(self, strategy: dict[str, Any]) -> None:
         self._state["strategy"] = strategy
         self._state["updated_at"] = _now_iso()
         self._write()
 
-    def set_metrics(self, metrics: dict) -> None:
+    def set_metrics(self, metrics: dict[str, Any]) -> None:
         self._state["metrics"] = metrics
         self._state["updated_at"] = _now_iso()
         self._write()
 
-    def set_cost(self, cost: dict) -> None:
+    def set_cost(self, cost: dict[str, Any]) -> None:
         self._state["cost"] = cost
         self._state["updated_at"] = _now_iso()
         self._write()
@@ -149,7 +149,8 @@ class LiveState:
     def load(path: Path) -> dict[str, Any]:
         """Read current state from disk. Returns idle state on any error."""
         try:
-            return json.loads(path.read_text())
+            data: dict[str, Any] = json.loads(path.read_text())
+            return data
         except Exception as exc:
             logger.debug(f"LiveState.load: {exc}")
             return {**_IDLE}
@@ -159,10 +160,11 @@ class LiveState:
     def _calc_progress(self) -> float:
         total = self._state.get("steps_total") or 1
         done = self._state.get("steps_done", 0)
-        return min(1.0, done / total)
+        result: float = min(1.0, done / total)
+        return result
 
     def _upsert_step(self, name: str, status: str, **extra: Any) -> None:
-        steps: list[dict] = self._state.get("steps", [])
+        steps: list[dict[str, Any]] = self._state.get("steps", [])
         for step in steps:
             if step["name"] == name:
                 step["status"] = status

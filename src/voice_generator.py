@@ -9,6 +9,7 @@ import asyncio
 import sys
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 from elevenlabs import VoiceSettings
 from elevenlabs.client import ElevenLabs
@@ -20,7 +21,7 @@ from config import settings
 from src.circuit_breaker import elevenlabs_breaker
 from src.cost_tracker import get_ledger
 from src.ffmpeg_utils import duration as ff_duration
-from src.script_generator import VideoScript
+from src.script_generator import Scene, VideoScript
 
 
 def annotated_to_ssml(text: str) -> str:
@@ -35,13 +36,13 @@ def annotated_to_ssml(text: str) -> str:
 
 
 def _is_retryable_elevenlabs(exc: BaseException) -> bool:
-    status = getattr(exc, "status_code", None)
+    status: int | None = getattr(exc, "status_code", None)
     if status is not None:
         return status == 429 or status >= 500
     return isinstance(exc, (ConnectionError, TimeoutError, OSError))
 
 
-def _log_retry(retry_state) -> None:
+def _log_retry(retry_state: Any) -> None:
     logger.warning(
         f"ElevenLabs retry {retry_state.attempt_number}: {retry_state.outcome.exception()}"
     )
@@ -71,7 +72,7 @@ def _tts_convert(client: ElevenLabs, text: str, voice_id: str, model_id: str, us
 
 
 def _synthesize_one_scene(
-    scene,
+    scene: Scene,
     audio_dir: Path,
     v_id: str,
     m_id: str,
