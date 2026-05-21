@@ -17,7 +17,7 @@ for _m in (
     sys.modules.setdefault(_m, MagicMock())
 
 from src.script_generator import Scene, VideoScript
-from src.youtube_uploader import _fill_timestamps, _migrate_pickle, _upload_with_retry
+from src.youtube_uploader import _fill_timestamps, _upload_with_retry
 
 # ── _upload_with_retry ────────────────────────────────────────────────────────
 
@@ -318,66 +318,9 @@ class TestFillTimestamps:
             assert heading in result
 
 
-# ── _migrate_pickle ────────────────────────────────────────────────────────────
-
-class TestMigratePickle:
-    def test_writes_json_and_deletes_pickle(self, tmp_path):
-        pickle_path = tmp_path / "token.pickle"
-        json_path   = tmp_path / "token.json"
-
-        fake_creds = MagicMock()
-        fake_creds.to_json.return_value = json.dumps({"token": "abc", "refresh_token": "xyz"})
-
-        # Write a dummy bytes file (pickle.load is patched below)
-        pickle_path.write_bytes(b"placeholder")
-
-        with patch("pickle.load", return_value=fake_creds):
-            _migrate_pickle(pickle_path, json_path)
-
-        assert not pickle_path.exists()
-        assert json_path.exists()
-        data = json.loads(json_path.read_text())
-        assert data["token"] == "abc"
-
-    def test_raises_if_pickle_unreadable(self, tmp_path):
-        pickle_path = tmp_path / "bad.pickle"
-        json_path   = tmp_path / "token.json"
-        pickle_path.write_bytes(b"not-valid-pickle")
-        with pytest.raises(Exception):  # noqa: B017 — pickle raises varies by content
-            _migrate_pickle(pickle_path, json_path)
-
-
-# ── _get_creds auto-migration ─────────────────────────────────────────────────
+# ── _get_creds token loading ──────────────────────────────────────────────────
 
 class TestGetCredsAutoMigration:
-    def test_detects_pickle_suffix_and_migrates(self, tmp_path):
-        """When token_file has .pickle suffix, _get_creds must migrate it."""
-        from src.youtube_uploader import _get_creds
-
-        secrets = tmp_path / "client_secrets.json"
-        secrets.write_text(json.dumps({"installed": {"client_id": "x", "client_secret": "y"}}))
-
-        pickle_path = tmp_path / "token.pickle"
-        fake_creds = MagicMock()
-        fake_creds.valid = True
-        fake_creds.expired = False
-        fake_creds.to_json.return_value = json.dumps({"token": "abc"})
-
-        # Write a dummy file (pickle.load is patched below)
-        pickle_path.write_bytes(b"placeholder")
-
-        # Patch Credentials.from_authorized_user_info so it returns the fake creds
-        with patch("pickle.load", return_value=fake_creds):
-            with patch("src.youtube_uploader.Credentials") as MockCreds:
-                MockCreds.from_authorized_user_info.return_value = fake_creds
-                creds = _get_creds(client_secrets=secrets, token_file=pickle_path)
-
-        # pickle must be deleted after migration
-        assert not pickle_path.exists()
-        json_path = pickle_path.with_suffix(".json")
-        assert json_path.exists()
-        assert creds is fake_creds
-
     def test_json_token_loaded_directly(self, tmp_path):
         """When token_file is already .json and valid, no migration occurs."""
         from src.youtube_uploader import _get_creds
@@ -1039,33 +982,6 @@ class TestPublishEpisode:
         assert "Chapters:" in desc
 
 
-# ── _get_creds edge cases ─────────────────────────────────────────────────────
-
-class TestGetCredsEdgeCases:
-    def test_json_token_missing_falls_back_to_pickle_sibling(self, tmp_path):
-        """_get_creds migrates .pickle sibling when .json token file is absent."""
-        from src.youtube_uploader import _get_creds
-
-        json_path = tmp_path / "token.json"
-        pickle_path = tmp_path / "token.pickle"
-
-        fake_creds = MagicMock()
-        fake_creds.valid = True
-        fake_creds.expired = False
-        fake_creds.to_json.return_value = '{"token": "migrated"}'
-
-        # Write a dummy pickle-like file
-        pickle_path.write_bytes(b"placeholder")
-
-        with patch("pickle.load", return_value=fake_creds):
-            with patch("src.youtube_uploader.Credentials") as MockCreds:
-                MockCreds.from_authorized_user_info.return_value = fake_creds
-                creds = _get_creds(token_file=json_path)
-
-        # Pickle should have been migrated and deleted
-        assert not pickle_path.exists()
-        assert json_path.exists()
-        assert creds is fake_creds
 
     def test_get_creds_refreshes_expired_token(self, tmp_path):
         """_get_creds refreshes expired credentials and saves updated token."""

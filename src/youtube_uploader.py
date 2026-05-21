@@ -47,26 +47,6 @@ _CAPTION_TRACK_NAMES: dict[str, str] = {
 }
 
 
-def _migrate_pickle(pickle_path: Path, json_path: Path) -> None:
-    """One-time migration from legacy pickle token to JSON. Deletes the pickle file."""
-    logger.warning(
-        "Migrating legacy pickle token %s → %s",
-        pickle_path.name, json_path.name,
-    )
-    raw = pickle_path.read_bytes()
-    try:
-        import pickle as _pickle  # scoped import — only used during migration
-        creds = _pickle.load(__import__("io").BytesIO(raw))
-        token_json = creds.to_json()
-    except Exception:
-        # File was already written as JSON (e.g. saved with wrong extension).
-        token_json = raw.decode()
-        json.loads(token_json)  # validate — raises if truly corrupt
-    json_path.write_text(token_json)
-    pickle_path.unlink()
-    logger.info("Token migration complete. Update YOUTUBE_TOKEN_FILE to %s in your env.", json_path.name)
-
-
 def _get_creds(
     client_secrets: Path | None = None,
     token_file: Path | None = None,
@@ -74,18 +54,6 @@ def _get_creds(
 ) -> Credentials:
     client_secrets = client_secrets or settings.youtube_client_secrets
     token_file     = token_file     or settings.youtube_token_file
-
-    # Auto-migrate: env var still points to .pickle → switch to .json sibling.
-    if token_file.suffix == ".pickle":
-        json_path = token_file.with_suffix(".json")
-        if token_file.exists():
-            _migrate_pickle(token_file, json_path)
-        token_file = json_path
-    elif not token_file.exists():
-        # Expected .json but not found — check for legacy .pickle sibling.
-        pickle_sibling = token_file.with_suffix(".pickle")
-        if pickle_sibling.exists():
-            _migrate_pickle(pickle_sibling, token_file)
 
     creds: Credentials | None = None
     if token_file.exists():

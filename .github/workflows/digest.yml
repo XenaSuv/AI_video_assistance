@@ -43,42 +43,17 @@ jobs:
       - name: Restore YouTube OAuth credentials
         run: |
           mkdir -p config
-          echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}"   | base64 --ignore-garbage -d > config/token.pickle
+          echo "${{ secrets.YOUTUBE_TOKEN_JSON_B64 }}"    | base64 --ignore-garbage -d > config/token.json
           echo "${{ secrets.YOUTUBE_CLIENT_SECRETS_B64 }}" | base64 --ignore-garbage -d > config/client_secrets.json
 
-          RU_TOKEN="${{ secrets.YOUTUBE_TOKEN_PICKLE_RU_B64 }}"
+          RU_TOKEN="${{ secrets.YOUTUBE_TOKEN_JSON_RU_B64 }}"
           RU_SECRETS="${{ secrets.YOUTUBE_CLIENT_SECRETS_RU_B64 }}"
           if [ -n "$RU_TOKEN" ] && [ -n "$RU_SECRETS" ]; then
             set +e
-            echo "$RU_TOKEN"   | base64 --ignore-garbage -d > config/token_ru.pickle
+            echo "$RU_TOKEN"   | base64 --ignore-garbage -d > config/token_ru.json
             echo "$RU_SECRETS" | base64 --ignore-garbage -d > config/client_secrets_ru.json
             set -e
           fi
-
-      - name: Migrate pickle tokens to JSON
-        run: |
-          python3 - <<'EOF'
-          import io, pickle, json, pathlib
-
-          def migrate(src, dst):
-              s, d = pathlib.Path(src), pathlib.Path(dst)
-              if not s.exists():
-                  return
-              raw = s.read_bytes()
-              try:
-                  creds = pickle.load(io.BytesIO(raw))
-                  d.write_text(creds.to_json())
-              except Exception:
-                  # Secret was already updated to JSON format
-                  text = raw.decode()
-                  json.loads(text)  # validate — raises if truly corrupt
-                  d.write_text(text)
-              s.unlink()
-              print(f"  Migrated {s.name} → {d.name}")
-
-          migrate("config/token.pickle",    "config/token.json")
-          migrate("config/token_ru.pickle", "config/token_ru.json")
-          EOF
 
       - name: Validate credentials
         run: |

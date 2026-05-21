@@ -137,7 +137,7 @@ AI_video_assistance/
 ├── config/
 │   ├── settings.py         # Settings dataclass (frozen) — env-var driven
 │   ├── client_secrets.json # YouTube OAuth2 app credentials (EN channel)
-│   └── token.pickle        # YouTube OAuth2 token (generated on first auth)
+│   └── token.json          # YouTube OAuth2 token (generated on first auth)
 ├── tests/
 │   ├── conftest.py         # Fixtures + heavy-dep stubs (read this first)
 │   └── test_*.py           # 121 test files, 4 034 tests
@@ -189,14 +189,14 @@ ELEVENLABS_API_KEY=...
 
 # ── YouTube (EN channel) ──────────────────────────────────────────────────────
 YOUTUBE_CLIENT_SECRETS=config/client_secrets.json
-YOUTUBE_TOKEN_FILE=config/token.pickle
+YOUTUBE_TOKEN_FILE=config/token.json
 YOUTUBE_PRIVACY=public           # public | unlisted | private
 
 # ── Russian variant (optional) ────────────────────────────────────────────────
 RU_ENABLED=true
 RU_ELEVENLABS_VOICE_ID=TUQNWEvVPBLzMBSVDPUA
 RU_YOUTUBE_CLIENT_SECRETS=config/client_secrets_ru.json
-RU_YOUTUBE_TOKEN_FILE=config/token_ru.pickle
+RU_YOUTUBE_TOKEN_FILE=config/token_ru.json
 
 # ── Stock media ───────────────────────────────────────────────────────────────
 PEXELS_API_KEY=...
@@ -409,7 +409,7 @@ All bandits use `RateLimitMixin` from `src/constants.py` to prevent too-frequent
 4. Coverage gate          python scripts/check_new_module_coverage.py  [≥80% new modules]
 ```
 
-YouTube OAuth credentials are stored as base64-encoded GitHub Secrets (`YOUTUBE_TOKEN_PICKLE_B64`, `YOUTUBE_CLIENT_SECRETS_B64`) and decoded in each workflow.
+YouTube OAuth credentials are stored as base64-encoded GitHub Secrets (`YOUTUBE_TOKEN_JSON_B64`, `YOUTUBE_CLIENT_SECRETS_B64`) and decoded in each workflow.
 
 ---
 
@@ -450,4 +450,4 @@ New modules **must not** be added to the `[[tool.mypy.overrides]]` ignore list i
 | `topic_main.py`, `weekly_main.py` | 95%/99% test coverage — production entry points now tested |
 | All I/O synchronous at function level | `asyncio.gather` wraps thread-pool executors — not true async. Refactor heavy callers to native async before scaling to high volume |
 | SQLite has no migrations | If `deduplicator.py` schema changes beyond version bump, delete `data/seen_stories.db` |
-| OAuth tokens in `config/*.pickle` | Do not commit these files — they are in `.gitignore` |
+| OAuth tokens in `config/*.json` | Do not commit these files — they are in `.gitignore` |

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import pickle
 import sys
 import tempfile
 from pathlib import Path
@@ -28,14 +27,6 @@ from src.youtube_analytics import (
 )
 
 # ── helpers ────────────────────────────────────────────────────────────────────
-
-# Pickleable fake credential object for pickle-migration tests.
-# Must be defined at module level (local classes cannot be pickled).
-class _FakeCredentials:
-    """Minimal pickleable substitute for google.oauth2.credentials.Credentials."""
-    def to_json(self) -> str:
-        return json.dumps({"token": "ya29.fake"})
-
 
 def _make_service_mock(rows: list | None = None) -> MagicMock:
     """Return a mock Analytics service whose reports().query().execute() returns rows."""
@@ -69,49 +60,6 @@ class TestGetAnalyticsService:
 
         mock_build.assert_called_once_with("youtubeAnalytics", "v2", credentials=mock_creds)
         assert result is mock_service
-
-    def test_migrates_pickle_token_to_json(self, tmp_path):
-        """When a .pickle file exists it should be migrated to .json and removed."""
-        pickle_path = tmp_path / "token.pickle"
-        with open(pickle_path, "wb") as f:
-            pickle.dump(_FakeCredentials(), f)
-
-        mock_service = MagicMock()
-
-        with patch.dict("sys.modules", {
-            "google.oauth2.credentials": MagicMock(Credentials=MagicMock(
-                from_authorized_user_info=MagicMock(return_value=MagicMock())
-            )),
-        }), patch("src.youtube_analytics.build", return_value=mock_service):
-            result = get_analytics_service(str(pickle_path))
-
-        # Pickle should be removed
-        assert not pickle_path.exists()
-        # JSON should have been created
-        json_path = pickle_path.with_suffix(".json")
-        assert json_path.exists()
-
-    def test_missing_json_tries_pickle_path(self, tmp_path):
-        """When the .json path doesn't exist, it looks for .pickle with same stem."""
-        json_path = tmp_path / "token.json"
-
-        # Create the pickle at same stem
-        pickle_path = tmp_path / "token.pickle"
-        with open(pickle_path, "wb") as f:
-            pickle.dump(_FakeCredentials(), f)
-
-        mock_service = MagicMock()
-
-        with patch.dict("sys.modules", {
-            "google.oauth2.credentials": MagicMock(Credentials=MagicMock(
-                from_authorized_user_info=MagicMock(return_value=MagicMock())
-            )),
-        }), patch("src.youtube_analytics.build", return_value=mock_service):
-            result = get_analytics_service(str(json_path))
-
-        assert result is mock_service
-        # Pickle should have been consumed
-        assert not pickle_path.exists()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -17,8 +17,8 @@ env/
 # Environment / secrets
 .env
 .env.*
-config/token.pickle
-config/token_ru.pickle
+config/token.json
+config/token_ru.json
 config/client_secrets.json
 config/client_secrets_ru.json
 
