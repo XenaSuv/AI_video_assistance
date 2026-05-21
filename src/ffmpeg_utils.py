@@ -235,7 +235,10 @@ def concat(paths: list[Path], output: Path, *, video_only: bool = False) -> Path
     list_file = output.with_suffix("").parent / (output.stem + "_list.txt")
     try:
         list_file.write_text(
-            "\n".join(f"file '{p.resolve()}'" for p in paths) + "\n"
+            "\n".join(
+                "file '{}'".format(str(p.resolve()).replace("'", "'\\''"))
+                for p in paths
+            ) + "\n"
         )
 
         # Fast path: stream copy — no re-encoding when inputs share codec/resolution.
