@@ -95,7 +95,7 @@ Return only the rewritten script, no explanations.
                 temperature=self.chaos_level,
                 max_tokens=2000,
             )
-            new_script = response.choices[0].message.content.strip()
+            new_script = (response.choices[0].message.content or "").strip()
             if response.usage:
                 get_ledger().record_llm(
                     tag="humanize-structure", model=settings.openai_model,
@@ -131,7 +131,7 @@ Return only the rewritten script.
                 temperature=self.chaos_level * 0.8,
                 max_tokens=2000,
             )
-            new_script = response.choices[0].message.content.strip()
+            new_script = (response.choices[0].message.content or "").strip()
             if response.usage:
                 get_ledger().record_llm(
                     tag="humanize-sentences", model=settings.openai_model,
@@ -173,7 +173,7 @@ Return only the rewritten script.
                 temperature=self.emotion_level,
                 max_tokens=2000,
             )
-            new_script = response.choices[0].message.content.strip()
+            new_script = (response.choices[0].message.content or "").strip()
             if response.usage:
                 get_ledger().record_llm(
                     tag="humanize-reactions", model=settings.openai_model,
@@ -211,7 +211,7 @@ Return only the rewritten script.
                 temperature=self.chaos_level * 0.6,
                 max_tokens=2000,
             )
-            new_script = response.choices[0].message.content.strip()
+            new_script = (response.choices[0].message.content or "").strip()
             if response.usage:
                 get_ledger().record_llm(
                     tag="humanize-imperfection", model=settings.openai_model,
@@ -249,7 +249,7 @@ Return only the rewritten script.
                 temperature=self.humanization_level * 0.8,
                 max_tokens=2000,
             )
-            new_script = response.choices[0].message.content.strip()
+            new_script = (response.choices[0].message.content or "").strip()
             if response.usage:
                 get_ledger().record_llm(
                     tag="humanize-rhythm", model=settings.openai_model,
@@ -290,7 +290,7 @@ Return only the rewritten script.
                 temperature=self.humanization_level,
                 max_tokens=2000,
             )
-            new_script = response.choices[0].message.content.strip()
+            new_script = (response.choices[0].message.content or "").strip()
             if response.usage:
                 get_ledger().record_llm(
                     tag="humanize-voice", model=settings.openai_model,

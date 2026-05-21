@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 from openai import OpenAI
@@ -26,7 +27,7 @@ def _srt_time(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
-def _transcribe_scene(client: OpenAI, audio_path: Path) -> list[dict]:
+def _transcribe_scene(client: OpenAI, audio_path: Path) -> list[dict[str, Any]]:
     """Return [{start, end, text}] segments from Whisper API for one MP3."""
     with open(audio_path, "rb") as f:
         resp = client.audio.transcriptions.create(

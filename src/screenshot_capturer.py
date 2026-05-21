@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -39,7 +40,7 @@ _SETTLE_DELAY_MS = 2_500
 # Curated library of public, login-free URLs grouped by tool.
 # Keys must match what GPT picks from in the tutorial system prompt.
 # Adding a new key here automatically makes it selectable in scripts.
-_LIBRARY: dict[str, dict[str, dict]] = {
+_LIBRARY: dict[str, dict[str, dict[str, Any]]] = {
     "claude": {
         "homepage":          {"url": "https://www.claude.com"},
         "claude_login":      {"url": "https://claude.ai/login"},
@@ -103,7 +104,8 @@ def has_key(tool: str, key: str | None) -> bool:
 
 
 def url_for(tool: str, key: str) -> str:
-    return _LIBRARY[tool][key]["url"]
+    url: str = _LIBRARY[tool][key]["url"]
+    return url
 
 
 # ─────────────────── Capture ───────────────────

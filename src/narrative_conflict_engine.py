@@ -276,17 +276,17 @@ class NarrativeConflictEngine:
 
     def _uncertainty_score(self, editorial: dict[str, Any]) -> float:
         """How uncertain should the character be? Higher = more internal conflict."""
-        novelty      = editorial.get("novelty_score",      0.5)
-        controversy  = editorial.get("controversy_score",  0.5)
+        novelty: float      = editorial.get("novelty_score",      0.5)
+        controversy: float  = editorial.get("controversy_score",  0.5)
         # Novel + low-controversy topics are genuinely uncertain
         return min(1.0, novelty * 0.5 + (1.0 - controversy) * 0.5)
 
     def _intensity_score(self, editorial: dict[str, Any]) -> float:
         """How strongly should the conflict land?"""
-        controversy   = editorial.get("controversy_score", 0.5)
-        belief        = editorial.get("belief_applied",    "")
+        controversy: float   = editorial.get("controversy_score", 0.5)
+        belief: str          = editorial.get("belief_applied",    "")
         # Strong worldview activation → stronger conflict
-        belief_boost  = 0.2 if belief in ("ai_hype", "ai_risk") else 0.05
+        belief_boost: float  = 0.2 if belief in ("ai_hype", "ai_risk") else 0.05
         return min(1.0, max(0.1, controversy * 0.7 + belief_boost + 0.05))
 
     def _select_conflict(

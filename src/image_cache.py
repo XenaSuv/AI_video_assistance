@@ -17,6 +17,7 @@ import json
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from loguru import logger
@@ -40,13 +41,13 @@ def _npy_path(data_dir: Path) -> Path:
     return data_dir / _NPY_NAME
 
 
-def _load(data_dir: Path) -> tuple[list[dict], np.ndarray]:
+def _load(data_dir: Path) -> tuple[list[dict[str, Any]], np.ndarray]:
     """Return (metadata_list, embedding_matrix).  Prunes missing files."""
     jp  = _json_path(data_dir)
     np_ = _npy_path(data_dir)
 
     raw_entries = json.loads(jp.read_text()) if jp.exists() else []
-    entries: list[dict] = []
+    entries: list[dict[str, Any]] = []
     for e in raw_entries:
         if not isinstance(e, dict):
             continue
@@ -71,7 +72,7 @@ def _load(data_dir: Path) -> tuple[list[dict], np.ndarray]:
     return entries, matrix
 
 
-def _save(data_dir: Path, entries: list[dict], matrix: np.ndarray) -> None:
+def _save(data_dir: Path, entries: list[dict[str, Any]], matrix: np.ndarray) -> None:
     data_dir.mkdir(parents=True, exist_ok=True)
     _json_path(data_dir).write_text(json.dumps(entries, indent=2))
     np.save(str(_npy_path(data_dir)), matrix)

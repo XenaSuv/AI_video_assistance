@@ -20,6 +20,7 @@ import json
 import sys
 import traceback
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -61,7 +62,7 @@ def run_weekly_pipeline(
     tool_key: str = "claude",
     topic_override: str | None = None,
     skip_upload: bool = False,
-) -> dict:
+) -> dict[str, Any]:
     """Execute the weekly tutorial pipeline for *tool_key*. Returns a summary dict."""
     if tool_key not in _VALID_TOOLS:
         raise ValueError(f"tool must be one of {_VALID_TOOLS}, got {tool_key!r}")
@@ -73,7 +74,7 @@ def run_weekly_pipeline(
     _setup_logging(run_dir)
     logger.info(f"=== Weekly {tool.name} Tutorial Pipeline: {date_str} ===")
 
-    summary: dict = {"date": date_str, "tool": tool_key, "run_dir": str(run_dir)}
+    summary: dict[str, Any] = {"date": date_str, "tool": tool_key, "run_dir": str(run_dir)}
 
     try:
         # 1. Pick / confirm topic

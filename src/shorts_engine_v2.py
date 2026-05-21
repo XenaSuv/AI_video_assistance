@@ -515,7 +515,7 @@ class ShortsEngineV2:
     def _load_learning(self) -> list[LearningRecord]:
         return self._load_jsonl(self._learning_path, LearningRecord.from_dict)
 
-    def _load_jsonl(self, path: Path, factory: Any) -> list:
+    def _load_jsonl(self, path: Path, factory: Any) -> list[Any]:
         if not path.exists():
             return []
         records = []

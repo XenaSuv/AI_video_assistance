@@ -15,7 +15,7 @@ import subprocess
 import sys
 import textwrap
 from pathlib import Path
-from typing import Union
+from typing import Any, Union
 
 import numpy as np
 from loguru import logger
@@ -39,11 +39,11 @@ _LONG_TIMEOUT:  int = settings.ffmpeg_long_timeout
 # Internal helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _run(args: list[str], timeout: int = _CLIP_TIMEOUT) -> subprocess.CompletedProcess:
+def _run(args: list[str], timeout: int = _CLIP_TIMEOUT) -> subprocess.CompletedProcess[bytes]:
     """Run an ffmpeg/ffprobe command.  Logs at DEBUG; raises on non-zero exit."""
     logger.debug("ffmpeg cmd: " + " ".join(str(a) for a in args))
     try:
-        return subprocess.run(
+        return subprocess.run(  # type: ignore[return-value]
             args, capture_output=True, text=True, check=True, timeout=timeout
         )
     except subprocess.TimeoutExpired as exc:
@@ -82,7 +82,7 @@ def _esc(text: str) -> str:
 # Probe / info
 # ─────────────────────────────────────────────────────────────────────────────
 
-def probe(path: Path) -> dict:
+def probe(path: Path) -> dict[str, Any]:
     """Return ffprobe JSON output for *path*."""
     result = _run([
         "ffprobe", "-v", "quiet",
@@ -90,7 +90,8 @@ def probe(path: Path) -> dict:
         "-show_streams", "-show_format",
         str(path),
     ], timeout=_PROBE_TIMEOUT)
-    return json.loads(result.stdout)
+    data: dict[str, Any] = json.loads(result.stdout)
+    return data
 
 
 def duration(path: Path) -> float:

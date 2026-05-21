@@ -52,7 +52,8 @@ class YouTubeQuotaGuard:
 
     def _load(self) -> dict[str, Any]:
         try:
-            return json.loads(self._path.read_text())
+            data: dict[str, Any] = json.loads(self._path.read_text())
+            return data
         except Exception as exc:
             logger.debug(f"YouTubeQuotaGuard._load: {exc}")
             return {}

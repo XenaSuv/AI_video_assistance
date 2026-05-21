@@ -22,6 +22,7 @@ import traceback
 from pathlib import Path
 
 from loguru import logger
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
@@ -37,7 +38,7 @@ from src.voice_generator import synthesize_script
 from src.youtube_uploader import upload_short
 
 
-def run_breaking_pipeline(item: NewsItem, skip_upload: bool = False) -> dict:
+def run_breaking_pipeline(item: NewsItem, skip_upload: bool = False) -> dict[str, Any]:
     """Execute the short-only breaking-news pipeline for *item*."""
     now      = dt.datetime.now()
     slug     = now.strftime("%Y-%m-%d-%H%M")
@@ -46,7 +47,7 @@ def run_breaking_pipeline(item: NewsItem, skip_upload: bool = False) -> dict:
     _setup_logging(run_dir)
 
     logger.info(f"=== Breaking News Pipeline: [{item.source}] {item.title} ===")
-    summary: dict = {
+    summary: dict[str, Any] = {
         "date":   now.date().isoformat(),
         "slug":   slug,
         "source": item.source,
@@ -176,7 +177,7 @@ def run_breaking_pipeline(item: NewsItem, skip_upload: bool = False) -> dict:
                         audio_path=ru_audio_dir / "scene_00.mp3",
                     )
 
-            ru: dict = {"title": ru_script.title}
+            ru: dict[str, Any] = {"title": ru_script.title}
             if skip_upload:
                 ru["status"] = "built_not_uploaded"
             else:

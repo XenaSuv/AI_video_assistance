@@ -21,6 +21,7 @@ import json
 import sys
 import traceback
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -62,7 +63,7 @@ def run_topic_pipeline(
     format_filter: TopicFormat | None = None,
     idea_override: TopicIdea | None = None,
     skip_upload: bool = False,
-) -> dict:
+) -> dict[str, Any]:
     """Run the full pipeline for one topic idea. Returns a summary dict."""
     date_str = dt.date.today().isoformat()
 
@@ -73,7 +74,7 @@ def run_topic_pipeline(
     _setup_logging(run_dir)
     logger.info(f"=== Topic Pipeline [{idea.format}]: {idea.subject} ===")
 
-    summary: dict = {
+    summary: dict[str, Any] = {
         "date": date_str,
         "format": idea.format,
         "subject": idea.subject,

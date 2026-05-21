@@ -7,12 +7,13 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.pipeline_orchestrator import PipelineOrchestrator
 
 
-def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict:
+def run_pipeline(dry_run: bool = False, skip_upload: bool = False) -> dict[str, Any]:
     """Execute the full daily pipeline. Returns a summary dict."""
     return PipelineOrchestrator().run(dry_run=dry_run, skip_upload=skip_upload)
 

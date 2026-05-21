@@ -194,12 +194,15 @@ def _scrape_huggingface_html(max_results: int) -> list[NewsItem]:
     items = []
     for art in soup.select("article")[:max_results]:
         a = art.find("a", href=True)
-        if not a or not a["href"].startswith("/papers/"):
+        if not a:
+            continue
+        href_val = str(a["href"])
+        if not href_val.startswith("/papers/"):
             continue
         items.append(NewsItem(
             source="HuggingFace",
             title=a.get_text(strip=True),
-            url=f"https://huggingface.co{a['href']}",
+            url=f"https://huggingface.co{href_val}",
             summary="",
             authors=[],
             published=dt.date.today().isoformat(),
@@ -318,7 +321,7 @@ def _scrape_rss(name: str, feed_url: str, score: float,
 
 
 def _deep_collect(obj: Any, target_keys: frozenset[str],
-                  depth: int = 0) -> list[dict]:
+                  depth: int = 0) -> list[dict[str, Any]]:
     """Recursively collect dicts that contain any of target_keys."""
     if depth > 8 or not isinstance(obj, (dict, list)):
         return []
@@ -390,7 +393,7 @@ def _from_html_links(html: str, base_url: str, name: str,
         title = a.get_text(strip=True)
         if len(title) < 20:
             continue
-        href = a["href"]
+        href = str(a["href"])
         url  = urljoin(base_url, href) if href.startswith("/") else href
         if url in seen or not url.startswith("http"):
             continue
@@ -467,7 +470,7 @@ def scrape_official_sources() -> list[NewsItem]:
 
 # ─────────────────── Aggregator ───────────────────
 
-def scrape_all(top_n: int = 10, cache_dir: Path | None = None) -> list[NewsItem]:
+def scrape_all(top_n: int = 10, cache_dir: "Path | None | bool" = None) -> list[NewsItem]:
     """Run all sources. Official company announcements are prioritised;
     community/research items fill the remaining slots.
 
@@ -477,22 +480,23 @@ def scrape_all(top_n: int = 10, cache_dir: Path | None = None) -> list[NewsItem]
     """
     cache: ScraperCache | None = None
     if cache_dir is not False:
-        cache = ScraperCache(cache_dir or (settings.data_dir / "scraper_cache"))
+        _cache_path: Path = cache_dir if isinstance(cache_dir, Path) else (settings.data_dir / "scraper_cache")
+        cache = ScraperCache(_cache_path)
 
-    def _cached(key: str, fn):
+    def _cached(key: str, fn: Any) -> list[NewsItem]:
         if cache is not None:
             hit = cache.get(key)
             if hit is not None:
                 logger.info(f"{key}: {len(hit)} items (cached)")
                 return hit
         try:
-            result = fn()
+            items_result: list[NewsItem] = fn()
         except Exception as e:
             logger.warning(f"{key}: source failed, skipping ({e})")
             return []
         if cache is not None:
-            cache.set(key, result)
-        return result
+            cache.set(key, items_result)
+        return items_result
 
     sources = {
         "official_sources": scrape_official_sources,

@@ -163,7 +163,7 @@ class CrossLearningEngine:
             logger.debug("CrossLearningEngine: no qualified combos yet")
             return None
 
-        best = top[0]["combo"]
+        best: dict[str, Any] = top[0]["combo"]
         logger.info(
             f"CrossLearningEngine: recommending {best} "
             f"(avg_ret={top[0]['avg_retention']:.3f}, n={top[0]['count']})"
@@ -174,8 +174,8 @@ class CrossLearningEngine:
         """Group all observations by combo key, compute per-group statistics."""
         data = self._store.load()
 
-        retention_lists: dict[tuple, list[float]] = defaultdict(list)
-        ctr_lists:       dict[tuple, list[float]] = defaultdict(list)
+        retention_lists: dict[Any, list[float]] = defaultdict(list)
+        ctr_lists:       dict[Any, list[float]] = defaultdict(list)
 
         for item in data:
             key = tuple(sorted(item["combo"].items()))
@@ -249,8 +249,8 @@ class CrossLearningEngine:
         scenes = run.get("scenes") or []
         if not scenes:
             return "unknown"
-        counts = Counter(s.get("type", "unknown") for s in scenes)
-        return counts.most_common(1)[0][0]
+        counts: Counter[str] = Counter(s.get("type", "unknown") for s in scenes)
+        return str(counts.most_common(1)[0][0])
 
     def _random_combo(self) -> dict[str, Any]:
         """Random combo for exploration — drawn uniformly from known options."""

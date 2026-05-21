@@ -25,6 +25,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -161,7 +162,7 @@ Write a pattern interrupt to append to the last flat scene.
 """
 
 
-def _log_usage(usage, label: str = "") -> None:
+def _log_usage(usage: Any, label: str = "") -> None:
     if not usage:
         return
     details = usage.prompt_tokens_details
@@ -176,7 +177,7 @@ def _log_usage(usage, label: str = "") -> None:
 
 
 def _generate_interrupt(
-    client,
+    client: Any,
     zone: FlatZone,
     all_scenes: list[Scene],
     subject: str,

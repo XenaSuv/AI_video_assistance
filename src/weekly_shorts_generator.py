@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Iterator
 
 import numpy as np
 from elevenlabs import VoiceSettings
@@ -48,7 +49,7 @@ def _saliency_crop_x(frame: np.ndarray, crop_w: int) -> int:
 # ─────────────────── TTS helper ───────────────────
 
 def _is_retryable(exc: BaseException) -> bool:
-    status = getattr(exc, "status_code", None)
+    status: int | None = getattr(exc, "status_code", None)
     if status is not None:
         return status == 429 or status >= 500
     return isinstance(exc, (ConnectionError, TimeoutError, OSError))
@@ -60,7 +61,7 @@ def _is_retryable(exc: BaseException) -> bool:
     stop=stop_after_attempt(5),
     reraise=True,
 )
-def _tts_convert(client: ElevenLabs, text: str, voice_id: str, model_id: str):
+def _tts_convert(client: ElevenLabs, text: str, voice_id: str, model_id: str) -> Iterator[bytes | None]:
     return client.text_to_speech.convert(
         voice_id=voice_id,
         model_id=model_id,

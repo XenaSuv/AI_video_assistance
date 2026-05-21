@@ -15,6 +15,7 @@ import json
 import sys
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -143,7 +144,7 @@ WEEK'S HIGHLIGHTS:
 
 # ─────────────────── Collect daily scripts ───────────────────
 
-def _log_usage(usage, label: str = "") -> None:
+def _log_usage(usage: Any, label: str = "") -> None:
     if not usage:
         return
     details = usage.prompt_tokens_details
@@ -163,7 +164,7 @@ def _log_usage(usage, label: str = "") -> None:
     )
 
 
-def _load_daily_script(output_dir: Path, data_dir: Path, day: date) -> dict | None:
+def _load_daily_script(output_dir: Path, data_dir: Path, day: date) -> dict[str, Any] | None:
     """Try data/digest_scripts/{date}.json first (CI-persisted), then output/{date}/script.json (local)."""
     candidates = [
         data_dir / "digest_scripts" / f"{day.isoformat()}.json",
@@ -172,13 +173,14 @@ def _load_daily_script(output_dir: Path, data_dir: Path, day: date) -> dict | No
     for path in candidates:
         if path.exists():
             try:
-                return json.loads(path.read_text())
+                loaded: dict[str, Any] = json.loads(path.read_text())
+                return loaded
             except Exception as e:
                 logger.warning(f"Could not load {path}: {e}")
     return None
 
 
-def _summarise_daily(day: date, data: dict) -> str:
+def _summarise_daily(day: date, data: dict[str, Any]) -> str:
     """Format one day's script into a concise block for the digest prompt."""
     day_name = day.strftime("%A %b %d")
     lines = [f"=== {day_name}: {data.get('title', '(untitled)')} ==="]

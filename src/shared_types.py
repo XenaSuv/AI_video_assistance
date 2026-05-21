@@ -140,7 +140,7 @@ class HookOptimizationResult:
     """Optimized hook patterns produced by HookOptimizer.run()."""
     recommended_patterns: list[str]
     avoid_patterns: list[str]
-    context: dict           # editorial context snapshot (metadata only)
+    context: dict[str, Any]  # editorial context snapshot (metadata only)
     exploration_enabled: bool
     style_bias: dict[str, float]
 

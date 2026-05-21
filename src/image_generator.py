@@ -19,6 +19,7 @@ import shutil
 import sys
 import textwrap
 from pathlib import Path
+from typing import Any
 
 import requests
 from loguru import logger
@@ -49,7 +50,7 @@ def _is_retryable_dalle(exc: BaseException) -> bool:
     return isinstance(exc, (requests.exceptions.RequestException, ConnectionError, TimeoutError))
 
 
-def _log_dalle_retry(retry_state) -> None:
+def _log_dalle_retry(retry_state: Any) -> None:
     logger.warning(f"gpt-image-2 retry {retry_state.attempt_number}: {retry_state.outcome.exception()}")
 
 
@@ -64,7 +65,8 @@ def _call_dalle(client: OpenAI, prompt: str) -> bytes:
         n=1,
         output_format="png",
     )
-    b64 = response.data[0].b64_json
+    data = response.data or []
+    b64: str = (data[0].b64_json or "") if data else ""  # type: ignore[assignment]
     return base64.b64decode(b64)
 
 
@@ -397,8 +399,8 @@ def _render_text_overlay_clip(scene: "Scene", clip_path: Path) -> Path:
         draw.rectangle([(60, 180), (67, 545)], fill=_TO_ACCENT)
 
         try:
-            font_h = ImageFont.truetype(_FONT_BOLD, 68)
-            font_q = ImageFont.truetype(_FONT_REG,  32)
+            font_h: ImageFont.FreeTypeFont | ImageFont.ImageFont = ImageFont.truetype(_FONT_BOLD, 68)
+            font_q: ImageFont.FreeTypeFont | ImageFont.ImageFont = ImageFont.truetype(_FONT_REG,  32)
         except OSError:
             font_h = ImageFont.load_default()
             font_q = font_h

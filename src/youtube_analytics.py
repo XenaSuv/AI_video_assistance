@@ -33,11 +33,11 @@ def get_analytics_service(token_file: str = "config/token.json") -> Any:
             pickle_path.unlink()
             path = json_path
 
-    credentials = Credentials.from_authorized_user_info(json.loads(path.read_text()))
+    credentials = Credentials.from_authorized_user_info(json.loads(path.read_text()))  # type: ignore[no-untyped-call]
     return build("youtubeAnalytics", "v2", credentials=credentials)
 
 
-def get_video_metrics(video_id: str) -> dict | None:
+def get_video_metrics(video_id: str) -> dict[str, Any] | None:
     """Get basic video metrics from YouTube Analytics.
 
     Args:

@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from typing import Any
 
 import requests
 from loguru import logger
@@ -40,7 +41,8 @@ def _load_access_token(token_file: Path) -> str | None:
     if time.time() > tokens.get("expires_at", 0) - 300:
         logger.warning("TikTok: access token is expired — re-run auth or let uploader refresh it")
         return None
-    return tokens.get("access_token")
+    access_token: str | None = tokens.get("access_token")
+    return access_token
 
 
 def resolve_publish_id(publish_id: str, token_file: Path) -> str | None:
@@ -83,7 +85,7 @@ def resolve_publish_id(publish_id: str, token_file: Path) -> str | None:
     return None
 
 
-def get_video_metrics(video_id: str, token_file: Path) -> dict | None:
+def get_video_metrics(video_id: str, token_file: Path) -> dict[str, Any] | None:
     """Fetch real metrics for a published TikTok video.
 
     Returns a dict with keys:
@@ -146,7 +148,7 @@ def get_video_metrics(video_id: str, token_file: Path) -> dict | None:
     return None
 
 
-def _parse_metrics(video: dict) -> dict:
+def _parse_metrics(video: dict[str, Any]) -> dict[str, Any]:
     views    = int(video.get("view_count", 0) or video.get("play_count", 0) or 0)
     likes    = int(video.get("like_count", 0) or 0)
     shares   = int(video.get("share_count", 0) or 0)

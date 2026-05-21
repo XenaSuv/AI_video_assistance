@@ -40,6 +40,7 @@ import json
 import sys
 import traceback
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -56,7 +57,7 @@ SHORT_W, SHORT_H = 1080, 1920
 
 # ── Editorial helper ──────────────────────────────────────────────────────────
 
-def _story_to_editorial(story: dict) -> dict:
+def _story_to_editorial(story: dict[str, Any]) -> dict[str, Any]:
     """Convert a scraped story dict to the editorial format ShortsEngineV2 expects."""
     title   = story.get("title", "AI")
     summary = story.get("summary", story.get("description", title))
@@ -283,7 +284,7 @@ class ShortsPipeline:
         dry_run: bool = False,
         story_override: str | None = None,
         max_shorts: int = 5,
-    ) -> dict:
+    ) -> dict[str, Any]:
         date_str  = dt.date.today().isoformat()
         run_dir   = settings.output_dir / f"shorts_{date_str}"
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -291,7 +292,7 @@ class ShortsPipeline:
         _setup_logging(run_dir)
         logger.info(f"=== Shorts Pipeline: {date_str} ===")
 
-        summary: dict = {
+        summary: dict[str, Any] = {
             "date":      date_str,
             "run_dir":   str(run_dir),
             "generated": 0,
@@ -364,7 +365,7 @@ class ShortsPipeline:
                         )
 
             # 4. Render + upload each Short
-            results: list[dict] = []
+            results: list[dict[str, Any]] = []
             for script in scripts:
                 result = ShortResult(short_id=script.short_id)
                 try:
@@ -423,7 +424,7 @@ class ShortsPipeline:
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
-    def _get_story(self, override: str | None) -> dict | None:
+    def _get_story(self, override: str | None) -> dict[str, Any] | None:
         if override:
             return {"title": override, "source": "manual", "summary": override}
         try:
@@ -455,7 +456,7 @@ def _setup_logging(run_dir: Path) -> None:
     logger.add(run_dir / "shorts_run.log", level="DEBUG", rotation="10 MB", filter=scrub)
 
 
-def _save_summary(run_dir: Path, summary: dict) -> None:
+def _save_summary(run_dir: Path, summary: dict[str, Any]) -> None:
     try:
         (run_dir / "shorts_summary.json").write_text(json.dumps(summary, indent=2))
     except Exception as exc:

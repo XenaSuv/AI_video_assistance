@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -188,7 +189,7 @@ def _classify_hook_type(hook: str) -> str:
     return "simple"
 
 
-def _build_scene_map(scenes: list[dict], curve_len: int) -> dict[int, dict]:
+def _build_scene_map(scenes: list[dict[str, Any]], curve_len: int) -> dict[int, dict[str, Any]]:
     """Map retention-curve bucket indices to scene metadata.
 
     Distributes curve indices proportionally across scenes by duration_sec.
@@ -198,7 +199,7 @@ def _build_scene_map(scenes: list[dict], curve_len: int) -> dict[int, dict]:
         return {}
     durations = [s.get("duration_sec", 60) for s in scenes]
     total = sum(durations) or len(scenes)
-    scene_map: dict[int, dict] = {}
+    scene_map: dict[int, dict[str, Any]] = {}
     bucket = 0
     for scene_idx, (scene, dur) in enumerate(zip(scenes, durations, strict=False)):
         n_buckets = max(1, round(curve_len * dur / total))
@@ -212,12 +213,13 @@ def _build_scene_map(scenes: list[dict], curve_len: int) -> dict[int, dict]:
     return scene_map
 
 
-def _load_retention_state(data_dir: Path) -> dict:
+def _load_retention_state(data_dir: Path) -> dict[str, Any]:
     """Load persisted retention correction state written by the deferred feedback loop."""
     path = data_dir / "retention_state.json"
     try:
         if path.exists():
-            return json.loads(path.read_text())
+            data: dict[str, Any] = json.loads(path.read_text())
+            return data
     except Exception as exc:
         logger.debug(f"_load_retention_state: {exc}")
     return {}
@@ -226,7 +228,7 @@ def _load_retention_state(data_dir: Path) -> dict:
 def _save_retention_state(
     data_dir: Path,
     corrections: list[Correction],
-    adjustments: dict,
+    adjustments: dict[str, Any],
 ) -> None:
     """Persist retention correction results so the next pipeline run can use them."""
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -240,8 +242,8 @@ def _build_v3_context(
     perf_store: "PerformanceStore",
     v3_engine: "DecisionEngineV3",
     thompson_preferred_type: str | None,
-    predicted_risks: list[dict],
-) -> dict:
+    predicted_risks: list[dict[str, Any]],
+) -> dict[str, Any]:
     """Assemble the context dict passed to DecisionEngineV3.decide().
 
     Separated from _step_script so it can be tested without standing up a full

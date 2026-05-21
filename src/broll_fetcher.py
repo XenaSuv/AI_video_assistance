@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -47,7 +48,7 @@ VIDEO_W, VIDEO_H = 1280, 720
 
 # ─────────────────── Pexels ───────────────────
 
-def _pexels_search(query: str, per_page: int = 5) -> list[dict]:
+def _pexels_search(query: str, per_page: int = 5) -> list[dict[str, Any]]:
     key = settings.pexels_api_key
     if not key:
         return []
@@ -62,21 +63,23 @@ def _pexels_search(query: str, per_page: int = 5) -> list[dict]:
         },
         timeout=15,
     )
-    return r.json().get("videos", [])
+    result: list[dict[str, Any]] = r.json().get("videos", [])
+    return result
 
 
-def _pexels_best_file(video: dict) -> dict | None:
+def _pexels_best_file(video: dict[str, Any]) -> dict[str, Any] | None:
     files = video.get("video_files", [])
     hd = [f for f in files if f.get("quality") == "hd"]
     candidates = hd or files
     if not candidates:
         return None
-    return max(candidates, key=lambda f: f.get("width", 0))
+    best: dict[str, Any] = max(candidates, key=lambda f: f.get("width", 0))
+    return best
 
 
 # ─────────────────── Pixabay (fallback) ───────────────────
 
-def _pixabay_search(query: str, per_page: int = 5) -> list[dict]:
+def _pixabay_search(query: str, per_page: int = 5) -> list[dict[str, Any]]:
     key = settings.pixabay_api_key
     if not key:
         return []
@@ -90,14 +93,15 @@ def _pixabay_search(query: str, per_page: int = 5) -> list[dict]:
         },
         timeout=15,
     )
-    return r.json().get("hits", [])
+    result: list[dict[str, Any]] = r.json().get("hits", [])
+    return result
 
 
-def _pixabay_best_url(video: dict) -> str | None:
+def _pixabay_best_url(video: dict[str, Any]) -> str | None:
     vids = video.get("videos", {})
     # Prefer large (1920) > medium (1280) > small
     for key in ("large", "medium", "small"):
-        url = vids.get(key, {}).get("url")
+        url: str | None = vids.get(key, {}).get("url")
         if url:
             return url
     return None

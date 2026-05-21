@@ -36,7 +36,7 @@ class Scene:
     screenshot_key: str | None = None    # weekly tutorials: real screenshot from curated library
     screenshot_url: str | None = None    # topic segments: capture any public URL on the fly
     short_narration: str | None = None   # ~120 words written for a standalone Shorts cut
-    infographic_data: dict | None = None # animated chart/stat; skips DALL-E when set
+    infographic_data: dict[str, Any] | None = None # animated chart/stat; skips DALL-E when set
     video_query: str | None = None       # stock B-roll search term; beats DALL-E, loses to infographic
     source_quote: str | None = None      # verbatim quote (≤30 words) from a named source
     quote_attribution: str | None = None # "Name, Role · Org · domain.com"
@@ -279,7 +279,7 @@ Scenes to fill:
 """
 
 
-def _log_usage(usage, label: str = "", model: str = "") -> None:
+def _log_usage(usage: Any, label: str = "", model: str = "") -> None:
     """Log OpenAI token usage and record in the cost ledger."""
     if not usage:
         return
@@ -533,7 +533,7 @@ def generate_script(
     return script
 
 
-def generate_short_script(news_item, hook: str) -> str:
+def generate_short_script(news_item: Any, hook: str) -> str:
     """Generate a compact script for a 30-second YouTube Short."""
 
     content = getattr(news_item, "summary", None)

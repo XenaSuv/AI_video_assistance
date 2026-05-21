@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -229,7 +230,7 @@ URL:      {url}
 DETAILS:  {summary}"""
 
 
-def _log_usage(usage, label: str = "") -> None:
+def _log_usage(usage: Any, label: str = "") -> None:
     if not usage:
         return
     details = usage.prompt_tokens_details

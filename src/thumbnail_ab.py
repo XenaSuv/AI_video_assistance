@@ -37,6 +37,7 @@ import random
 import sys
 import textwrap
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from loguru import logger
@@ -58,7 +59,7 @@ _ALL_STYLES    = [STYLE_BOTTOM, STYLE_IMPACT, STYLE_TOP]
 
 # ─────────────────── shared helpers ───────────────────
 
-def _load_font(size: int):
+def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     try:
         return ImageFont.truetype(_FONT_PATH, size)
     except OSError:
@@ -100,7 +101,7 @@ def _mid_frame(video_path: Path) -> np.ndarray:
 
 def _to_pil(arr: np.ndarray) -> Image.Image:
     img = Image.fromarray(arr.astype(np.uint8)).convert("RGB")
-    return img.resize((THUMB_W, THUMB_H), Image.LANCZOS)
+    return img.resize((THUMB_W, THUMB_H), Image.LANCZOS)  # type: ignore[attr-defined]
 
 
 def _save(img: Image.Image, path: Path) -> Path:
@@ -218,19 +219,20 @@ def _perf_file(data_dir: Path) -> Path:
     return data_dir / "thumbnail_performance.json"
 
 
-def _load_perf(data_dir: Path) -> dict:
+def _load_perf(data_dir: Path) -> dict[str, Any]:
     p = _perf_file(data_dir)
     return json.loads(p.read_text()) if p.exists() else {}
 
 
-def _save_perf(data: dict, data_dir: Path) -> None:
+def _save_perf(data: dict[str, Any], data_dir: Path) -> None:
     _perf_file(data_dir).write_text(json.dumps(data, indent=2))
 
 
-def _get_arm(ctx: dict, style: str) -> dict:
+def _get_arm(ctx: dict[str, Any], style: str) -> dict[str, Any]:
     if style not in ctx:
         ctx[style] = {"alpha": 1.0, "beta": 1.0, "uses": 0, "wins": 0.0}
-    return ctx[style]
+    arm: dict[str, Any] = ctx[style]
+    return arm
 
 
 # ─────────────────── public API ───────────────────
@@ -347,7 +349,7 @@ def record_thumbnail_performance(
     _save_perf(data, data_dir)
 
 
-def top_styles(data_dir: Path, context_key: str, n: int = 5) -> list[dict]:
+def top_styles(data_dir: Path, context_key: str, n: int = 5) -> list[dict[str, Any]]:
     """Return top-n thumbnail styles by estimated mean CTR for *context_key*."""
     data = _load_perf(data_dir)
     ctx  = data.get(context_key, {})

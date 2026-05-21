@@ -27,6 +27,7 @@ import datetime as dt
 import sqlite3
 import sys
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -140,7 +141,7 @@ class SeenStories:
             conn.commit()
         logger.info(f"Marked {len(items)} stories as featured on {today}")
 
-    def stats(self) -> dict:
+    def stats(self) -> dict[str, Any]:
         """Return counts useful for logging / monitoring."""
         with self._connect() as conn:
             total   = conn.execute("SELECT COUNT(*) FROM seen_stories").fetchone()[0]

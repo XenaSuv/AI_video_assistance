@@ -19,6 +19,7 @@ import json
 import sys
 import traceback
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -50,7 +51,7 @@ from src.youtube_uploader import publish_episode
 def run_digest_pipeline(
     sunday: dt.date | None = None,
     skip_upload: bool = False,
-) -> dict:
+) -> dict[str, Any]:
     """Run the Sunday digest pipeline. Returns a summary dict."""
     sunday   = sunday or dt.date.today()
     date_str = sunday.isoformat()
@@ -61,7 +62,7 @@ def run_digest_pipeline(
     _setup_logging(run_dir)
     logger.info(f"=== Sunday Digest Pipeline: week of {week_of} ===")
 
-    summary: dict = {"date": date_str, "run_dir": str(run_dir), "type": "digest"}
+    summary: dict[str, Any] = {"date": date_str, "run_dir": str(run_dir), "type": "digest"}
 
     try:
         # 1. Collect the most recent daily scripts

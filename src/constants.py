@@ -47,7 +47,7 @@ class RateLimitMixin:
             return True
         last    = datetime.fromisoformat(self._state.last_switch_at)  # type: ignore[attr-defined]
         elapsed = (datetime.now(timezone.utc) - last).total_seconds() / 3600
-        ok      = elapsed >= self.min_switch_hours  # type: ignore[attr-defined]
+        ok: bool = elapsed >= self.min_switch_hours  # type: ignore[attr-defined]
         if not ok:
             remaining = self.min_switch_hours - elapsed  # type: ignore[attr-defined]
             logger.debug(f"{self._label}: rate-limited — {remaining:.1f} h remaining")
@@ -64,4 +64,4 @@ class RateLimitMixin:
             return 0.0
         last    = datetime.fromisoformat(self._state.last_switch_at)  # type: ignore[attr-defined]
         elapsed = (datetime.now(timezone.utc) - last).total_seconds() / 3600
-        return max(0.0, self.min_switch_hours - elapsed)  # type: ignore[attr-defined]
+        return float(max(0.0, self.min_switch_hours - elapsed))  # type: ignore[attr-defined]

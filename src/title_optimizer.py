@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Any
 
 from loguru import logger
 
@@ -12,7 +13,7 @@ from src.retry_utils import make_openai_client
 client = make_openai_client()
 
 
-def generate_titles(news_item, n: int = 5) -> list[str]:
+def generate_titles(news_item: dict[str, Any], n: int = 5) -> list[str]:
     prompt = f"""
     Create {n} highly clickable YouTube titles.
 

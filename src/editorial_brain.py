@@ -108,8 +108,8 @@ class EditorialBrain:
         self.llm = llm or make_openai_client()
         self.config = config or {}
         self.feedback_analyzer = FeedbackAnalyzer()
-        self.angle_performance_cache = {}
-        self.format_performance_cache = {}
+        self.angle_performance_cache: dict[str, Any] = {}
+        self.format_performance_cache: dict[str, Any] = {}
 
     def run(
         self,
@@ -158,8 +158,8 @@ class EditorialBrain:
             }
             scored.append(story_meta)
 
-        scored.sort(key=lambda item: item["score"], reverse=True)
-        ranked = [item["story"] for item in scored]
+        scored.sort(key=lambda item: item["score"], reverse=True)  # type: ignore[arg-type,return-value]
+        ranked: list[NewsItem] = [item["story"] for item in scored]  # type: ignore[misc]
         logger.info(
             "Editorial ranking: %s",
             ", ".join(f"[{i+1}] {s.title[:60]}" for i, s in enumerate(ranked[:5])),
@@ -301,7 +301,7 @@ class EditorialBrain:
             days = 3
         return max(0.0, min(1.0, (7 - days) / 7))
 
-    def _pick_angle(self, story: NewsItem, history: list[str], strategy: dict[str, Any] | None = None) -> dict[str, str]:
+    def _pick_angle(self, story: NewsItem, history: list[str], strategy: ContentStrategy | None = None) -> dict[str, str]:
         scored = []
         for candidate in ANGLE_CANDIDATES:
             score = self._angle_score(story, candidate["key"])
@@ -483,7 +483,7 @@ class EditorialBrain:
     def _hook_surprise(self, hook: str) -> float:
         return min(1.0, len(re.findall(r"\b(never|nobody|no one|surprising|unexpected|hidden|secret|quietly)\b", hook.lower())) * 0.3 + 0.1)
 
-    def _decide_format(self, story: NewsItem, angle: str, variation: str, strategy: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _decide_format(self, story: NewsItem, angle: str, variation: str, strategy: ContentStrategy | None = None) -> dict[str, Any]:
         if self._is_breaking(story):
             return {"format": "quick_hit", "scenes": 5, "pacing": "fast"}
         complexity = self._complexity_score(story)
@@ -540,7 +540,7 @@ class EditorialBrain:
         return {"format": "quick_hit", "scenes": 6, "pacing": "medium"}
 
     def _director_bridge(self, format_data: dict[str, Any], angle: str, variation: str) -> list[dict[str, Any]]:
-        scene_plan = FORMAT_RULES.get(format_data["format"], FORMAT_RULES["quick_hit"])["scene_plan"]
+        scene_plan = FORMAT_RULES.get(format_data["format"], FORMAT_RULES["quick_hit"])["scene_plan"]  # type: ignore[index]
         plan = [dict(step, angle=angle) for step in scene_plan]
         if variation == "storytelling" and format_data["format"] == "deep_dive":
             plan.insert(2, {"type": "story", "goal": "show the human angle", "style": "narrative", "angle": angle})

@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -34,7 +35,7 @@ Rules:
 """
 
 
-def _log_usage(usage, label: str = "") -> None:
+def _log_usage(usage: Any, label: str = "") -> None:
     if not usage:
         return
     details = usage.prompt_tokens_details
@@ -92,7 +93,7 @@ def translate_script(script: VideoScript, target_lang: str) -> VideoScript:
     )
     _log_usage(response.usage, f"translate-{target_lang}")
 
-    data = json.loads(response.choices[0].message.content)
+    data = json.loads(response.choices[0].message.content or "")
 
     translated = VideoScript(
         title       = data["title"],
