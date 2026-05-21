@@ -34,6 +34,7 @@ from loguru import logger
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.auto_action_engine import AutoActionEngine
+from src.jsonl_store import EXP_SCHEMA_V, append_record, rewrite_jsonl, stamp
 from src.cross_learning_engine import CrossLearningEngine
 from src.youtube_analytics import get_video_metrics
 
@@ -141,9 +142,7 @@ class ShortsExperimentStore:
                 r.update(updates)
                 changed = True
         if changed:
-            self._exp_path.write_text(
-                "\n".join(json.dumps(r) for r in records) + "\n"
-            )
+            rewrite_jsonl(self._exp_path, records)
 
     def load_experiments(self) -> list[ShortsExperiment]:
         return [ShortsExperiment.from_dict(r) for r in self._load_all(self._exp_path)]
@@ -172,8 +171,7 @@ class ShortsExperimentStore:
 
     def _append(self, path: Path, record: dict[str, Any]) -> None:
         try:
-            with open(path, "a") as f:
-                f.write(json.dumps(record) + "\n")
+            append_record(path, record, EXP_SCHEMA_V)
         except Exception as exc:
             logger.warning(f"ShortsExperimentStore: write failed ({path.name}): {exc}")
 

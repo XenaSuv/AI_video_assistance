@@ -8,6 +8,7 @@ from typing import Any
 from loguru import logger
 
 from config import settings
+from src.jsonl_store import PERF_SCHEMA_V
 from src.state_io import json_lock
 
 
@@ -57,6 +58,7 @@ def save_result(
 ) -> None:
     """Record a newly published video with its hook, title, and editorial context."""
     record = {
+        "_schema_version": PERF_SCHEMA_V,
         "video_id": video_id,
         "platform": platform,
         "content_type": content_type,
