@@ -16,7 +16,6 @@ from loguru import logger
 
 from src.ffmpeg_probe import _LONG_TIMEOUT, _run, duration, video_size
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Audio / video construction
 # ─────────────────────────────────────────────────────────────────────────────

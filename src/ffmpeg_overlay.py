@@ -10,8 +10,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from src.ffmpeg_probe import _FONT, _run, _esc, duration, video_size
-
+from src.ffmpeg_probe import _FONT, _esc, _run, duration, video_size
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Overlay helpers
