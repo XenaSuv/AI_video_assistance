@@ -23,8 +23,8 @@ from unittest.mock import patch
 
 import pytest
 
-from src.ab_testing_engine import ABTestVariant
 from src.thompson_bandit import (
+    ABTestVariant,
     ThompsonArm,
     ThompsonBandit,
     ThompsonState,
@@ -472,15 +472,45 @@ class TestFullPipeline:
         assert "preferred_variant_type" in adj
         assert "hook_aggressiveness_delta" in adj
 
-    def test_thompson_vs_ucb1_same_interface(self):
-        """ThompsonBandit exposes the same key methods as BanditEngine."""
-        from src.bandit_engine import BanditEngine
-        shared_methods = [
+    def test_thompson_has_required_interface(self):
+        """ThompsonBandit exposes all required public methods."""
+        b = ThompsonBandit(data_dir=_tmp())
+        for method in [
             "register_variants", "select_variant", "update",
             "can_switch", "record_switch", "suggest_strategy_adjustments", "reset",
-        ]
-        b = ThompsonBandit(data_dir=_tmp())
-        u = BanditEngine(data_dir=_tmp())
-        for method in shared_methods:
+        ]:
             assert hasattr(b, method), f"ThompsonBandit missing {method}"
-            assert hasattr(u, method), f"BanditEngine missing {method}"
+
+
+# ── ABTestVariant ──────────────────────────────────────────────────────────────
+
+class TestABTestVariant:
+    def test_defaults(self) -> None:
+        v = ABTestVariant()
+        assert v.id    == "A"
+        assert v.type  == "curiosity"
+        assert v.ctr   == 0.0
+        assert v.score == 0.0
+
+    def test_to_dict_round_trip(self) -> None:
+        v = ABTestVariant(
+            id="B", type="conflict", title="title", hook="hook",
+            thumbnail={"text": "X"}, start_time="2025-01-01T00:00:00Z",
+            ctr=0.07, retention_30s=0.65, score=0.0455,
+        )
+        v2 = ABTestVariant.from_dict(v.to_dict())
+        assert v2.id            == "B"
+        assert v2.type          == "conflict"
+        assert v2.ctr           == 0.07
+        assert v2.retention_30s == 0.65
+        assert v2.score         == 0.0455
+
+    def test_from_dict_empty_defaults(self) -> None:
+        v = ABTestVariant.from_dict({})
+        assert v.id  == "A"
+        assert v.ctr == 0.0
+
+    def test_thumbnail_field_preserved(self) -> None:
+        thumb = {"text": "THE PROBLEM", "style": "high_contrast", "emotion": "shock"}
+        v = ABTestVariant(thumbnail=thumb)
+        assert ABTestVariant.from_dict(v.to_dict()).thumbnail == thumb

@@ -121,11 +121,11 @@ class StrategyConfig:
         )
 
 
-# ── DecisionEngine output ─────────────────────────────────────────────────────
+# ── DecisionEngineV3 output ───────────────────────────────────────────────────
 
 @dataclass
 class ContentStrategy:
-    """Strategic decisions produced by DecisionEngine.decide()."""
+    """Strategic decisions produced by DecisionEngineV3.decide()."""
     angle_weights: dict[str, float]
     format_weights: dict[str, float]
     exploration_rate: float

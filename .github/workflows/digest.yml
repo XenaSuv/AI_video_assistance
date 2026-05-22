@@ -41,19 +41,47 @@ jobs:
           restore-keys: digest-scripts-
 
       - name: Restore YouTube OAuth credentials
+        env:
+          YOUTUBE_TOKEN_JSON_B64:        ${{ secrets.YOUTUBE_TOKEN_JSON_B64 }}
+          YOUTUBE_CLIENT_SECRETS_B64:    ${{ secrets.YOUTUBE_CLIENT_SECRETS_B64 }}
+          YOUTUBE_TOKEN_JSON_RU_B64:     ${{ secrets.YOUTUBE_TOKEN_JSON_RU_B64 }}
+          YOUTUBE_CLIENT_SECRETS_RU_B64: ${{ secrets.YOUTUBE_CLIENT_SECRETS_RU_B64 }}
         run: |
-          mkdir -p config
-          echo "${{ secrets.YOUTUBE_TOKEN_JSON_B64 }}"    | base64 --ignore-garbage -d > config/token.json
-          echo "${{ secrets.YOUTUBE_CLIENT_SECRETS_B64 }}" | base64 --ignore-garbage -d > config/client_secrets.json
+          python3 - <<'PYEOF'
+          import base64, os, pathlib, sys
 
-          RU_TOKEN="${{ secrets.YOUTUBE_TOKEN_JSON_RU_B64 }}"
-          RU_SECRETS="${{ secrets.YOUTUBE_CLIENT_SECRETS_RU_B64 }}"
-          if [ -n "$RU_TOKEN" ] && [ -n "$RU_SECRETS" ]; then
-            set +e
-            echo "$RU_TOKEN"   | base64 --ignore-garbage -d > config/token_ru.json
-            echo "$RU_SECRETS" | base64 --ignore-garbage -d > config/client_secrets_ru.json
-            set -e
-          fi
+          def decode_secret(env_name, out_path, required=True):
+              val = os.environ.get(env_name, "").strip()
+              if not val:
+                  if required:
+                      print(f"::error::{env_name} is empty or not set. "
+                            "Run 'python src/youtube_uploader.py --auth' locally "
+                            "and update the GitHub secret.", file=sys.stderr)
+                      sys.exit(1)
+                  return False
+              try:
+                  decoded = base64.b64decode(val)
+              except Exception as exc:
+                  print(f"::error::{env_name}: base64 decode failed — {exc}. "
+                        "Re-encode with: python3 -c \"import base64; "
+                        "print(base64.b64encode(open('config/token.json','rb').read()).decode())\"",
+                        file=sys.stderr)
+                  sys.exit(1)
+              if not decoded:
+                  print(f"::error::{env_name} decoded to 0 bytes — secret value may be corrupted.",
+                        file=sys.stderr)
+                  sys.exit(1)
+              p = pathlib.Path(out_path)
+              p.parent.mkdir(parents=True, exist_ok=True)
+              p.write_bytes(decoded)
+              print(f"  {out_path}: written ({len(decoded)} bytes)")
+              return True
+
+          decode_secret("YOUTUBE_TOKEN_JSON_B64",        "config/token.json")
+          decode_secret("YOUTUBE_CLIENT_SECRETS_B64",    "config/client_secrets.json")
+          decode_secret("YOUTUBE_TOKEN_JSON_RU_B64",     "config/token_ru.json",        required=False)
+          decode_secret("YOUTUBE_CLIENT_SECRETS_RU_B64", "config/client_secrets_ru.json", required=False)
+          PYEOF
 
       - name: Validate credentials
         run: |

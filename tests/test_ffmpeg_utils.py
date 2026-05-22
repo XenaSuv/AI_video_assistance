@@ -1291,7 +1291,7 @@ class TestFramesToVideo:
         mock_pil_img.resize.return_value = MagicMock()
 
         with patch("subprocess.Popen", return_value=mock_proc):
-            with patch("src.ffmpeg_utils.np") as mock_np:
+            with patch("src.ffmpeg_compose.np") as mock_np:
                 # Make frame.shape != (height, width, 3) so the branch fires
                 mock_frame = MagicMock()
                 mock_frame.shape = (100, 50, 3)  # wrong shape

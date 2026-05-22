@@ -1,7 +1,7 @@
 """Packaging Engine — synchronised hook / title / thumbnail concept from editorial plan.
 
 Takes the editorial plan (angle + conflict + story context) and the channel
-strategy (StrategyConfig from DecisionEngineV2) and produces three mutually
+strategy (StrategyConfig from DecisionEngineV3) and produces three mutually
 consistent packaging outputs that drive viewer acquisition:
 
     hook              — opening 5-10 s spoken line  (CTR + retention start)
@@ -188,9 +188,9 @@ class PackagingEngine:
         simple) derived from the same core idea, so the test measures *style*
         not just text.
 
-        Returns a list of :class:`~src.ab_testing_engine.ABTestVariant`.
+        Returns a list of :class:`~src.thompson_bandit.ABTestVariant`.
         """
-        from src.ab_testing_engine import ABTestVariant
+        from src.thompson_bandit import ABTestVariant
 
         plan_entry = self._extract_plan_entry(editorial_plan)
         idea       = self._extract_core_idea(plan_entry)

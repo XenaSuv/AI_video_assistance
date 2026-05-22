@@ -64,6 +64,7 @@ from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
+from src.jsonl_store import SHORTS_SCHEMA_V, append_record
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -504,8 +505,7 @@ class ShortsEngineV2:
 
     def _append(self, path: Path, record: dict[str, Any]) -> None:
         try:
-            with open(path, "a") as f:
-                f.write(json.dumps(record) + "\n")
+            append_record(path, record, SHORTS_SCHEMA_V)
         except Exception as exc:
             logger.warning(f"ShortsEngineV2: write failed ({path.name}): {exc}")
 

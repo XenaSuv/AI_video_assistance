@@ -26,18 +26,10 @@ When retention data is missing (retention_30s = 0):
 
 This prevents high-CTR / low-retention "clickbait" variants from winning.
 
-Compared to UCB1 (BanditEngine)
---------------------------------
-UCB1        — deterministic formula; fast convergence; easier to reason about.
-Thompson    — probabilistic sampling; naturally handles non-stationarity;
-              empirically stronger on cold-start and small sample sizes.
-Use Thompson when you have few impressions per variant (< 500).
-Use UCB1 when you want fully reproducible selection logic.
-
 Rate limiting
 -------------
 YouTube penalises frequent metadata changes.  Default minimum gap: 2 hours.
-can_switch() / record_switch() enforce this (same interface as BanditEngine).
+can_switch() / record_switch() enforce this.
 
 Data store
 ----------
@@ -50,7 +42,7 @@ import random as _stdlib_random
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from loguru import logger
 
@@ -59,11 +51,52 @@ from config import settings
 from src.constants import VARIANT_TYPE_DELTAS, RateLimitMixin
 from src.state_io import atomic_json_write
 
-if TYPE_CHECKING:
-    from src.ab_testing_engine import ABTestVariant
+# ── ABTestVariant ─────────────────────────────────────────────────────────────
 
+@dataclass
+class ABTestVariant:
+    """Packaging variant created by PackagingEngine and selected by ThompsonBandit.
 
-# ── Data types ────────────────────────────────────────────────────────────────
+    Content fields (type, title, thumbnail, hook) are set at creation.
+    Metric fields (ctr, retention_30s, score) are populated by deferred
+    feedback collection.
+    """
+    id: str                    = "A"          # "A" | "B" | "C"
+    type: str                  = "curiosity"  # curiosity | conflict | simple
+    title: str                 = ""
+    thumbnail: dict[str, str]  = field(default_factory=dict)
+    hook: str                  = ""
+    start_time: str | None     = None
+    ctr: float                 = 0.0
+    retention_30s: float       = 0.0
+    score: float               = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id":            self.id,
+            "type":          self.type,
+            "title":         self.title,
+            "thumbnail":     self.thumbnail,
+            "hook":          self.hook,
+            "start_time":    self.start_time,
+            "ctr":           self.ctr,
+            "retention_30s": self.retention_30s,
+            "score":         self.score,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ABTestVariant":
+        return cls(
+            id            = d.get("id",            "A"),
+            type          = d.get("type",          "curiosity"),
+            title         = d.get("title",         ""),
+            thumbnail     = d.get("thumbnail",     {}),
+            hook          = d.get("hook",          ""),
+            start_time    = d.get("start_time"),
+            ctr           = float(d.get("ctr",           0.0)),
+            retention_30s = float(d.get("retention_30s", 0.0)),
+            score         = float(d.get("score",         0.0)),
+        )
 
 @dataclass
 class ThompsonArm:
@@ -116,7 +149,7 @@ class ThompsonArm:
         )
 
     @classmethod
-    def from_variant(cls, variant: "ABTestVariant") -> "ThompsonArm":
+    def from_variant(cls, variant: ABTestVariant) -> "ThompsonArm":
         """Construct a fresh arm from an ABTestVariant (uniform prior)."""
         return cls(
             variant_id = variant.id,
@@ -203,7 +236,7 @@ class ThompsonBandit(RateLimitMixin):
 
     # ── Arm management ─────────────────────────────────────────────────────────
 
-    def register_variants(self, variants: list["ABTestVariant"]) -> None:
+    def register_variants(self, variants: list[ABTestVariant]) -> None:
         """Register ABTestVariant objects as Thompson arms (skips duplicates)."""
         existing_ids = {a.variant_id for a in self._state.arms}
         added = 0

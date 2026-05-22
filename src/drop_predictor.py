@@ -592,7 +592,7 @@ def _apply_preemptive_fix(scene: Any, fix: str) -> None:
 # ── Strategy adjustments ──────────────────────────────────────────────────────
 
 def suggest_strategy_adjustments(predictions: list[DropPrediction]) -> dict[str, Any]:
-    """Derive global strategy hints for DecisionEngineV2 from risk predictions.
+    """Derive global strategy hints for DecisionEngineV3 from risk predictions.
 
     Rules:
     - Any high-risk scene in position 0–2  → pace="fast", +0.20 hook_aggressiveness

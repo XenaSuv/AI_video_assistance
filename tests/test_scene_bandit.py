@@ -12,7 +12,7 @@ Covers:
 - SceneBandit.reset() — full and keep_history modes
 - SceneBandit.get_best_policy() — returns best-mean used arm
 - SceneBandit.suggest_strategy_adjustments() — Decision Engine feedback
-- Integration: DecisionEngineV2.decide(scene_bandit=...) overrides scene_mix
+- Integration: DecisionEngineV3.decide(scene_bandit=...) overrides scene_mix
 - Convergence: best arm dominates after many observations
 """
 from __future__ import annotations
@@ -502,7 +502,7 @@ class TestFullPipeline:
 
     def test_two_bandits_are_independent(self):
         """Packaging bandit and scene bandit operate independently."""
-        from src.ab_testing_engine import ABTestVariant
+        from src.thompson_bandit import ABTestVariant
         from src.thompson_bandit import ThompsonBandit
 
         tmp      = _tmp()

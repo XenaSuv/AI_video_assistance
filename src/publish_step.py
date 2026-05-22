@@ -9,7 +9,6 @@ from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
-from src.ab_testing_engine import ABTestVariant
 from src.analytics import get_recommendations
 from src.checkpoint import PipelineCheckpoint
 from src.deduplicator import SeenStories
@@ -22,7 +21,7 @@ from src.pipeline_observer import PipelineObserver
 from src.quality_gate import QualityGateError, run_gate
 from src.script_generator import VideoScript
 from src.shorts_experiment_engine import ShortsExperimentEngine
-from src.thompson_bandit import ThompsonBandit
+from src.thompson_bandit import ABTestVariant, ThompsonBandit
 from src.thumbnail_ab import record_thumbnail_usage
 from src.youtube_uploader import publish_episode
 

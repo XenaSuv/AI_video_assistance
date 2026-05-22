@@ -30,7 +30,7 @@ from src.breaking_detector import mark_publish_failed, mark_published
 from src.breaking_script_generator import generate_breaking_short_script
 from src.pipeline_helpers import _load_audio_durations, _load_cached_script, _setup_logging
 from src.scraper import NewsItem
-from src.shorts_generator import build_short, create_short_video
+from src.shorts_pipeline import build_short, create_short_video
 from src.slack_notifier import notify_failure, notify_success
 from src.translator import translate_script
 from src.video_generator import generate_clips_for_scene

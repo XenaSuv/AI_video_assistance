@@ -123,7 +123,7 @@ def _run_language_variant(
             return None
         sv = run_dir / f"shorts_{lang_code}.mp4"
         if not sv.exists():
-            from src.shorts_generator import build_short
+            from src.shorts_pipeline import build_short
             build_short(
                 script, long_video, run_dir,
                 audio_subdir=audio_subdir,

@@ -254,14 +254,23 @@ class FeedbackAnalyzer:
         except Exception as exc:
             logger.warning(f"Failed to save feedback: {exc}")
 
-    def collect_deferred_feedback(self, min_age_hours: float = 24.0) -> int:
+    def collect_deferred_feedback(
+        self,
+        min_age_hours: float = 24.0,
+        max_age_hours: float | None = None,
+    ) -> int:
         """Fetch metrics for published videos that haven't been analyzed yet.
 
         Called at the start of each pipeline run so that yesterday's video
         has had time to accumulate real YouTube/TikTok Analytics data.
         Returns the number of videos successfully analyzed.
+
+        Args:
+            min_age_hours: Minimum age before a record is eligible.
+            max_age_hours: When set, records older than this are skipped
+                           (e.g. 30 * 24 to limit to a 30-day rolling window).
         """
-        pending = get_unanalyzed(min_age_hours)
+        pending = get_unanalyzed(min_age_hours, max_age_hours=max_age_hours)
         if not pending:
             logger.info("No pending videos for deferred feedback collection")
             return 0

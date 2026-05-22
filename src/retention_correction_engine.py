@@ -11,7 +11,7 @@ Data flow
 2.  detect_drops()           → list[DropPoint]
 3.  RetentionCorrectionEngine.analyze() → list[Correction]
 4.  apply_corrections()      → modifies Scene objects in place
-5.  suggest_strategy_adjustments() → hints for DecisionEngineV2
+5.  suggest_strategy_adjustments() → hints for DecisionEngineV3
 6.  record_outcome()         → trains the learning store
 
 Scene map
@@ -55,7 +55,7 @@ Modifies Scene objects (from src/script_generator.py) in place:
 
 suggest_strategy_adjustments
 -----------------------------
-Returns a dict for DecisionEngineV2:
+Returns a dict for DecisionEngineV3:
 
     "pace"                   → "fast" when early drops detected
     "hook_aggressiveness"    → float delta to add
@@ -410,7 +410,7 @@ class RetentionCorrectionEngine:
         scene_map:   dict[int, dict[str, Any]],
         curve:       list[float],
     ) -> dict[str, Any]:
-        """Derive global strategy hints for DecisionEngineV2.
+        """Derive global strategy hints for DecisionEngineV3.
 
         Rules:
         - Early drops (timestamp_idx <= 2)  → pace="fast", hook_aggressiveness += 0.20

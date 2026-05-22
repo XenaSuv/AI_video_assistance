@@ -435,7 +435,7 @@ class TestSetupThompsonVariants:
                 patch("src.publish_step._classify_hook_type", return_value="curiosity")
             )
             stack.enter_context(patch("src.publish_step.ABTestVariant", wraps=__import__(
-                "src.ab_testing_engine", fromlist=["ABTestVariant"]
+                "src.thompson_bandit", fromlist=["ABTestVariant"]
             ).ABTestVariant))
             p._setup_thompson_variants("video123")
 
@@ -456,7 +456,7 @@ class TestSetupThompsonVariants:
             stack.enter_context(
                 patch("src.publish_step._classify_hook_type", return_value="simple")
             )
-            from src.ab_testing_engine import ABTestVariant
+            from src.thompson_bandit import ABTestVariant
             captured_variants = []
             orig_abv = ABTestVariant
 
@@ -492,7 +492,7 @@ class TestSetupThompsonVariants:
             stack.enter_context(
                 patch("src.publish_step._classify_hook_type", return_value="conflict")
             )
-            from src.ab_testing_engine import ABTestVariant
+            from src.thompson_bandit import ABTestVariant
             stack.enter_context(
                 patch("src.publish_step.ABTestVariant", side_effect=lambda **kw: ABTestVariant(**kw))
             )
@@ -519,7 +519,7 @@ class TestSetupThompsonVariants:
             stack.enter_context(
                 patch("src.publish_step._classify_hook_type", return_value="curiosity")
             )
-            from src.ab_testing_engine import ABTestVariant
+            from src.thompson_bandit import ABTestVariant
             stack.enter_context(
                 patch("src.publish_step.ABTestVariant", side_effect=lambda **kw: ABTestVariant(**kw))
             )
@@ -541,7 +541,7 @@ class TestSetupThompsonVariants:
             stack.enter_context(
                 patch("src.publish_step._classify_hook_type", return_value="curiosity")
             )
-            from src.ab_testing_engine import ABTestVariant
+            from src.thompson_bandit import ABTestVariant
             stack.enter_context(
                 patch("src.publish_step.ABTestVariant", side_effect=lambda **kw: ABTestVariant(**kw))
             )
@@ -559,7 +559,7 @@ class TestSetupThompsonVariants:
         created = []
 
         def capture(**kwargs):
-            from src.ab_testing_engine import ABTestVariant
+            from src.thompson_bandit import ABTestVariant
             v = ABTestVariant(**kwargs)
             created.append(v)
             return v

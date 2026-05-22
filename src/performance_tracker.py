@@ -8,6 +8,7 @@ from typing import Any
 from loguru import logger
 
 from config import settings
+from src.jsonl_store import PERF_SCHEMA_V
 from src.state_io import json_lock
 
 
@@ -57,6 +58,7 @@ def save_result(
 ) -> None:
     """Record a newly published video with its hook, title, and editorial context."""
     record = {
+        "_schema_version": PERF_SCHEMA_V,
         "video_id": video_id,
         "platform": platform,
         "content_type": content_type,
@@ -138,10 +140,21 @@ def mark_analyzed(video_id: str) -> None:
     logger.warning(f"mark_analyzed: record not found for {video_id}")
 
 
-def get_unanalyzed(min_age_hours: float = 24.0) -> list[dict[str, Any]]:
-    """Return records not yet analyzed and older than min_age_hours."""
+def get_unanalyzed(
+    min_age_hours: float = 24.0,
+    max_age_hours: float | None = None,
+) -> list[dict[str, Any]]:
+    """Return records not yet analyzed and older than min_age_hours.
+
+    Args:
+        min_age_hours: Minimum age (hours) before a record is eligible.
+        max_age_hours: When set, records older than this are excluded
+                       (useful for limiting feedback to a rolling window).
+    """
     data = _load_db()
-    cutoff = datetime.utcnow().timestamp() - min_age_hours * 3600
+    now = datetime.utcnow().timestamp()
+    min_cutoff = now - min_age_hours * 3600
+    max_cutoff = (now - max_age_hours * 3600) if max_age_hours is not None else None
     result = []
     for r in data:
         if r.get("analyzed"):
@@ -151,8 +164,11 @@ def get_unanalyzed(min_age_hours: float = 24.0) -> list[dict[str, Any]]:
         except Exception as exc:
             logger.debug(f"get_unanalyzed: skipped record with bad timestamp: {exc}")
             continue
-        if ts <= cutoff:
-            result.append(r)
+        if ts > min_cutoff:
+            continue
+        if max_cutoff is not None and ts < max_cutoff:
+            continue
+        result.append(r)
     return result
 
 

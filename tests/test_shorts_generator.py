@@ -1,10 +1,8 @@
-"""Tests for src/shorts_generator.py (legacy / deprecated module).
+"""Tests for clip-from-long-form Short helpers now living in src/shorts_pipeline.py.
 
-shorts_generator is kept for backward compatibility with five callers
-(breaking_main, weekly_main, topic_main, language_variant, publish_step)
-until they are migrated to src.shorts_pipeline.ShortsPipeline.  These
-tests document the current behaviour so regressions are caught during
-the migration.
+These functions (build_short, create_short_video, add_big_captions, helpers)
+were migrated from the deleted src/shorts_generator.py.  Behaviour is
+unchanged; only the module path is different.
 
 numpy is unavailable in the test environment and is mocked by conftest.
 ffmpeg_utils is patched via _FfmpegMocks (same pattern as test_video_generator).
@@ -12,7 +10,6 @@ ffmpeg_utils is patched via _FfmpegMocks (same pattern as test_video_generator).
 from __future__ import annotations
 
 import sys
-import warnings
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call, patch
@@ -34,7 +31,7 @@ _np_stub = sys.modules.setdefault("numpy", MagicMock())
 _np_stub.argmax.return_value = 40  # best column index used in saliency tests
 
 from src.script_generator import Scene, VideoScript  # noqa: E402
-from src.shorts_generator import (  # noqa: E402
+from src.shorts_pipeline import (  # noqa: E402
     SHORT_H,
     SHORT_MAX_SECONDS,
     SHORT_W,
@@ -104,14 +101,12 @@ class _FfmpegMocks:
 
 
 def _build_short(tmp_path: Path, **kwargs: object) -> Path:
-    """Call build_short with suppressed DeprecationWarning and sensible defaults."""
+    """Call build_short with sensible defaults."""
     clip_dir = tmp_path / "clips"
     clip_dir.mkdir(parents=True, exist_ok=True)
     clip = clip_dir / "scene_00_clip_0.mp4"; clip.touch()
     main_video = tmp_path / "final_video.mp4"; main_video.touch()
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        return build_short(_script(), main_video, tmp_path, **kwargs)
+    return build_short(_script(), main_video, tmp_path, **kwargs)
 
 
 # ── _saliency_crop_x ──────────────────────────────────────────────────────────
@@ -147,45 +142,33 @@ class TestSaliencyCropX:
 
 class TestResolveMusicPath:
     def test_empty_string_returns_none(self) -> None:
-        with patch("src.shorts_generator.settings", _fake_settings(background_music_path="")):
+        with patch("src.shorts_pipeline.settings", _fake_settings(background_music_path="")):
             assert _resolve_music_path() is None
 
     def test_missing_file_returns_none(self, tmp_path: Path) -> None:
         p = str(tmp_path / "no_music.mp3")
-        with patch("src.shorts_generator.settings", _fake_settings(background_music_path=p)):
+        with patch("src.shorts_pipeline.settings", _fake_settings(background_music_path=p)):
             assert _resolve_music_path() is None
 
     def test_existing_absolute_path_returned(self, tmp_path: Path) -> None:
         music = tmp_path / "bg.mp3"; music.touch()
-        with patch("src.shorts_generator.settings",
+        with patch("src.shorts_pipeline.settings",
                    _fake_settings(background_music_path=str(music))):
             assert _resolve_music_path() == music
 
     def test_relative_path_resolved_from_source_dir(self, tmp_path: Path) -> None:
         music = tmp_path / "bg.mp3"; music.touch()
-        with patch("src.shorts_generator.settings",
+        with patch("src.shorts_pipeline.settings",
                    _fake_settings(background_music_path="bg.mp3", source_dir=tmp_path)):
             assert _resolve_music_path() == music
 
 
 # ── build_short ───────────────────────────────────────────────────────────────
 
-class TestBuildShortDeprecation:
-    def test_emits_deprecation_warning(self, tmp_path: Path) -> None:
-        clip_dir = tmp_path / "clips"; clip_dir.mkdir()
-        (clip_dir / "scene_00_clip_0.mp4").touch()
-        main_video = tmp_path / "final_video.mp4"; main_video.touch()
-        with _FfmpegMocks(), \
-             patch("src.shorts_generator.settings", _fake_settings()), \
-             patch("shutil.copy2"), \
-             pytest.warns(DeprecationWarning):
-            build_short(_script(), main_video, tmp_path)
-
-
 class TestBuildShortHappyPath:
     def test_returns_path_inside_out_dir(self, tmp_path: Path) -> None:
         with _FfmpegMocks(), \
-             patch("src.shorts_generator.settings", _fake_settings()), \
+             patch("src.shorts_pipeline.settings", _fake_settings()), \
              patch("shutil.copy2"):
             result = _build_short(tmp_path)
         assert result.parent == tmp_path
@@ -193,7 +176,7 @@ class TestBuildShortHappyPath:
 
     def test_custom_out_name(self, tmp_path: Path) -> None:
         with _FfmpegMocks(), \
-             patch("src.shorts_generator.settings", _fake_settings()), \
+             patch("src.shorts_pipeline.settings", _fake_settings()), \
              patch("shutil.copy2"):
             result = _build_short(tmp_path, out_name="shorts_ru.mp4")
         assert result.name == "shorts_ru.mp4"
@@ -202,7 +185,7 @@ class TestBuildShortHappyPath:
         audio = tmp_path / "audio" / "scene_00.mp3"
         audio.parent.mkdir(parents=True); audio.touch()
         with _FfmpegMocks() as ff, \
-             patch("src.shorts_generator.settings", _fake_settings()), \
+             patch("src.shorts_pipeline.settings", _fake_settings()), \
              patch("shutil.copy2"):
             # ffmpeg_utils.duration returns 25.0 (< SHORT_MAX_SECONDS = 58)
             _build_short(tmp_path)
@@ -214,7 +197,7 @@ class TestBuildShortHappyPath:
         audio_dir = tmp_path / "audio"; audio_dir.mkdir()
         audio = audio_dir / "scene_00.mp3"; audio.touch()
         with _FfmpegMocks() as ff, \
-             patch("src.shorts_generator.settings", _fake_settings()), \
+             patch("src.shorts_pipeline.settings", _fake_settings()), \
              patch("shutil.copy2"):
             _build_short(tmp_path)
         # merge_av should be called with the audio path
@@ -223,14 +206,14 @@ class TestBuildShortHappyPath:
     def test_no_audio_file_skips_merge_av(self, tmp_path: Path) -> None:
         # No audio dir → audio_path = None → merge_av NOT called
         with _FfmpegMocks() as ff, \
-             patch("src.shorts_generator.settings", _fake_settings()), \
+             patch("src.shorts_pipeline.settings", _fake_settings()), \
              patch("shutil.copy2"):
             _build_short(tmp_path)
         ff.mocks["merge_av"].assert_not_called()
 
     def test_vertical_crop_applied(self, tmp_path: Path) -> None:
         with _FfmpegMocks() as ff, \
-             patch("src.shorts_generator.settings", _fake_settings()), \
+             patch("src.shorts_pipeline.settings", _fake_settings()), \
              patch("shutil.copy2"):
             _build_short(tmp_path)
         ff.mocks["make_vertical"].assert_called_once()
@@ -241,10 +224,8 @@ class TestBuildShortHappyPath:
         (clip_dir / "scene_00_clip_0.mp4").touch()
         main_video = tmp_path / "final_video.mp4"; main_video.touch()
         with _FfmpegMocks() as ff, \
-             patch("src.shorts_generator.settings", _fake_settings()), \
-             patch("shutil.copy2"), \
-             warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
+             patch("src.shorts_pipeline.settings", _fake_settings()), \
+             patch("shutil.copy2"):
             build_short(script, main_video, tmp_path)
         args = ff.mocks["burn_captions"].call_args
         assert script.hook in args.args
@@ -258,10 +239,8 @@ class TestBuildShortMultipleClips:
         (clip_dir / "scene_01_clip_0.mp4").touch()
         main_video = tmp_path / "final_video.mp4"; main_video.touch()
         with _FfmpegMocks() as ff, \
-             patch("src.shorts_generator.settings", _fake_settings()), \
-             patch("shutil.copy2"), \
-             warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
+             patch("src.shorts_pipeline.settings", _fake_settings()), \
+             patch("shutil.copy2"):
             build_short(_script(), main_video, tmp_path)
         ff.mocks["concat"].assert_called_once()
 
@@ -269,10 +248,8 @@ class TestBuildShortMultipleClips:
         clip_dir = tmp_path / "clips"; clip_dir.mkdir()  # empty — no clip files
         main_video = tmp_path / "final_video.mp4"; main_video.touch()
         with _FfmpegMocks() as ff, \
-             patch("src.shorts_generator.settings", _fake_settings()), \
-             patch("shutil.copy2"), \
-             warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
+             patch("src.shorts_pipeline.settings", _fake_settings()), \
+             patch("shutil.copy2"):
             build_short(_script(), main_video, tmp_path)
         # No concat for source clips — loop_and_trim receives main_video
         ff.mocks["concat"].assert_not_called()
@@ -281,7 +258,7 @@ class TestBuildShortMultipleClips:
 class TestBuildShortSaliencyFailure:
     def test_saliency_failure_is_non_fatal(self, tmp_path: Path) -> None:
         with _FfmpegMocks() as ff, \
-             patch("src.shorts_generator.settings", _fake_settings()), \
+             patch("src.shorts_pipeline.settings", _fake_settings()), \
              patch("shutil.copy2"):
             ff.mocks["get_frame"].side_effect = RuntimeError("frame decode fail")
             result = _build_short(tmp_path)
@@ -294,7 +271,7 @@ class TestBuildShortMusic:
     def test_music_calls_mix_music(self, tmp_path: Path) -> None:
         music = tmp_path / "bg.mp3"; music.touch()
         with _FfmpegMocks() as ff, \
-             patch("src.shorts_generator.settings",
+             patch("src.shorts_pipeline.settings",
                    _fake_settings(background_music_path=str(music))), \
              patch("shutil.copy2"):
             _build_short(tmp_path)
@@ -302,7 +279,7 @@ class TestBuildShortMusic:
 
     def test_no_music_skips_mix_music(self, tmp_path: Path) -> None:
         with _FfmpegMocks() as ff, \
-             patch("src.shorts_generator.settings", _fake_settings()), \
+             patch("src.shorts_pipeline.settings", _fake_settings()), \
              patch("shutil.copy2"):
             _build_short(tmp_path)
         ff.mocks["mix_music"].assert_not_called()
@@ -336,20 +313,11 @@ class TestAddBigCaptions:
 
 class TestCreateShortVideo:
     def _call(self, tmp_path: Path, **kwargs: object) -> Path:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            return create_short_video("AI news hook", tmp_path, **kwargs)
-
-    def test_emits_deprecation_warning(self, tmp_path: Path) -> None:
-        with _FfmpegMocks(), \
-             patch("src.shorts_generator.settings", _fake_settings()), \
-             patch("shutil.copy2"), \
-             pytest.warns(DeprecationWarning):
-            create_short_video("hook", tmp_path)
+        return create_short_video("AI news hook", tmp_path, **kwargs)
 
     def test_returns_path_in_out_dir(self, tmp_path: Path) -> None:
         with _FfmpegMocks(), \
-             patch("src.shorts_generator.settings", _fake_settings()), \
+             patch("src.shorts_pipeline.settings", _fake_settings()), \
              patch("shutil.copy2"):
             result = self._call(tmp_path)
         assert result.parent == tmp_path
@@ -357,14 +325,14 @@ class TestCreateShortVideo:
 
     def test_custom_out_name(self, tmp_path: Path) -> None:
         with _FfmpegMocks(), \
-             patch("src.shorts_generator.settings", _fake_settings()), \
+             patch("src.shorts_pipeline.settings", _fake_settings()), \
              patch("shutil.copy2"):
             result = self._call(tmp_path, out_name="exp_001.mp4")
         assert result.name == "exp_001.mp4"
 
     def test_creates_black_clip_base(self, tmp_path: Path) -> None:
         with _FfmpegMocks() as ff, \
-             patch("src.shorts_generator.settings", _fake_settings()), \
+             patch("src.shorts_pipeline.settings", _fake_settings()), \
              patch("shutil.copy2"):
             self._call(tmp_path, duration_sec=30.0)
         ff.mocks["black_clip"].assert_called_once()
@@ -375,7 +343,7 @@ class TestCreateShortVideo:
 
     def test_captions_burned_onto_base_clip(self, tmp_path: Path) -> None:
         with _FfmpegMocks() as ff, \
-             patch("src.shorts_generator.settings", _fake_settings()), \
+             patch("src.shorts_pipeline.settings", _fake_settings()), \
              patch("shutil.copy2"):
             self._call(tmp_path)
         ff.mocks["burn_captions"].assert_called_once()
@@ -383,14 +351,14 @@ class TestCreateShortVideo:
     def test_audio_merged_when_path_exists(self, tmp_path: Path) -> None:
         audio = tmp_path / "hook.mp3"; audio.touch()
         with _FfmpegMocks() as ff, \
-             patch("src.shorts_generator.settings", _fake_settings()), \
+             patch("src.shorts_pipeline.settings", _fake_settings()), \
              patch("shutil.copy2"):
             self._call(tmp_path, audio_path=audio)
         ff.mocks["merge_av"].assert_called_once()
 
     def test_no_audio_skips_merge_av(self, tmp_path: Path) -> None:
         with _FfmpegMocks() as ff, \
-             patch("src.shorts_generator.settings", _fake_settings()), \
+             patch("src.shorts_pipeline.settings", _fake_settings()), \
              patch("shutil.copy2"):
             self._call(tmp_path)
         ff.mocks["merge_av"].assert_not_called()
@@ -398,7 +366,7 @@ class TestCreateShortVideo:
     def test_nonexistent_audio_path_skips_merge_av(self, tmp_path: Path) -> None:
         missing_audio = tmp_path / "no_audio.mp3"  # not created
         with _FfmpegMocks() as ff, \
-             patch("src.shorts_generator.settings", _fake_settings()), \
+             patch("src.shorts_pipeline.settings", _fake_settings()), \
              patch("shutil.copy2"):
             self._call(tmp_path, audio_path=missing_audio)
         ff.mocks["merge_av"].assert_not_called()
@@ -406,7 +374,7 @@ class TestCreateShortVideo:
     def test_creates_output_directory(self, tmp_path: Path) -> None:
         nested = tmp_path / "nested_out"
         with _FfmpegMocks(), \
-             patch("src.shorts_generator.settings", _fake_settings()), \
+             patch("src.shorts_pipeline.settings", _fake_settings()), \
              patch("shutil.copy2"):
             self._call(nested)
         assert nested.exists()
