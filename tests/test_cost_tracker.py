@@ -130,6 +130,44 @@ class TestSummary:
         entry_total = sum(e["usd"] for e in s["entries"])
         assert abs(s["total_usd"] - entry_total) < 1e-6
 
+    def test_cache_hit_rate_computed(self):
+        ledger = get_ledger()
+        # 500k cached out of 1M prompt = 50% hit rate
+        ledger.record_llm("x", "gpt-4o-mini", 1_000_000, 0, cached_tokens=500_000)
+        s = ledger.summary()
+        assert s["by_kind"]["llm"]["cache_hit_rate"] == 50.0
+
+    def test_cache_hit_rate_zero_when_no_cache(self):
+        ledger = get_ledger()
+        ledger.record_llm("x", "gpt-4o-mini", 1_000_000, 0)
+        s = ledger.summary()
+        assert s["by_kind"]["llm"]["cache_hit_rate"] == 0.0
+
+    def test_cache_savings_usd_computed(self):
+        ledger = get_ledger()
+        # 1M cached on gpt-4o-mini: input=$0.150, cached=$0.075 → savings=$0.075
+        ledger.record_llm("x", "gpt-4o-mini", 1_000_000, 0, cached_tokens=1_000_000)
+        s = ledger.summary()
+        assert abs(s["cache_savings_usd"] - 0.075) < 1e-6
+        assert abs(s["by_kind"]["llm"]["cache_savings_usd"] - 0.075) < 1e-6
+
+    def test_cache_savings_usd_zero_when_no_cache(self):
+        ledger = get_ledger()
+        ledger.record_llm("x", "gpt-4o-mini", 1_000_000, 0)
+        s = ledger.summary()
+        assert s["cache_savings_usd"] == 0.0
+
+    def test_entry_includes_cache_savings_usd(self):
+        ledger = get_ledger()
+        ledger.record_llm("x", "gpt-4o-mini", 1_000_000, 0, cached_tokens=1_000_000)
+        s = ledger.summary()
+        assert "cache_savings_usd" in s["entries"][0]
+
+    def test_cache_hit_rate_zero_for_empty_ledger(self):
+        s = get_ledger().summary()
+        # no llm entries → by_kind["llm"] filtered out; top-level savings = 0
+        assert s["cache_savings_usd"] == 0.0
+
 
 # ── save ──────────────────────────────────────────────────────────────────────
 
@@ -165,3 +203,10 @@ class TestSingleton:
         custom = CostLedger(custom_prices={"llm": {"gpt-4o-mini": {"input": 1.0, "output": 2.0, "cached": 0.5}}})
         custom.record_llm("x", "gpt-4o-mini", 1_000_000, 0)
         assert abs(custom.total_usd() - 1.0) < 0.001
+
+    def test_custom_prices_savings_use_overridden_rates(self):
+        # custom input=1.0, cached=0.5 → savings per 1M cached = $0.50
+        custom = CostLedger(custom_prices={"llm": {"gpt-4o-mini": {"input": 1.0, "output": 2.0, "cached": 0.5}}})
+        custom.record_llm("x", "gpt-4o-mini", 1_000_000, 0, cached_tokens=1_000_000)
+        s = custom.summary()
+        assert abs(s["cache_savings_usd"] - 0.5) < 1e-6

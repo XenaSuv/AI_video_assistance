@@ -85,7 +85,12 @@ Return ONLY a number (1–10).
         )
         text = (res.choices[0].message.content or "").strip()
         if res.usage:
-            get_ledger().record_llm("viral-score", settings.openai_model, res.usage.prompt_tokens or 0, res.usage.completion_tokens or 0)
+            _det = res.usage.prompt_tokens_details
+            get_ledger().record_llm(
+                "viral-score", settings.openai_model,
+                res.usage.prompt_tokens or 0, res.usage.completion_tokens or 0,
+                cached_tokens=getattr(_det, "cached_tokens", 0) if _det else 0,
+            )
         match = re.search(r"(\d+)", text)
         if match:
             return max(1, min(10, int(match.group(1))))
