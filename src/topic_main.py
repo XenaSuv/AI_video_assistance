@@ -39,7 +39,7 @@ from src.pipeline_helpers import (
     _needs_video_rebuild,
     _setup_logging,
 )
-from src.shorts_generator import build_short
+from src.shorts_pipeline import build_short
 from src.slack_notifier import notify_failure, notify_success
 from src.subtitle_generator import generate_subtitles
 from src.thumbnail_ab import (

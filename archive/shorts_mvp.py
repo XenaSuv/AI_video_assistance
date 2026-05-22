@@ -7,7 +7,7 @@ from config import settings
 from src.hooks_generator import generate_hooks
 from src.script_generator import generate_short_script
 from src.title_optimizer import generate_titles, pick_best_title
-from src.shorts_generator import create_short_video
+from src.shorts_pipeline import create_short_video
 from src.youtube_uploader import upload_short
 
 

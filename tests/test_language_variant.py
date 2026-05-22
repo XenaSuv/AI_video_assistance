@@ -43,7 +43,7 @@ def _all_mocks():
         patch("src.language_variant.publish_episode", return_value={"video_id": "vid123"}),
         patch("src.language_variant._load_audio_durations"),
         patch("src.language_variant._get_intro_duration", return_value=0.0),
-        patch("src.shorts_generator.build_short"),
+        patch("src.shorts_pipeline.build_short"),
     ]
 
 
@@ -88,7 +88,7 @@ class TestRunLanguageVariantHappyPath:
               patch("src.language_variant.publish_episode", return_value={}),
               patch("src.language_variant._load_audio_durations"),
               patch("src.language_variant._get_intro_duration", return_value=0.0),
-              patch("src.shorts_generator.build_short")):
+              patch("src.shorts_pipeline.build_short")):
             _call(run_dir=tmp_path)
         mock_translate.assert_not_called()
 
@@ -105,7 +105,7 @@ class TestRunLanguageVariantHappyPath:
               patch("src.language_variant.publish_episode", return_value={}),
               patch("src.language_variant._load_audio_durations"),
               patch("src.language_variant._get_intro_duration", return_value=0.0),
-              patch("src.shorts_generator.build_short")):
+              patch("src.shorts_pipeline.build_short")):
             _call(run_dir=tmp_path)
         mock_synth.assert_not_called()
 
@@ -119,7 +119,7 @@ class TestRunLanguageVariantHappyPath:
               patch("src.language_variant.publish_episode", return_value={}),
               patch("src.language_variant._load_audio_durations"),
               patch("src.language_variant._get_intro_duration", return_value=0.0),
-              patch("src.shorts_generator.build_short")):
+              patch("src.shorts_pipeline.build_short")):
             result = _call(run_dir=tmp_path)
         assert result is not None
 
@@ -148,7 +148,7 @@ class TestRunLanguageVariantHappyPath:
               patch("src.language_variant.publish_episode", return_value={}),
               patch("src.language_variant._load_audio_durations"),
               patch("src.language_variant._get_intro_duration", return_value=0.0),
-              patch("src.shorts_generator.build_short")):
+              patch("src.shorts_pipeline.build_short")):
             _call(run_dir=tmp_path)
         mock_assemble.assert_called_once()
 
@@ -169,7 +169,7 @@ class TestRunLanguageVariantConcurrency:
               patch("src.language_variant.publish_episode", return_value={}),
               patch("src.language_variant._load_audio_durations"),
               patch("src.language_variant._get_intro_duration", return_value=0.0),
-              patch("src.shorts_generator.build_short")):
+              patch("src.shorts_pipeline.build_short")):
             _call(run_dir=tmp_path)
 
         mock_subs.assert_called_once()
@@ -188,7 +188,7 @@ class TestRunLanguageVariantConcurrency:
               patch("src.language_variant.publish_episode", return_value={}),
               patch("src.language_variant._load_audio_durations"),
               patch("src.language_variant._get_intro_duration", return_value=0.0),
-              patch("src.shorts_generator.build_short")):
+              patch("src.shorts_pipeline.build_short")):
             result = _call(run_dir=tmp_path)
 
         assert result["status"] == "published"
@@ -196,7 +196,6 @@ class TestRunLanguageVariantConcurrency:
 
     def test_short_and_thumbnail_both_called_when_include_short(self, tmp_path):
         """When include_short=True, both build_short and generate_thumbnail are called."""
-        mock_build_short = MagicMock()
         with (patch("src.language_variant._load_cached_script", return_value=None),
               patch("src.language_variant.translate_script", return_value=_script()),
               patch("src.language_variant.synthesize_script"),
@@ -207,9 +206,7 @@ class TestRunLanguageVariantConcurrency:
               patch("src.language_variant.publish_episode", return_value={}),
               patch("src.language_variant._load_audio_durations"),
               patch("src.language_variant._get_intro_duration", return_value=0.0),
-              patch.dict("sys.modules", {"src.shorts_generator": MagicMock(
-                  build_short=mock_build_short
-              )})):
+              patch("src.shorts_pipeline.build_short") as mock_build_short):
             _call(run_dir=tmp_path, include_short=True)
 
         mock_thumb.assert_called_once()
@@ -227,7 +224,7 @@ class TestRunLanguageVariantConcurrency:
               patch("src.language_variant.publish_episode", return_value={}),
               patch("src.language_variant._load_audio_durations"),
               patch("src.language_variant._get_intro_duration", return_value=0.0),
-              patch("src.shorts_generator.build_short")):
+              patch("src.shorts_pipeline.build_short")):
             result = _call(run_dir=tmp_path, include_short=False)
 
         mock_thumb.assert_called_once()
@@ -246,7 +243,7 @@ class TestRunLanguageVariantConcurrency:
                     return_value={"video_id": "v1"}) as mock_pub,
               patch("src.language_variant._load_audio_durations"),
               patch("src.language_variant._get_intro_duration", return_value=0.0),
-              patch("src.shorts_generator.build_short")):
+              patch("src.shorts_pipeline.build_short")):
             _call(run_dir=tmp_path)
 
         call_kwargs = mock_pub.call_args.kwargs
