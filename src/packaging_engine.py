@@ -1,7 +1,7 @@
 """Packaging Engine — synchronised hook / title / thumbnail concept from editorial plan.
 
 Takes the editorial plan (angle + conflict + story context) and the channel
-strategy (StrategyConfig from DecisionEngineV2) and produces three mutually
+strategy (StrategyConfig from DecisionEngineV3) and produces three mutually
 consistent packaging outputs that drive viewer acquisition:
 
     hook              — opening 5-10 s spoken line  (CTR + retention start)

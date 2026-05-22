@@ -237,7 +237,7 @@ class SceneVarietyEngineV2:
         strategy_config: Any,
         editorial_plan: Any | None = None,
     ) -> list[Scene]:
-        """Full v2 pipeline driven by StrategyConfig (from DecisionEngineV2).
+        """Full pipeline driven by StrategyConfig (from DecisionEngineV3).
 
         Unlike assign(), which requires a pre-built SceneStrategy, this method
         builds everything from the config's ScenePolicy and scene content.

@@ -342,7 +342,7 @@ def build_video(
     *is_breaking*     – activates Stable Diffusion as the image generator.
     *use_presenter*   – generate a D-ID talking-head hook clip (weekly only).
     *editorial_plan*  – EditorialPlan for angle/format-aware scene type selection.
-    *strategy_config* – StrategyConfig from DecisionEngineV2.decide(); biases
+    *strategy_config* – StrategyConfig from DecisionEngineV3.decide(); biases
                         scene type selection via scene_mix proportions.
     *intro_path / outro_path* – prepended / appended when the file exists.
     """
@@ -353,7 +353,7 @@ def build_video(
     _strat_engine   = SceneStrategyEngine()
     _variety_engine = SceneVarietyEngineV2(_strat_engine)
     if strategy_config is not None:
-        # Full contract path: DecisionEngineV2 config drives everything
+        # Full contract path: DecisionEngineV3 config drives everything
         _variety_engine.assign_from_config(
             script.scenes,
             strategy_config,

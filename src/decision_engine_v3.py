@@ -1,7 +1,7 @@
 """Decision Engine v3 — unified signals → strategy pipeline.
 
-Replaces the dual DecisionEngineV2 + SceneBandit.select_policy() pattern
-with a single decide(context) call that integrates every signal layer:
+Unified signals → strategy pipeline.  A single decide(context) call
+integrates every signal layer:
 
     performance metrics  → mode selection
     bandit recommendations → scene policy + packaging style

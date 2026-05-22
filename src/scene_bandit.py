@@ -32,7 +32,7 @@ policies can be added via register_policy().
 
 Integration with Decision Engine
 ---------------------------------
-Pass the bandit to DecisionEngineV2.decide()::
+Pass the bandit to DecisionEngineV3.decide()::
 
     bandit   = SceneBandit(data_dir=run_dir)
     config   = engine.decide(metrics, scene_bandit=bandit)
