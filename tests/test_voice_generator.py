@@ -1,24 +1,16 @@
 """Tests for voice_generator — SSML conversion, retry predicate, scene synthesis,
-hook synthesis, and the async/sync script synthesis entry points."""
+hook synthesis, async TTS retry/timeout, and the async/sync script entry points."""
 from __future__ import annotations
 
 import asyncio
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 # Stub elevenlabs before import
 _elev_mock = MagicMock()
 sys.modules.setdefault("elevenlabs", _elev_mock)
 sys.modules.setdefault("elevenlabs.client", _elev_mock)
-
-# Stub tenacity before import
-_tenacity = MagicMock()
-_tenacity.retry = lambda **kw: (lambda f: f)   # passthrough decorator
-_tenacity.retry_if_exception = lambda f: f
-_tenacity.stop_after_attempt = lambda n: n
-_tenacity.wait_exponential = lambda **kw: None
-sys.modules.setdefault("tenacity", _tenacity)
 
 import pytest
 
@@ -70,27 +62,27 @@ class TestAnnotatedToSsml:
 class TestIsRetryableElevenlabs:
     def test_429_is_retryable(self):
         exc = Exception("rate limit")
-        exc.status_code = 429
+        exc.status_code = 429  # type: ignore[attr-defined]
         assert _is_retryable_elevenlabs(exc)
 
     def test_500_is_retryable(self):
         exc = Exception("server error")
-        exc.status_code = 500
+        exc.status_code = 500  # type: ignore[attr-defined]
         assert _is_retryable_elevenlabs(exc)
 
     def test_503_is_retryable(self):
         exc = Exception("service unavailable")
-        exc.status_code = 503
+        exc.status_code = 503  # type: ignore[attr-defined]
         assert _is_retryable_elevenlabs(exc)
 
     def test_400_is_not_retryable(self):
         exc = Exception("bad request")
-        exc.status_code = 400
+        exc.status_code = 400  # type: ignore[attr-defined]
         assert not _is_retryable_elevenlabs(exc)
 
     def test_404_is_not_retryable(self):
         exc = Exception("not found")
-        exc.status_code = 404
+        exc.status_code = 404  # type: ignore[attr-defined]
         assert not _is_retryable_elevenlabs(exc)
 
     def test_connection_error_is_retryable(self):
@@ -133,6 +125,120 @@ def _make_script(scenes=None):
     )
 
 
+# ── _tts_convert_async ────────────────────────────────────────────────────────
+
+class TestTtsConvertAsync:
+    def test_returns_bytes_on_first_success(self):
+        from src.voice_generator import _tts_convert_async
+        mock_client = MagicMock()
+        with patch("src.voice_generator.elevenlabs_breaker") as mock_breaker:
+            mock_breaker.call.return_value = b"audio_data"
+            result = asyncio.run(_tts_convert_async(mock_client, "text", "v", "m"))
+        assert result == b"audio_data"
+        assert mock_breaker.call.call_count == 1
+
+    def test_empty_chunks_joined_and_filtered(self):
+        """_blocking_call skips empty byte chunks before returning."""
+        from src.voice_generator import _tts_convert_async
+        mock_client = MagicMock()
+        mock_client.text_to_speech.convert.return_value = [b"a", b"", b"b", b""]
+        with patch("src.voice_generator.elevenlabs_breaker") as mock_breaker:
+            mock_breaker.call.side_effect = lambda f: f()
+            result = asyncio.run(_tts_convert_async(mock_client, "text", "v", "m"))
+        assert result == b"ab"
+
+    def test_retryable_error_retries_and_succeeds(self):
+        from src.voice_generator import _tts_convert_async
+        mock_client = MagicMock()
+        calls = 0
+
+        def side_eff(func: object) -> bytes:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise ConnectionError("network blip")
+            return b"ok"
+
+        with patch("src.voice_generator.elevenlabs_breaker") as mock_breaker:
+            mock_breaker.call.side_effect = side_eff
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                result = asyncio.run(_tts_convert_async(mock_client, "text", "v", "m"))
+
+        assert result == b"ok"
+        assert calls == 2
+
+    def test_non_retryable_raises_immediately(self):
+        from src.voice_generator import _tts_convert_async
+        mock_client = MagicMock()
+        bad_exc: Exception = Exception("bad request")
+        bad_exc.status_code = 400  # type: ignore[attr-defined]
+        with patch("src.voice_generator.elevenlabs_breaker") as mock_breaker:
+            mock_breaker.call.side_effect = bad_exc
+            with pytest.raises(Exception, match="bad request"):
+                asyncio.run(_tts_convert_async(mock_client, "text", "v", "m"))
+        assert mock_breaker.call.call_count == 1
+
+    def test_exhausted_attempts_raises_runtime_error(self):
+        from src.voice_generator import _tts_convert_async, _TTS_MAX_ATTEMPTS
+        mock_client = MagicMock()
+        with patch("src.voice_generator.elevenlabs_breaker") as mock_breaker:
+            mock_breaker.call.side_effect = ConnectionError("persistent")
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                with pytest.raises(RuntimeError, match=f"after {_TTS_MAX_ATTEMPTS} attempts"):
+                    asyncio.run(_tts_convert_async(mock_client, "text", "v", "m"))
+        assert mock_breaker.call.call_count == _TTS_MAX_ATTEMPTS
+
+    def test_timeout_is_retried_and_succeeds(self):
+        """asyncio.TimeoutError from wait_for is treated as retryable."""
+        from src.voice_generator import _tts_convert_async
+        mock_client = MagicMock()
+        call_n = 0
+        original_wait_for = asyncio.wait_for
+
+        async def patched_wait_for(aw: object, timeout: float | None = None, **kwargs: object) -> bytes:
+            nonlocal call_n
+            call_n += 1
+            if call_n == 1:
+                # Cancel the coroutine/future to avoid ResourceWarning
+                if hasattr(aw, "close"):
+                    aw.close()  # type: ignore[union-attr]
+                raise asyncio.TimeoutError()
+            return await original_wait_for(aw, timeout=timeout)  # type: ignore[arg-type]
+
+        with patch("src.voice_generator.elevenlabs_breaker") as mock_breaker:
+            mock_breaker.call.return_value = b"after_timeout"
+            with patch("asyncio.wait_for", patched_wait_for):
+                with patch("asyncio.sleep", new_callable=AsyncMock):
+                    result = asyncio.run(_tts_convert_async(mock_client, "text", "v", "m"))
+
+        assert result == b"after_timeout"
+        assert call_n == 2
+
+    def test_exponential_backoff_between_retries(self):
+        """Sleep delay doubles on each retry, capped at _TTS_BACKOFF_MAX."""
+        from src.voice_generator import (
+            _tts_convert_async, _TTS_BACKOFF_BASE, _TTS_BACKOFF_MAX, _TTS_MAX_ATTEMPTS,
+        )
+        mock_client = MagicMock()
+        sleep_calls: list[float] = []
+
+        async def record_sleep(delay: float) -> None:
+            sleep_calls.append(delay)
+
+        with patch("src.voice_generator.elevenlabs_breaker") as mock_breaker:
+            mock_breaker.call.side_effect = ConnectionError("keep failing")
+            with patch("asyncio.sleep", side_effect=record_sleep):
+                with pytest.raises(RuntimeError):
+                    asyncio.run(_tts_convert_async(mock_client, "text", "v", "m"))
+
+        assert len(sleep_calls) == _TTS_MAX_ATTEMPTS - 1
+        # First delay is _TTS_BACKOFF_BASE, each subsequent doubles (capped)
+        expected_delay = _TTS_BACKOFF_BASE
+        for actual in sleep_calls:
+            assert actual == min(expected_delay, _TTS_BACKOFF_MAX)
+            expected_delay *= 2.0
+
+
 # ── _synthesize_one_scene ─────────────────────────────────────────────────────
 
 class TestSynthesizeOneScene:
@@ -142,15 +248,13 @@ class TestSynthesizeOneScene:
         audio_dir = tmp_path / "audio"
         audio_dir.mkdir()
 
-        fake_chunks = [b"audio_chunk_1", b"audio_chunk_2"]
-        mock_client = MagicMock()
-
-        with patch("src.voice_generator._tts_convert", return_value=iter(fake_chunks)):
+        with patch("src.voice_generator._tts_convert_async", new_callable=AsyncMock,
+                   return_value=b"audio_chunk_1audio_chunk_2"):
             with patch("src.voice_generator.ff_duration", return_value=15.0):
                 with patch("src.voice_generator.get_ledger") as mock_ledger:
                     mock_ledger.return_value = MagicMock()
-                    result = _synthesize_one_scene(
-                        scene, audio_dir, "voice_id_x", "model_id_x", mock_client
+                    result = asyncio.run(
+                        _synthesize_one_scene(scene, audio_dir, "voice_id_x", "model_id_x", MagicMock())
                     )
 
         assert result == audio_dir / "scene_01.mp3"
@@ -164,37 +268,20 @@ class TestSynthesizeOneScene:
         audio_dir = tmp_path / "audio"
         audio_dir.mkdir()
 
-        captured_calls = []
+        captured_text: list[str] = []
 
-        def capture_tts(client, text, v_id, m_id, use_ssml=False):
-            captured_calls.append({"text": text, "use_ssml": use_ssml})
-            return iter([b"data"])
+        async def capture_tts(client: object, text: str, v_id: str, m_id: str) -> bytes:
+            captured_text.append(text)
+            return b"data"
 
-        with patch("src.voice_generator._tts_convert", side_effect=capture_tts):
+        with patch("src.voice_generator._tts_convert_async", side_effect=capture_tts):
             with patch("src.voice_generator.ff_duration", return_value=10.0):
                 with patch("src.voice_generator.get_ledger") as mock_ledger:
                     mock_ledger.return_value = MagicMock()
-                    _synthesize_one_scene(scene, audio_dir, "v", "m", MagicMock())
+                    asyncio.run(_synthesize_one_scene(scene, audio_dir, "v", "m", MagicMock()))
 
-        assert len(captured_calls) == 1
-        assert captured_calls[0]["use_ssml"] is True
-        assert "<speak>" in captured_calls[0]["text"]
-
-    def test_skips_empty_chunks(self, tmp_path):
-        """Empty byte chunks should not be written to the file."""
-        from src.voice_generator import _synthesize_one_scene
-        scene = _make_scene(3, "Some narration here.")
-        audio_dir = tmp_path / "audio"
-        audio_dir.mkdir()
-
-        fake_chunks = [b"real_data", b"", b"more_data", b""]
-        with patch("src.voice_generator._tts_convert", return_value=iter(fake_chunks)):
-            with patch("src.voice_generator.ff_duration", return_value=5.0):
-                with patch("src.voice_generator.get_ledger") as mock_ledger:
-                    mock_ledger.return_value = MagicMock()
-                    result = _synthesize_one_scene(scene, audio_dir, "v", "m", MagicMock())
-
-        assert result.read_bytes() == b"real_datamore_data"
+        assert len(captured_text) == 1
+        assert "<speak>" in captured_text[0]
 
     def test_plain_narration_does_not_use_ssml(self, tmp_path):
         from src.voice_generator import _synthesize_one_scene
@@ -202,18 +289,36 @@ class TestSynthesizeOneScene:
         audio_dir = tmp_path / "audio"
         audio_dir.mkdir()
 
-        captured = []
-        def capture_tts(client, text, v_id, m_id, use_ssml=False):
-            captured.append(use_ssml)
-            return iter([b"bytes"])
+        captured_text: list[str] = []
 
-        with patch("src.voice_generator._tts_convert", side_effect=capture_tts):
+        async def capture_tts(client: object, text: str, v_id: str, m_id: str) -> bytes:
+            captured_text.append(text)
+            return b"bytes"
+
+        with patch("src.voice_generator._tts_convert_async", side_effect=capture_tts):
             with patch("src.voice_generator.ff_duration", return_value=5.0):
                 with patch("src.voice_generator.get_ledger") as mock_ledger:
                     mock_ledger.return_value = MagicMock()
-                    _synthesize_one_scene(scene, audio_dir, "v", "m", MagicMock())
+                    asyncio.run(_synthesize_one_scene(scene, audio_dir, "v", "m", MagicMock()))
 
-        assert captured[0] is False
+        assert "<speak>" not in captured_text[0]
+
+    def test_file_written_with_returned_bytes(self, tmp_path):
+        from src.voice_generator import _synthesize_one_scene
+        scene = _make_scene(3, "Some narration here.")
+        audio_dir = tmp_path / "audio"
+        audio_dir.mkdir()
+
+        with patch("src.voice_generator._tts_convert_async", new_callable=AsyncMock,
+                   return_value=b"real_datamore_data"):
+            with patch("src.voice_generator.ff_duration", return_value=5.0):
+                with patch("src.voice_generator.get_ledger") as mock_ledger:
+                    mock_ledger.return_value = MagicMock()
+                    result = asyncio.run(
+                        _synthesize_one_scene(scene, audio_dir, "v", "m", MagicMock())
+                    )
+
+        assert result.read_bytes() == b"real_datamore_data"
 
 
 # ── synthesize_hook ───────────────────────────────────────────────────────────
@@ -225,11 +330,9 @@ class TestSynthesizeHook:
         audio_dir = tmp_path / "audio"
         audio_dir.mkdir()
 
-        fake_chunks = [b"hook_audio"]
-        with patch("src.voice_generator.ElevenLabs") as MockElevenLabs:
-            mock_client = MagicMock()
-            MockElevenLabs.return_value = mock_client
-            with patch("src.voice_generator._tts_convert", return_value=iter(fake_chunks)):
+        with patch("src.voice_generator.ElevenLabs"):
+            with patch("src.voice_generator._tts_convert_async", new_callable=AsyncMock,
+                       return_value=b"hook_audio"):
                 with patch("src.voice_generator.ff_duration", return_value=3.0):
                     with patch("src.voice_generator.get_ledger") as mock_ledger:
                         mock_ledger.return_value = MagicMock()
@@ -254,8 +357,8 @@ class TestSynthesizeHook:
         hook_path = audio_dir / "hook.mp3"
         hook_path.write_bytes(b"cached")
 
-        with patch("src.voice_generator.ElevenLabs") as MockElevenLabs:
-            with patch("src.voice_generator._tts_convert") as mock_tts:
+        with patch("src.voice_generator.ElevenLabs"):
+            with patch("src.voice_generator._tts_convert_async", new_callable=AsyncMock) as mock_tts:
                 result = synthesize_hook(script, tmp_path)
 
         mock_tts.assert_not_called()
@@ -267,17 +370,22 @@ class TestSynthesizeHook:
         audio_dir = tmp_path / "audio"
         audio_dir.mkdir()
 
-        captured = []
-        def capture_tts(client, text, v_id, m_id, use_ssml=False):
+        captured: list[dict[str, str]] = []
+
+        async def capture_tts(client: object, text: str, v_id: str, m_id: str) -> bytes:
             captured.append({"v_id": v_id, "m_id": m_id})
-            return iter([b"audio"])
+            return b"audio"
 
         with patch("src.voice_generator.ElevenLabs"):
-            with patch("src.voice_generator._tts_convert", side_effect=capture_tts):
+            with patch("src.voice_generator._tts_convert_async", side_effect=capture_tts):
                 with patch("src.voice_generator.ff_duration", return_value=2.0):
                     with patch("src.voice_generator.get_ledger") as mock_ledger:
                         mock_ledger.return_value = MagicMock()
-                        synthesize_hook(script, tmp_path, voice_id="custom_voice", model_id="custom_model")
+                        synthesize_hook(
+                            script, tmp_path,
+                            voice_id="custom_voice",
+                            model_id="custom_model",
+                        )
 
         assert captured[0]["v_id"] == "custom_voice"
         assert captured[0]["m_id"] == "custom_model"
@@ -287,7 +395,6 @@ class TestSynthesizeHook:
 
 class TestAsyncSynthesizeScript:
     def test_synthesizes_all_scenes(self, tmp_path):
-        """async_synthesize_script returns one path per scene, sorted."""
         from src.voice_generator import async_synthesize_script
         scenes = [
             _make_scene(0, "Scene zero narration"),
@@ -295,10 +402,13 @@ class TestAsyncSynthesizeScript:
         ]
         script = _make_script(scenes)
 
-        def fake_synthesize(scene, audio_dir, v_id, m_id, client):
-            p = audio_dir / f"scene_{scene.idx:02d}.mp3"
+        async def fake_synthesize(
+            scene: object, audio_dir: Path, v_id: str, m_id: str, client: object
+        ) -> Path:
+            assert isinstance(audio_dir, Path)
+            p = audio_dir / f"scene_{scene.idx:02d}.mp3"  # type: ignore[union-attr]
             p.write_bytes(b"audio")
-            scene.duration_sec = 10
+            scene.duration_sec = 10  # type: ignore[union-attr]
             return p
 
         with patch("src.voice_generator.ElevenLabs"):
@@ -314,10 +424,12 @@ class TestAsyncSynthesizeScript:
         scenes = [_make_scene(0, "narration")]
         script = _make_script(scenes)
 
-        def fake_synth(scene, audio_dir, v_id, m_id, client):
-            p = audio_dir / f"scene_{scene.idx:02d}.mp3"
+        async def fake_synth(
+            scene: object, audio_dir: Path, v_id: str, m_id: str, client: object
+        ) -> Path:
+            p = audio_dir / f"scene_{scene.idx:02d}.mp3"  # type: ignore[union-attr]
             p.write_bytes(b"x")
-            scene.duration_sec = 5
+            scene.duration_sec = 5  # type: ignore[union-attr]
             return p
 
         with patch("src.voice_generator.ElevenLabs"):
@@ -331,13 +443,15 @@ class TestAsyncSynthesizeScript:
         scenes = [_make_scene(0, "narration")]
         script = _make_script(scenes)
 
-        captured = []
+        captured: list[dict[str, str]] = []
 
-        def fake_synth(scene, audio_dir, v_id, m_id, client):
+        async def fake_synth(
+            scene: object, audio_dir: Path, v_id: str, m_id: str, client: object
+        ) -> Path:
             captured.append({"v_id": v_id, "m_id": m_id})
-            p = audio_dir / f"scene_{scene.idx:02d}.mp3"
+            p = audio_dir / f"scene_{scene.idx:02d}.mp3"  # type: ignore[union-attr]
             p.write_bytes(b"x")
-            scene.duration_sec = 5
+            scene.duration_sec = 5  # type: ignore[union-attr]
             return p
 
         with patch("src.voice_generator.ElevenLabs"):
@@ -362,10 +476,12 @@ class TestSynthesizeScript:
         scenes = [_make_scene(0, "narration")]
         script = _make_script(scenes)
 
-        def fake_synth(scene, audio_dir, v_id, m_id, client):
-            p = audio_dir / f"scene_{scene.idx:02d}.mp3"
+        async def fake_synth(
+            scene: object, audio_dir: Path, v_id: str, m_id: str, client: object
+        ) -> Path:
+            p = audio_dir / f"scene_{scene.idx:02d}.mp3"  # type: ignore[union-attr]
             p.write_bytes(b"audio")
-            scene.duration_sec = 8
+            scene.duration_sec = 8  # type: ignore[union-attr]
             return p
 
         with patch("src.voice_generator.ElevenLabs"):
