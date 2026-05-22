@@ -82,7 +82,7 @@ async def _tts_convert_async(
                 ),
             )
             return b"".join(chunk for chunk in chunks if chunk)
-        return elevenlabs_breaker.call(_http)  # type: ignore[return-value]
+        return bytes(elevenlabs_breaker.call(_http))
 
     last_exc: BaseException = RuntimeError("No attempts made")
     delay = _TTS_BACKOFF_BASE
