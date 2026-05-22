@@ -30,7 +30,7 @@ Context shape (input)
     },
     "bandit": {
         "scene":     dict,   # SceneBandit.suggest_strategy_adjustments()
-        "packaging": dict,   # ThompsonBandit / BanditEngine.suggest_strategy_adjustments()
+        "packaging": dict,   # ThompsonBandit.suggest_strategy_adjustments()
     },
     "prediction": {
         "risks": list[dict],   # [{scene_idx, probability}, ...]

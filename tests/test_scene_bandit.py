@@ -502,7 +502,7 @@ class TestFullPipeline:
 
     def test_two_bandits_are_independent(self):
         """Packaging bandit and scene bandit operate independently."""
-        from src.ab_testing_engine import ABTestVariant
+        from src.thompson_bandit import ABTestVariant
         from src.thompson_bandit import ThompsonBandit
 
         tmp      = _tmp()

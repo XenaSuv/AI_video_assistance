@@ -188,9 +188,9 @@ class PackagingEngine:
         simple) derived from the same core idea, so the test measures *style*
         not just text.
 
-        Returns a list of :class:`~src.ab_testing_engine.ABTestVariant`.
+        Returns a list of :class:`~src.thompson_bandit.ABTestVariant`.
         """
-        from src.ab_testing_engine import ABTestVariant
+        from src.thompson_bandit import ABTestVariant
 
         plan_entry = self._extract_plan_entry(editorial_plan)
         idea       = self._extract_core_idea(plan_entry)
