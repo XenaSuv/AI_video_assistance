@@ -9,7 +9,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.feedback_analyzer import FeedbackAnalyzer, RetentionAnalysis, VideoMetrics
+import datetime
+
+from src.feedback_analyzer import (
+    FeedbackAnalyzer,
+    RetentionAnalysis,
+    VideoMetrics,
+    _compute_window_stats,
+    _parse_ts,
+)
+from src.shared_types import WindowStats
 
 
 @pytest.fixture
@@ -504,3 +513,172 @@ class TestGetFormatPerformance:
         stats = analyzer.get_format_performance("hot_take")
         assert stats is not None
         assert abs(stats.avg_hook_score - 0.7) < 1e-9
+
+
+# ── _parse_ts ─────────────────────────────────────────────────────────────────
+
+class TestParsTs:
+    def test_valid_iso_string(self):
+        ts = "2024-01-15T10:30:00"
+        result = _parse_ts(ts)
+        assert result == datetime.datetime(2024, 1, 15, 10, 30, 0)
+
+    def test_none_returns_datetime_min(self):
+        assert _parse_ts(None) == datetime.datetime.min
+
+    def test_empty_string_returns_datetime_min(self):
+        assert _parse_ts("") == datetime.datetime.min
+
+    def test_malformed_string_returns_datetime_min(self):
+        assert _parse_ts("not-a-date") == datetime.datetime.min
+
+
+# ── _compute_window_stats ─────────────────────────────────────────────────────
+
+class TestComputeWindowStats:
+    def test_empty_list_returns_none(self):
+        assert _compute_window_stats([]) is None
+
+    def test_single_record(self):
+        records = [{"hook_score": 0.8, "avg_view_percentage": 0.65}]
+        ws = _compute_window_stats(records)
+        assert isinstance(ws, WindowStats)
+        assert ws.sample_size == 1
+        assert ws.avg_hook_score == 0.8
+        assert ws.avg_watch_time == 0.65
+
+    def test_success_rate_threshold_is_0_6(self):
+        records = [
+            {"hook_score": 0.7, "avg_view_percentage": 0.5},  # above 0.6 → success
+            {"hook_score": 0.5, "avg_view_percentage": 0.4},  # at or below → not success
+        ]
+        ws = _compute_window_stats(records)
+        assert ws is not None
+        assert abs(ws.success_rate - 0.5) < 1e-9
+
+    def test_averages_computed_correctly(self):
+        records = [
+            {"hook_score": 0.6, "avg_view_percentage": 0.4},
+            {"hook_score": 0.8, "avg_view_percentage": 0.6},
+        ]
+        ws = _compute_window_stats(records)
+        assert ws is not None
+        assert abs(ws.avg_hook_score - 0.7) < 1e-9
+        assert abs(ws.avg_watch_time - 0.5) < 1e-9
+
+
+# ── Rolling window — get_angle_performance ────────────────────────────────────
+
+def _ts(days_ago: float) -> str:
+    """ISO timestamp N days in the past."""
+    dt = datetime.datetime.now() - datetime.timedelta(days=days_ago)
+    return dt.isoformat()
+
+
+class TestRollingWindowAngle:
+    def _write(self, analyzer: FeedbackAnalyzer, records: list[dict]) -> None:
+        analyzer.feedback_db.write_text(json.dumps(records))
+
+    def test_lifetime_populated(self, analyzer):
+        records = [
+            {"video_id": "v1", "hook_score": 0.7, "avg_view_percentage": 0.6,
+             "angle": "tech", "format": "f", "drop_point": None, "timestamp": _ts(30)},
+        ]
+        self._write(analyzer, records)
+        stats = analyzer.get_angle_performance("tech")
+        assert stats is not None
+        assert stats.lifetime is not None
+        assert stats.lifetime.sample_size == 1
+
+    def test_recent_7d_none_when_all_records_are_old(self, analyzer):
+        records = [
+            {"video_id": "v1", "hook_score": 0.7, "avg_view_percentage": 0.6,
+             "angle": "tech", "format": "f", "drop_point": None, "timestamp": _ts(10)},
+        ]
+        self._write(analyzer, records)
+        stats = analyzer.get_angle_performance("tech")
+        assert stats is not None
+        assert stats.recent_7d is None
+
+    def test_recent_7d_populated_for_fresh_records(self, analyzer):
+        records = [
+            {"video_id": "v1", "hook_score": 0.7, "avg_view_percentage": 0.6,
+             "angle": "tech", "format": "f", "drop_point": None, "timestamp": _ts(2)},
+        ]
+        self._write(analyzer, records)
+        stats = analyzer.get_angle_performance("tech")
+        assert stats is not None
+        assert stats.recent_7d is not None
+        assert stats.recent_7d.sample_size == 1
+
+    def test_recent_7d_only_counts_records_within_window(self, analyzer):
+        records = [
+            {"video_id": "v1", "hook_score": 0.9, "avg_view_percentage": 0.8,
+             "angle": "tech", "format": "f", "drop_point": None, "timestamp": _ts(2)},
+            {"video_id": "v2", "hook_score": 0.3, "avg_view_percentage": 0.2,
+             "angle": "tech", "format": "f", "drop_point": None, "timestamp": _ts(20)},
+        ]
+        self._write(analyzer, records)
+        stats = analyzer.get_angle_performance("tech")
+        assert stats is not None
+        # lifetime sees both
+        assert stats.lifetime is not None
+        assert stats.lifetime.sample_size == 2
+        # 7d sees only v1
+        assert stats.recent_7d is not None
+        assert stats.recent_7d.sample_size == 1
+        assert stats.recent_7d.avg_hook_score == 0.9
+
+    def test_records_without_timestamp_excluded_from_7d(self, analyzer):
+        records = [
+            {"video_id": "v1", "hook_score": 0.8, "avg_view_percentage": 0.6,
+             "angle": "tech", "format": "f", "drop_point": None},  # no timestamp
+        ]
+        self._write(analyzer, records)
+        stats = analyzer.get_angle_performance("tech")
+        assert stats is not None
+        assert stats.lifetime is not None
+        assert stats.recent_7d is None
+
+    def test_flat_fields_mirror_lifetime(self, analyzer):
+        records = [
+            {"video_id": "v1", "hook_score": 0.75, "avg_view_percentage": 0.6,
+             "angle": "tech", "format": "f", "drop_point": None, "timestamp": _ts(30)},
+        ]
+        self._write(analyzer, records)
+        stats = analyzer.get_angle_performance("tech")
+        assert stats is not None
+        assert stats.avg_hook_score == stats.lifetime.avg_hook_score  # type: ignore[union-attr]
+        assert stats.sample_size == stats.lifetime.sample_size         # type: ignore[union-attr]
+
+
+# ── Rolling window — get_format_performance ───────────────────────────────────
+
+class TestRollingWindowFormat:
+    def _write(self, analyzer: FeedbackAnalyzer, records: list[dict]) -> None:
+        analyzer.feedback_db.write_text(json.dumps(records))
+
+    def test_recent_7d_higher_score_than_lifetime(self, analyzer):
+        """Scenario: recent videos improved; 7d score > lifetime score."""
+        records = [
+            {"video_id": "v_old", "hook_score": 0.4, "avg_view_percentage": 0.4,
+             "angle": "a", "format": "deep_dive", "drop_point": None, "timestamp": _ts(30)},
+            {"video_id": "v_new", "hook_score": 0.9, "avg_view_percentage": 0.8,
+             "angle": "a", "format": "deep_dive", "drop_point": None, "timestamp": _ts(1)},
+        ]
+        self._write(analyzer, records)
+        stats = analyzer.get_format_performance("deep_dive")
+        assert stats is not None
+        assert stats.recent_7d is not None
+        assert stats.lifetime is not None
+        assert stats.recent_7d.avg_hook_score > stats.lifetime.avg_hook_score
+
+    def test_lifetime_none_never_happens_when_records_exist(self, analyzer):
+        records = [
+            {"video_id": "v1", "hook_score": 0.7, "avg_view_percentage": 0.6,
+             "angle": "a", "format": "hot_take", "drop_point": None, "timestamp": _ts(5)},
+        ]
+        self._write(analyzer, records)
+        stats = analyzer.get_format_performance("hot_take")
+        assert stats is not None
+        assert stats.lifetime is not None

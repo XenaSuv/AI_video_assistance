@@ -176,10 +176,27 @@ class HumanizationResult:
 # ── FeedbackAnalyzer output ───────────────────────────────────────────────────
 
 @dataclass
-class PerformanceStats:
-    """Aggregated performance for a single angle or format."""
-    category: str           # angle key or format name
+class WindowStats:
+    """Aggregated metrics for a specific time window (7-day or lifetime)."""
     sample_size: int
     avg_hook_score: float
     avg_watch_time: float
     success_rate: float
+
+
+@dataclass
+class PerformanceStats:
+    """Aggregated performance for a single angle or format.
+
+    Flat fields (sample_size, avg_hook_score, avg_watch_time, success_rate)
+    represent lifetime aggregates and are kept for backward compatibility.
+    Use ``recent_7d`` and ``lifetime`` for window-aware comparisons.
+    """
+    category: str           # angle key or format name
+    sample_size: int        # lifetime total — backward-compat alias
+    avg_hook_score: float   # lifetime — backward-compat alias
+    avg_watch_time: float   # lifetime — backward-compat alias
+    success_rate: float     # lifetime — backward-compat alias
+    # Rolling windows — None when no data in that window
+    recent_7d: WindowStats | None = None
+    lifetime: WindowStats | None = None
