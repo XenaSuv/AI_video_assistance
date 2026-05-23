@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.config_validator import ConfigurationError, validate
+from src.config_validator import ConfigurationError, validate, validate_runtime_paths
 
 
 def _cfg(**overrides) -> SimpleNamespace:
@@ -541,3 +541,118 @@ class TestConfigurationError:
     def test_message_preserved(self):
         err = ConfigurationError("my message")
         assert "my message" in str(err)
+
+
+# ── validate_runtime_paths ────────────────────────────────────────────────────
+
+def _runtime_cfg(tmp_path: Path, **overrides: object) -> SimpleNamespace:
+    """Minimal runtime config whose file paths all point to real tmp files."""
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    cs   = tmp_path / "client_secrets.json"
+    tok  = tmp_path / "token.json"
+    cs.write_text("{}")
+    tok.write_text("{}")
+    base = dict(
+        source_dir=source_dir,
+        background_music_path="",
+        presenter_enabled=False,
+        heygen_enabled=False,
+        presenter_avatar_path="",
+        youtube_client_secrets=cs,
+        youtube_token_file=tok,
+        ru_enabled=False,
+        ru_youtube_client_secrets=tmp_path / "client_secrets_ru.json",
+        ru_youtube_token_file=tmp_path / "token_ru.json",
+    )
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+class TestValidateRuntimePaths:
+    def test_all_valid_passes(self, tmp_path):
+        validate_runtime_paths(_runtime_cfg(tmp_path))
+
+    def test_missing_source_dir_raises(self, tmp_path):
+        cfg = _runtime_cfg(tmp_path, source_dir=tmp_path / "nonexistent")
+        with pytest.raises(ConfigurationError, match="SOURCE_DIR"):
+            validate_runtime_paths(cfg)
+
+    def test_missing_background_music_raises(self, tmp_path):
+        cfg = _runtime_cfg(tmp_path, background_music_path="missing.mp3")
+        with pytest.raises(ConfigurationError, match="BACKGROUND_MUSIC_PATH"):
+            validate_runtime_paths(cfg)
+
+    def test_background_music_empty_string_skipped(self, tmp_path):
+        validate_runtime_paths(_runtime_cfg(tmp_path, background_music_path=""))
+
+    def test_background_music_absolute_path_resolved(self, tmp_path):
+        music = tmp_path / "music.mp3"
+        music.write_bytes(b"")
+        validate_runtime_paths(_runtime_cfg(tmp_path, background_music_path=str(music)))
+
+    def test_missing_presenter_avatar_raises(self, tmp_path):
+        cfg = _runtime_cfg(
+            tmp_path,
+            presenter_enabled=True,
+            heygen_enabled=False,
+            presenter_avatar_path="assets/avatar.png",
+        )
+        with pytest.raises(ConfigurationError, match="PRESENTER_AVATAR_PATH"):
+            validate_runtime_paths(cfg)
+
+    def test_presenter_avatar_skipped_when_heygen_enabled(self, tmp_path):
+        cfg = _runtime_cfg(
+            tmp_path,
+            presenter_enabled=True,
+            heygen_enabled=True,
+            presenter_avatar_path="assets/avatar.png",
+        )
+        validate_runtime_paths(cfg)
+
+    def test_presenter_avatar_skipped_when_presenter_disabled(self, tmp_path):
+        cfg = _runtime_cfg(
+            tmp_path,
+            presenter_enabled=False,
+            presenter_avatar_path="assets/nonexistent.png",
+        )
+        validate_runtime_paths(cfg)
+
+    def test_missing_youtube_client_secrets_raises(self, tmp_path):
+        cfg = _runtime_cfg(tmp_path, youtube_client_secrets=tmp_path / "missing.json")
+        with pytest.raises(ConfigurationError, match="YOUTUBE_CLIENT_SECRETS"):
+            validate_runtime_paths(cfg)
+
+    def test_missing_youtube_token_file_raises(self, tmp_path):
+        cfg = _runtime_cfg(tmp_path, youtube_token_file=tmp_path / "missing.json")
+        with pytest.raises(ConfigurationError, match="YOUTUBE_TOKEN_FILE"):
+            validate_runtime_paths(cfg)
+
+    def test_ru_credentials_checked_when_ru_enabled(self, tmp_path):
+        cfg = _runtime_cfg(tmp_path, ru_enabled=True)
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_runtime_paths(cfg)
+        msg = str(exc_info.value)
+        assert "RU_YOUTUBE_CLIENT_SECRETS" in msg
+        assert "RU_YOUTUBE_TOKEN_FILE" in msg
+
+    def test_ru_credentials_skipped_when_ru_disabled(self, tmp_path):
+        validate_runtime_paths(_runtime_cfg(tmp_path, ru_enabled=False))
+
+    def test_multiple_errors_listed_together(self, tmp_path):
+        cfg = _runtime_cfg(
+            tmp_path,
+            source_dir=tmp_path / "no_source",
+            youtube_client_secrets=tmp_path / "no_cs.json",
+        )
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_runtime_paths(cfg)
+        msg = str(exc_info.value)
+        assert "SOURCE_DIR" in msg
+        assert "YOUTUBE_CLIENT_SECRETS" in msg
+        assert "2 found" in msg
+
+    def test_error_message_says_runtime_path_errors(self, tmp_path):
+        cfg = _runtime_cfg(tmp_path, youtube_token_file=tmp_path / "nope.json")
+        with pytest.raises(ConfigurationError, match="Runtime path errors"):
+            validate_runtime_paths(cfg)

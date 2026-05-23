@@ -20,6 +20,7 @@ from loguru import logger
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.budget_guard import BudgetGuard
+from src.config_validator import validate_runtime_paths
 from src.checkpoint import PipelineCheckpoint
 from src.cost_tracker import reset_ledger
 from src.deduplicator import SeenStories
@@ -56,6 +57,7 @@ class PipelineOrchestrator:
 
     def run(self, dry_run: bool = False, skip_upload: bool = False) -> dict[str, Any]:
         """Execute the full pipeline. Returns a summary dict."""
+        validate_runtime_paths(settings)
         date_str = dt.date.today().isoformat()
         self._run_dir = settings.output_dir / date_str
         self._run_dir.mkdir(parents=True, exist_ok=True)

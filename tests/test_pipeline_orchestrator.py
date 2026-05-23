@@ -620,6 +620,11 @@ def _patch_infra(tmp_path):
 class TestPipelineOrchestratorRun:
     """Smoke tests for PipelineOrchestrator.run()."""
 
+    @pytest.fixture(autouse=True)
+    def _skip_path_check(self):
+        with patch("src.pipeline_orchestrator.validate_runtime_paths"):
+            yield
+
     def test_dry_run_returns_summary_with_date(self, tmp_path):
         mocks = _patch_infra(tmp_path)
         news_item = MagicMock()
