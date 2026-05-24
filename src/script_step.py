@@ -179,6 +179,27 @@ class _ScriptStep:
                 f"persona={_cross_rec.get('persona')!r}  "
                 f"hook_type={_cross_rec.get('hook_type')!r}"
             )
+
+        # Structural hints from Shorts winners: influence long-form angle/pacing
+        _structure_rec = _cross_engine.get_structure_recommendation()
+        if isinstance(_structure_rec, dict) and _structure_rec:
+            if self.auto_strategy is None:
+                self.auto_strategy = {}
+            for _key in ("angle_bias", "scene_pacing", "pattern_interrupt_freq"):
+                if _key in _structure_rec:
+                    self.auto_strategy[_key] = _structure_rec[_key]
+            if _hi := _structure_rec.get("hook_intensity"):
+                _current = float(self.auto_strategy.get("hook_aggressiveness", 0.5))
+                self.auto_strategy["hook_aggressiveness"] = round(
+                    min(1.0, _current + float(_hi) * 0.2), 3
+                )
+            logger.info(
+                f"CrossLearningEngine structure: "
+                f"angle={_structure_rec.get('angle_bias')!r} "
+                f"pacing={_structure_rec.get('scene_pacing')!r} "
+                f"intensity={_structure_rec.get('hook_intensity'):.2f} "
+                f"(from {_structure_rec.get('shorts_winner_count')} Shorts winners)"
+            )
         if not self.thompson_preferred_type and v3_strategy.packaging_style:
             self.thompson_preferred_type = v3_strategy.packaging_style
             logger.info(

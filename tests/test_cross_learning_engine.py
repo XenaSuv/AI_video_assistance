@@ -28,12 +28,16 @@ from pathlib import Path
 import pytest
 
 from src.cross_learning_engine import (
+    _HOOK_TO_ANGLE,
+    _HOOK_TO_PACING,
     _HOOK_TYPES,
+    _MIN_STRUCTURE_SIGNAL,
     _PACES,
     _PERSONAS,
     _SCENE_TYPES,
     CrossLearningEngine,
     CrossLearningStore,
+    CrossLearningStructureStore,
 )
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -425,3 +429,152 @@ class TestCrossLearningStoreErrorPaths:
         path.write_text("not-json\n")
         result = store.load()
         assert result == []
+
+
+# ── CrossLearningStructureStore ────────────────────────────────────────────────
+
+class TestCrossLearningStructureStore:
+    def test_append_and_load_roundtrip(self, tmp_path):
+        store = CrossLearningStructureStore(tmp_path)
+        rec = {"dominant_hook": "conflict", "winner_count": 4, "hook_type_counts": {"conflict": 4}}
+        store.append(rec)
+        loaded = store.load()
+        assert len(loaded) == 1
+        assert loaded[0]["dominant_hook"] == "conflict"
+
+    def test_load_returns_empty_when_no_file(self, tmp_path):
+        store = CrossLearningStructureStore(tmp_path)
+        assert store.load() == []
+
+    def test_multiple_appends_all_loaded(self, tmp_path):
+        store = CrossLearningStructureStore(tmp_path)
+        for i in range(3):
+            store.append({"dominant_hook": "curiosity", "winner_count": i + 1, "hook_type_counts": {}})
+        assert len(store.load()) == 3
+
+
+# ── learn_from_shorts ──────────────────────────────────────────────────────────
+
+class TestLearnFromShorts:
+    def test_stores_record_when_winners_exist(self, tmp_path):
+        e = _engine(tmp_path)
+        e.learn_from_shorts({
+            "dominant_hook": "conflict",
+            "hook_type_counts": {"conflict": 3},
+            "winner_count": 3,
+            "avg_retention_3s": 0.80,
+            "avg_completion": 0.65,
+        })
+        records = e._structure_store.load()
+        assert len(records) == 1
+        assert records[0]["dominant_hook"] == "conflict"
+        assert records[0]["source"] == "shorts"
+
+    def test_skips_when_no_winners(self, tmp_path):
+        e = _engine(tmp_path)
+        e.learn_from_shorts({"winner_count": 0, "hook_type_counts": {}})
+        assert e._structure_store.load() == []
+
+    def test_learned_at_timestamp_stored(self, tmp_path):
+        e = _engine(tmp_path)
+        e.learn_from_shorts({"dominant_hook": "curiosity", "winner_count": 2, "hook_type_counts": {}})
+        rec = e._structure_store.load()[0]
+        assert "learned_at" in rec
+
+
+# ── get_structure_recommendation ──────────────────────────────────────────────
+
+def _store_structure(engine: CrossLearningEngine, dominant: str, count: int, retention: float = 0.80) -> None:
+    engine.learn_from_shorts({
+        "dominant_hook": dominant,
+        "hook_type_counts": {dominant: count},
+        "winner_count": count,
+        "avg_retention_3s": retention,
+        "avg_completion": 0.60,
+    })
+
+
+class TestGetStructureRecommendation:
+    def test_returns_none_when_no_data(self, tmp_path):
+        e = _engine(tmp_path)
+        assert e.get_structure_recommendation() is None
+
+    def test_returns_none_below_min_winners(self, tmp_path):
+        e = _engine(tmp_path)
+        # 4 winners = below _MIN_STRUCTURE_SIGNAL (5)
+        _store_structure(e, "conflict", count=4)
+        assert e.get_structure_recommendation(min_total_winners=5) is None
+
+    def test_returns_recommendation_at_threshold(self, tmp_path):
+        e = _engine(tmp_path)
+        _store_structure(e, "conflict", count=5)
+        rec = e.get_structure_recommendation(min_total_winners=5)
+        assert rec is not None
+
+    def test_dominant_hook_correct(self, tmp_path):
+        e = _engine(tmp_path)
+        _store_structure(e, "conflict", count=6)
+        rec = e.get_structure_recommendation(min_total_winners=5)
+        assert rec is not None
+        assert rec["dominant_hook"] == "conflict"
+
+    def test_angle_bias_matches_hook_mapping(self, tmp_path):
+        for i, (hook_type, expected_angle) in enumerate(_HOOK_TO_ANGLE.items()):
+            e = _engine(tmp_path / str(i))
+            _store_structure(e, hook_type, count=6)
+            rec = e.get_structure_recommendation(min_total_winners=5)
+            assert rec is not None
+            assert rec["angle_bias"] == expected_angle, f"failed for {hook_type}"
+
+    def test_scene_pacing_matches_hook_mapping(self, tmp_path):
+        for i, (hook_type, expected_pacing) in enumerate(_HOOK_TO_PACING.items()):
+            e = _engine(tmp_path / str(i))
+            _store_structure(e, hook_type, count=6)
+            rec = e.get_structure_recommendation(min_total_winners=5)
+            assert rec is not None
+            assert rec["scene_pacing"] == expected_pacing, f"failed for {hook_type}"
+
+    def test_fast_pacing_gives_high_interrupt_freq(self, tmp_path):
+        e = _engine(tmp_path)
+        _store_structure(e, "conflict", count=6)  # conflict → fast
+        rec = e.get_structure_recommendation(min_total_winners=5)
+        assert rec is not None
+        assert rec["pattern_interrupt_freq"] == "high"
+
+    def test_normal_pacing_gives_medium_interrupt_freq(self, tmp_path):
+        e = _engine(tmp_path)
+        _store_structure(e, "curiosity", count=6)  # curiosity → normal
+        rec = e.get_structure_recommendation(min_total_winners=5)
+        assert rec is not None
+        assert rec["pattern_interrupt_freq"] == "medium"
+
+    def test_hook_intensity_in_range(self, tmp_path):
+        e = _engine(tmp_path)
+        _store_structure(e, "conflict", count=6, retention=0.80)
+        rec = e.get_structure_recommendation(min_total_winners=5)
+        assert rec is not None
+        assert 0.0 <= rec["hook_intensity"] <= 1.0
+
+    def test_hook_intensity_zero_at_half_retention(self, tmp_path):
+        e = _engine(tmp_path)
+        _store_structure(e, "conflict", count=6, retention=0.50)
+        rec = e.get_structure_recommendation(min_total_winners=5)
+        assert rec is not None
+        assert rec["hook_intensity"] == 0.0
+
+    def test_winner_count_returned(self, tmp_path):
+        e = _engine(tmp_path)
+        _store_structure(e, "conflict", count=7)
+        rec = e.get_structure_recommendation(min_total_winners=5)
+        assert rec is not None
+        assert rec["shorts_winner_count"] == 7
+
+    def test_aggregates_multiple_records(self, tmp_path):
+        e = _engine(tmp_path)
+        # Two records: 3 conflict + 4 curiosity → dominant = curiosity
+        _store_structure(e, "conflict",  count=3)
+        _store_structure(e, "curiosity", count=4)
+        rec = e.get_structure_recommendation(min_total_winners=5)
+        assert rec is not None
+        assert rec["dominant_hook"] == "curiosity"
+        assert rec["shorts_winner_count"] == 7

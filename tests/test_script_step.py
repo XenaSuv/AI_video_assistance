@@ -1210,3 +1210,107 @@ class TestRunNew:
 
         assert step.auto_strategy is not None
         assert step.auto_strategy.get("pace") == "slow"
+
+    def test_run_new_structure_rec_applied_to_strategy(self, tmp_path):
+        """Structure recommendation from Shorts winners sets angle_bias and scene_pacing."""
+        script, v3_strategy, content_strategy, editorial_plan = self._setup_mocks(tmp_path)
+        step = _make_step(tmp_path)
+        step._cp.is_done.return_value = False
+
+        structure_rec = {
+            "dominant_hook": "conflict",
+            "angle_bias": "industry_impact",
+            "scene_pacing": "fast",
+            "pattern_interrupt_freq": "high",
+            "hook_intensity": 0.6,
+            "shorts_winner_count": 8,
+        }
+
+        with (
+            patch("src.script_step.FeedbackAnalyzer") as mock_fa,
+            patch("src.script_step.AutoActionEngine") as mock_aae,
+            patch("src.script_step._load_retention_state", return_value={"adjustments": {}, "corrections": []}),
+            patch("src.script_step.PerformanceStore"),
+            patch("src.script_step.DecisionEngineV3") as mock_v3,
+            patch("src.script_step._build_v3_context", return_value={}),
+            patch("src.script_step._unified_strategy_to_content_strategy", return_value=content_strategy),
+            patch("src.script_step.SequenceLearningEngine") as mock_seq,
+            patch("src.script_step.CrossLearningEngine") as mock_cross,
+            patch("src.script_step.get_recommendations", return_value={"top_hooks": []}),
+            patch("src.script_step.HookMutationEngine") as mock_hme,
+            patch("src.script_step.ShortsExperimentEngine") as mock_shorts,
+            patch("src.script_step.EditorialBrain") as mock_eb,
+            patch("src.script_step._load_cached_script", return_value=None),
+            patch("src.script_step.generate_script", return_value=script),
+            patch("src.script_step.PresentationEngine") as mock_pe,
+            patch("src.script_step.save_for_digest"),
+            patch("src.script_step.settings") as mock_settings,
+        ):
+            mock_settings.data_dir = tmp_path
+            mock_settings.channel_name = "Test Channel"
+            mock_fa.return_value.load_feedback_history.return_value = []
+            mock_aae.return_value.prepare_strategy.return_value = ({}, [], [])
+            mock_v3.return_value.decide.return_value = v3_strategy
+            mock_seq.return_value.get_sequence_bias.return_value = []
+            mock_seq.return_value.auto_correct_sequence.return_value = 0
+            mock_cross.return_value.recommend.return_value = {}
+            mock_cross.return_value.get_structure_recommendation.return_value = structure_rec
+            mock_hme.return_value.run.return_value = {"mutated_hooks": []}
+            mock_shorts.return_value.get_best_hooks.return_value = []
+            mock_shorts.return_value.get_strong_signal.return_value = None
+            mock_eb.return_value.run.return_value = editorial_plan
+            mock_pe.return_value.apply.return_value = script
+
+            step.run()
+
+        assert step.auto_strategy is not None
+        assert step.auto_strategy.get("angle_bias") == "industry_impact"
+        assert step.auto_strategy.get("scene_pacing") == "fast"
+        assert step.auto_strategy.get("pattern_interrupt_freq") == "high"
+
+    def test_run_new_structure_rec_none_does_not_set_structural_keys(self, tmp_path):
+        """When get_structure_recommendation returns None, no structural keys are added."""
+        script, v3_strategy, content_strategy, editorial_plan = self._setup_mocks(tmp_path)
+        step = _make_step(tmp_path)
+        step._cp.is_done.return_value = False
+
+        with (
+            patch("src.script_step.FeedbackAnalyzer") as mock_fa,
+            patch("src.script_step.AutoActionEngine") as mock_aae,
+            patch("src.script_step._load_retention_state", return_value={"adjustments": {}, "corrections": []}),
+            patch("src.script_step.PerformanceStore"),
+            patch("src.script_step.DecisionEngineV3") as mock_v3,
+            patch("src.script_step._build_v3_context", return_value={}),
+            patch("src.script_step._unified_strategy_to_content_strategy", return_value=content_strategy),
+            patch("src.script_step.SequenceLearningEngine") as mock_seq,
+            patch("src.script_step.CrossLearningEngine") as mock_cross,
+            patch("src.script_step.get_recommendations", return_value={"top_hooks": []}),
+            patch("src.script_step.HookMutationEngine") as mock_hme,
+            patch("src.script_step.ShortsExperimentEngine") as mock_shorts,
+            patch("src.script_step.EditorialBrain") as mock_eb,
+            patch("src.script_step._load_cached_script", return_value=None),
+            patch("src.script_step.generate_script", return_value=script),
+            patch("src.script_step.PresentationEngine") as mock_pe,
+            patch("src.script_step.save_for_digest"),
+            patch("src.script_step.settings") as mock_settings,
+        ):
+            mock_settings.data_dir = tmp_path
+            mock_settings.channel_name = "Test Channel"
+            mock_fa.return_value.load_feedback_history.return_value = []
+            mock_aae.return_value.prepare_strategy.return_value = ({}, [], [])
+            mock_v3.return_value.decide.return_value = v3_strategy
+            mock_seq.return_value.get_sequence_bias.return_value = []
+            mock_seq.return_value.auto_correct_sequence.return_value = 0
+            mock_cross.return_value.recommend.return_value = {}
+            mock_cross.return_value.get_structure_recommendation.return_value = None
+            mock_hme.return_value.run.return_value = {"mutated_hooks": []}
+            mock_shorts.return_value.get_best_hooks.return_value = []
+            mock_shorts.return_value.get_strong_signal.return_value = None
+            mock_eb.return_value.run.return_value = editorial_plan
+            mock_pe.return_value.apply.return_value = script
+
+            step.run()
+
+        strategy = step.auto_strategy or {}
+        assert "angle_bias" not in strategy
+        assert "scene_pacing" not in strategy

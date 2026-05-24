@@ -61,6 +61,35 @@ _SCENE_TYPES = ["avatar", "image", "diagram", "text_overlay"]
 _PERSONAS    = ["energetic", "curious", "clear_explainer", "balanced"]
 _PACES       = ["fast", "normal", "slow"]
 
+# Shorts hook type → long-form angle preference
+_HOOK_TO_ANGLE: dict[str, str] = {
+    "conflict":   "industry_impact",
+    "shock":      "threat_to_jobs",
+    "negative":   "overhyped_vs_reality",
+    "curiosity":  "technical_breakthrough",
+    "question":   "what_this_means_for_you",
+    "simple":     "technical_breakthrough",
+    "insider":    "technical_breakthrough",
+    "mistake":    "overhyped_vs_reality",
+    "warning":    "threat_to_jobs",
+}
+
+# Shorts hook type → long-form scene pacing
+_HOOK_TO_PACING: dict[str, str] = {
+    "conflict":  "fast",
+    "shock":     "fast",
+    "negative":  "fast",
+    "curiosity": "normal",
+    "question":  "normal",
+    "insider":   "normal",
+    "mistake":   "fast",
+    "warning":   "fast",
+    "simple":    "normal",
+}
+
+# Minimum total winner count before structure recommendation is trusted
+_MIN_STRUCTURE_SIGNAL = 5
+
 
 # ── Persistence ───────────────────────────────────────────────────────────────
 
@@ -86,6 +115,39 @@ class CrossLearningStore:
             return [json.loads(ln) for ln in lines if ln.strip()]
         except Exception as exc:
             logger.warning(f"CrossLearningStore: could not load ({exc})")
+            return []
+
+
+# ── CrossLearningStructureStore ───────────────────────────────────────────────
+
+class CrossLearningStructureStore:
+    """Append-only JSONL store for Shorts → long-form structural signals.
+
+    Each record represents one analysis run of ShortsExperimentEngine and
+    captures the distribution of winning hook types plus aggregate metrics.
+    Stored separately from the combo store so the two learning streams don't
+    interfere with each other.
+    """
+
+    def __init__(self, data_dir: Path | None = None) -> None:
+        self._path = (data_dir or settings.data_dir) / "cross_learning_structure.jsonl"
+
+    def append(self, record: dict[str, Any]) -> None:
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self._path, "a") as f:
+                f.write(json.dumps(record) + "\n")
+        except Exception as exc:
+            logger.warning(f"CrossLearningStructureStore: could not append ({exc})")
+
+    def load(self) -> list[dict[str, Any]]:
+        try:
+            if not self._path.exists():
+                return []
+            lines = self._path.read_text().strip().splitlines()
+            return [json.loads(ln) for ln in lines if ln.strip()]
+        except Exception as exc:
+            logger.warning(f"CrossLearningStructureStore: could not load ({exc})")
             return []
 
 
@@ -115,6 +177,7 @@ class CrossLearningEngine:
         seed:             int | None  = None,
     ) -> None:
         self._store           = CrossLearningStore(data_dir)
+        self._structure_store = CrossLearningStructureStore(data_dir)
         self.exploration_rate = exploration_rate
         self._rng             = _stdlib_random.Random(seed)
 
@@ -169,6 +232,97 @@ class CrossLearningEngine:
             f"(avg_ret={top[0]['avg_retention']:.3f}, n={top[0]['count']})"
         )
         return best
+
+    def learn_from_shorts(self, winning_structures: dict[str, Any]) -> None:
+        """Persist a structural signal derived from winning Shorts experiments.
+
+        *winning_structures* should contain at minimum:
+            hook_type_counts  — {hook_type: count} for all winners
+            winner_count      — total winners in this analysis batch
+            avg_retention_3s  — mean retention_3s across winners
+            avg_completion    — mean completion_rate across winners
+        """
+        if not winning_structures.get("winner_count"):
+            return
+        record: dict[str, Any] = {
+            **winning_structures,
+            "source":     "shorts",
+            "learned_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._structure_store.append(record)
+        dominant = winning_structures.get("dominant_hook", "?")
+        count    = winning_structures.get("winner_count", 0)
+        logger.info(
+            f"CrossLearningEngine: stored Shorts structure signal — "
+            f"dominant_hook={dominant!r} winner_count={count}"
+        )
+
+    def get_structure_recommendation(
+        self,
+        min_total_winners: int = _MIN_STRUCTURE_SIGNAL,
+    ) -> dict[str, Any] | None:
+        """Return long-form structural hints derived from accumulated Shorts winners.
+
+        Aggregates all stored structural records, sums hook-type distributions,
+        and maps the dominant winning hook type to angle, pacing, and pattern
+        preferences.  Returns None when there are fewer than *min_total_winners*
+        across all records.
+
+        Return dict keys:
+            dominant_hook          — most-common winning hook type
+            angle_bias             — suggested long-form angle
+            scene_pacing           — "fast" | "normal" | "slow"
+            pattern_interrupt_freq — "high" | "medium" | "low"
+            hook_intensity         — float 0–1 proportional to avg retention
+            shorts_winner_count    — total winners seen so far
+        """
+        records = self._structure_store.load()
+        if not records:
+            return None
+
+        # Accumulate hook-type distribution and winner count across all records
+        total_counts: Counter[str] = Counter()
+        total_winners = 0
+        retention_sum = 0.0
+        retention_n   = 0
+
+        for rec in records:
+            for ht, cnt in (rec.get("hook_type_counts") or {}).items():
+                total_counts[ht] += int(cnt)
+            total_winners += int(rec.get("winner_count", 0))
+            if (ret := rec.get("avg_retention_3s")) is not None:
+                retention_sum += float(ret)
+                retention_n   += 1
+
+        if total_winners < min_total_winners:
+            logger.debug(
+                f"CrossLearningEngine: structure signal too weak "
+                f"({total_winners} < {min_total_winners} winners required)"
+            )
+            return None
+
+        dominant = total_counts.most_common(1)[0][0] if total_counts else "curiosity"
+        avg_ret  = retention_sum / retention_n if retention_n else 0.5
+        # hook_intensity: 0.5 maps to 0.0 boost, 1.0 maps to 1.0 boost
+        hook_intensity = round(max(0.0, min(1.0, (avg_ret - 0.5) * 2)), 3)
+        pacing = _HOOK_TO_PACING.get(dominant, "normal")
+
+        recommendation: dict[str, Any] = {
+            "dominant_hook":           dominant,
+            "angle_bias":              _HOOK_TO_ANGLE.get(dominant, "technical_breakthrough"),
+            "scene_pacing":            pacing,
+            "pattern_interrupt_freq":  "high" if pacing == "fast" else "medium",
+            "hook_intensity":          hook_intensity,
+            "shorts_winner_count":     total_winners,
+        }
+        logger.info(
+            f"CrossLearningEngine: structure recommendation — "
+            f"angle={recommendation['angle_bias']!r} "
+            f"pacing={pacing!r} "
+            f"hook_intensity={hook_intensity:.2f} "
+            f"(from {total_winners} Shorts winners)"
+        )
+        return recommendation
 
     def aggregate(self) -> list[dict[str, Any]]:
         """Group all observations by combo key, compute per-group statistics."""

@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import sys
 import uuid
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -378,6 +379,45 @@ class ShortsExperimentEngine:
 
     # ── learning integration ──────────────────────────────────────────────────
 
+    def get_winning_structures(self) -> dict[str, Any]:
+        """Return aggregated structural data from all winning experiments.
+
+        Combines hook-type distribution, average metrics, and the dominant hook
+        across ALL winners (not just the single best).  This richer signal is
+        what gets fed into CrossLearningEngine.learn_from_shorts().
+
+        Return dict keys:
+            dominant_hook      — most common hook type among winners
+            hook_type_counts   — {hook_type: count} across all winners
+            winner_count       — total number of winners
+            avg_retention_3s   — mean retention_3s of winners
+            avg_completion     — mean completion_rate of winners
+        """
+        results     = self._store.load_results()
+        experiments = {e.experiment_id: e for e in self._store.load_experiments()}
+        winners     = [r for r in results if r.is_winner]
+
+        if not winners:
+            return {"winner_count": 0, "hook_type_counts": {}, "dominant_hook": None}
+
+        hook_counts: Counter[str] = Counter()
+        for result in winners:
+            exp = experiments.get(result.experiment_id)
+            if exp and exp.hook_type:
+                hook_counts[exp.hook_type] += 1
+
+        avg_ret   = sum(r.retention_3s    for r in winners) / len(winners)
+        avg_comp  = sum(r.completion_rate for r in winners) / len(winners)
+        dominant  = hook_counts.most_common(1)[0][0] if hook_counts else None
+
+        return {
+            "dominant_hook":    dominant,
+            "hook_type_counts": dict(hook_counts),
+            "winner_count":     len(winners),
+            "avg_retention_3s": round(avg_ret,  4),
+            "avg_completion":   round(avg_comp, 4),
+        }
+
     def analyze(self) -> dict[str, Any]:
         """Feed winning experiments into CrossLearningEngine and AutoActionEngine.
 
@@ -404,13 +444,13 @@ class ShortsExperimentEngine:
 
         summary["best_hook_type"] = best_exp.hook_type
 
-        # Feed into CrossLearningEngine
+        # Feed into CrossLearningEngine — combo signal (best winner only)
         try:
             CrossLearningEngine(data_dir=self._data_dir).learn({
-                "strategy": {"pace": "fast", "persona": "energetic"},
-                "packaging": {"hook_type": best_exp.hook_type},
-                "editorial": {"topic": "AI news"},
-                "scenes": [{"type": "text_overlay"}],
+                "strategy":   {"pace": "fast", "persona": "energetic"},
+                "packaging":  {"hook_type": best_exp.hook_type},
+                "editorial":  {"topic": "AI news"},
+                "scenes":     [{"type": "text_overlay"}],
                 "performance": {
                     "avg_watch_pct": best_result.avg_watch_pct,
                     "ctr": 0.0,
@@ -424,6 +464,23 @@ class ShortsExperimentEngine:
             )
         except Exception as exc:
             logger.warning(f"ShortsExperiment: CrossLearningEngine.learn() failed: {exc}")
+
+        # Feed structural signal — all winners aggregated
+        try:
+            winning_structures = self.get_winning_structures()
+            CrossLearningEngine(data_dir=self._data_dir).learn_from_shorts(
+                winning_structures
+            )
+            summary["structure_learning"] = True
+            logger.info(
+                f"ShortsExperiment → CrossLearningEngine structure: "
+                f"dominant_hook={winning_structures.get('dominant_hook')!r} "
+                f"winners={winning_structures.get('winner_count')}"
+            )
+        except Exception as exc:
+            logger.warning(
+                f"ShortsExperiment: CrossLearningEngine.learn_from_shorts() failed: {exc}"
+            )
 
         # Trigger AutoActionEngine signal when top performer exists
         try:

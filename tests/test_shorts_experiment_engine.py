@@ -284,3 +284,105 @@ class TestCollectAnalytics:
 
         assert first == 1
         assert second == 0
+
+
+# ── get_winning_structures ─────────────────────────────────────────────────────
+
+class TestGetWinningStructures:
+    def test_returns_zero_when_no_results(self, tmp_path):
+        engine = ShortsExperimentEngine(data_dir=tmp_path)
+        engine.generate(_story())
+        result = engine.get_winning_structures()
+        assert result["winner_count"] == 0
+        assert result["dominant_hook"] is None
+
+    def test_counts_winners_only(self, tmp_path):
+        engine = ShortsExperimentEngine(data_dir=tmp_path)
+        exps = engine.generate(_story())
+        # Two losers, one winner
+        engine.record_result(exps[0].experiment_id, retention_3s=0.40)
+        engine.record_result(exps[1].experiment_id, retention_3s=0.35)
+        engine.record_result(exps[2].experiment_id, retention_3s=0.80)
+        result = engine.get_winning_structures()
+        assert result["winner_count"] == 1
+
+    def test_dominant_hook_is_most_common_winner(self, tmp_path):
+        engine = ShortsExperimentEngine(data_dir=tmp_path)
+        exps = engine.generate(_story())
+        # 3 experiments — give two "conflict" types winners
+        store = ShortsExperimentStore(data_dir=tmp_path)
+        store.update_experiment(exps[0].experiment_id, {"hook_type": "conflict"})
+        store.update_experiment(exps[1].experiment_id, {"hook_type": "conflict"})
+        store.update_experiment(exps[2].experiment_id, {"hook_type": "curiosity"})
+        engine.record_result(exps[0].experiment_id, retention_3s=0.80)
+        engine.record_result(exps[1].experiment_id, retention_3s=0.75)
+        engine.record_result(exps[2].experiment_id, retention_3s=0.72)
+        result = engine.get_winning_structures()
+        assert result["dominant_hook"] == "conflict"
+        assert result["hook_type_counts"]["conflict"] == 2
+
+    def test_avg_retention_computed_correctly(self, tmp_path):
+        engine = ShortsExperimentEngine(data_dir=tmp_path)
+        exps = engine.generate(_story())
+        engine.record_result(exps[0].experiment_id, retention_3s=0.80)
+        engine.record_result(exps[1].experiment_id, retention_3s=0.90)
+        result = engine.get_winning_structures()
+        assert abs(result["avg_retention_3s"] - 0.85) < 0.01
+
+    def test_all_keys_present(self, tmp_path):
+        engine = ShortsExperimentEngine(data_dir=tmp_path)
+        exps = engine.generate(_story())
+        engine.record_result(exps[0].experiment_id, retention_3s=0.80)
+        result = engine.get_winning_structures()
+        for key in ("dominant_hook", "hook_type_counts", "winner_count",
+                    "avg_retention_3s", "avg_completion"):
+            assert key in result, f"missing key: {key}"
+
+
+# ── analyze() structure learning ──────────────────────────────────────────────
+
+class TestAnalyzeStructureLearning:
+    def test_analyze_calls_learn_from_shorts(self, tmp_path):
+        engine = ShortsExperimentEngine(data_dir=tmp_path)
+        exps = engine.generate(_story())
+        engine.record_result(exps[0].experiment_id, retention_3s=0.80)
+
+        with (
+            patch("src.shorts_experiment_engine.CrossLearningEngine") as mock_cls,
+            patch("src.shorts_experiment_engine.AutoActionEngine"),
+        ):
+            mock_instance = MagicMock()
+            mock_cls.return_value = mock_instance
+            engine.analyze()
+
+        mock_instance.learn_from_shorts.assert_called_once()
+        call_kwargs = mock_instance.learn_from_shorts.call_args[0][0]
+        assert call_kwargs["winner_count"] >= 1
+
+    def test_analyze_summary_includes_structure_learning_key(self, tmp_path):
+        engine = ShortsExperimentEngine(data_dir=tmp_path)
+        exps = engine.generate(_story())
+        engine.record_result(exps[0].experiment_id, retention_3s=0.80)
+
+        with (
+            patch("src.shorts_experiment_engine.CrossLearningEngine"),
+            patch("src.shorts_experiment_engine.AutoActionEngine"),
+        ):
+            summary = engine.analyze()
+
+        assert "structure_learning" in summary
+
+    def test_analyze_no_winners_skips_structure_learning(self, tmp_path):
+        engine = ShortsExperimentEngine(data_dir=tmp_path)
+        exps = engine.generate(_story())
+        engine.record_result(exps[0].experiment_id, retention_3s=0.40)
+
+        with (
+            patch("src.shorts_experiment_engine.CrossLearningEngine") as mock_cls,
+            patch("src.shorts_experiment_engine.AutoActionEngine"),
+        ):
+            mock_instance = MagicMock()
+            mock_cls.return_value = mock_instance
+            engine.analyze()
+
+        mock_instance.learn_from_shorts.assert_not_called()
