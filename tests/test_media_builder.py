@@ -21,6 +21,7 @@ for _m in (
 import pytest
 
 from src.media_builder import _MediaBuilder
+from src.pipeline_context import PipelineContext
 from src.script_generator import Scene, VideoScript
 
 # ── Factories ─────────────────────────────────────────────────────────────────
@@ -65,18 +66,18 @@ def _builder(
     if seen is None:
         seen = MagicMock()
 
-    observer = MagicMock()
-    live = MagicMock()
-    news = [MagicMock()]
+    ctx = PipelineContext(
+        run_dir=tmp_path,
+        cp=cp,
+        observer=MagicMock(),
+        live=MagicMock(),
+        seen=seen,
+    )
 
     return _MediaBuilder(
         script=script,
-        run_dir=tmp_path,
-        cp=cp,
-        observer=observer,
-        live=live,
-        seen=seen,
-        news=news,
+        ctx=ctx,
+        news=[MagicMock()],
         summary=summary,
         thompson_preferred_type=None,
     )

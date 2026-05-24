@@ -25,6 +25,7 @@ for _m in (
     sys.modules.setdefault(_m, MagicMock())
 
 from src.decision_engine_v3 import UnifiedStrategy
+from src.pipeline_context import PipelineContext
 from src.script_generator import Scene, VideoScript
 from src.script_step import _ScriptStep
 
@@ -58,16 +59,18 @@ def _make_step(
     """Create a _ScriptStep with mocked infrastructure."""
     cp = MagicMock()
     cp.is_done.return_value = False
-    observer = MagicMock()
-    live = MagicMock()
+    ctx = PipelineContext(
+        run_dir=tmp_path,
+        cp=cp,
+        observer=MagicMock(),
+        live=MagicMock(),
+        seen=MagicMock(),
+    )
     summary: dict[str, Any] = {"editorial_plan": {"selected_stories": [], "editorial_plan": [], "global_style": {}}}
     return _ScriptStep(
         news=news or [],
         history=["old story 1", "old story 2"],
-        run_dir=tmp_path,
-        cp=cp,
-        observer=observer,
-        live=live,
+        ctx=ctx,
         summary=summary,
         thompson_preferred_type=thompson_preferred_type,
     )
@@ -107,14 +110,18 @@ class TestScriptStepInit:
         live = MagicMock()
         summary = {}
         news = [MagicMock()]
-
-        step = _ScriptStep(
-            news=news,
-            history=["hist"],
+        ctx = PipelineContext(
             run_dir=tmp_path,
             cp=cp,
             observer=observer,
             live=live,
+            seen=MagicMock(),
+        )
+
+        step = _ScriptStep(
+            news=news,
+            history=["hist"],
+            ctx=ctx,
             summary=summary,
             thompson_preferred_type="question",
         )

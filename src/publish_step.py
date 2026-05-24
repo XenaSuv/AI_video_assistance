@@ -10,14 +10,11 @@ from loguru import logger
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.analytics import get_recommendations
-from src.checkpoint import PipelineCheckpoint
-from src.deduplicator import SeenStories
 from src.hook_selector import record_usage
 from src.language_variant import _run_language_variant as _run_lang_variant
-from src.live_state import LiveState
 from src.performance_tracker import save_result
+from src.pipeline_context import PipelineContext
 from src.pipeline_helpers import _classify_hook_type, _get_shared_outro
-from src.pipeline_observer import PipelineObserver
 from src.quality_gate import QualityGateError, run_gate
 from src.script_generator import VideoScript
 from src.shorts_experiment_engine import ShortsExperimentEngine
@@ -30,11 +27,7 @@ class _PublishStep:
     def __init__(
         self,
         script: VideoScript | None,
-        run_dir: Path,
-        cp: PipelineCheckpoint,
-        observer: PipelineObserver,
-        live: LiveState,
-        seen: SeenStories,
+        ctx: PipelineContext,
         news: list[Any],
         summary: dict[str, Any],
         skip_upload: bool,
@@ -47,11 +40,11 @@ class _PublishStep:
         feedback_history: list[Any],
     ) -> None:
         self._script = script
-        self._run_dir = run_dir
-        self._cp = cp
-        self._observer = observer
-        self._live = live
-        self._seen = seen
+        self._run_dir = ctx.run_dir
+        self._cp = ctx.cp
+        self._observer = ctx.observer
+        self._live = ctx.live
+        self._seen = ctx.seen
         self._news = news
         self._summary = summary
         self._skip_upload = skip_upload

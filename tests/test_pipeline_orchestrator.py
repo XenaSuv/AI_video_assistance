@@ -477,6 +477,7 @@ class TestSetupLogging:
 # self._summary, and how errors propagate.
 
 from src.media_builder import _MediaBuilder
+from src.pipeline_context import PipelineContext
 from src.pipeline_orchestrator import PipelineOrchestrator
 from src.publish_step import _PublishStep
 from src.quality_gate import QualityGateError
@@ -517,6 +518,13 @@ def orch(tmp_path) -> PipelineOrchestrator:
     o._seen.stats.return_value = {"in_ttl_window": 5, "total_seen": 20}
     o._seen.recent_titles.return_value = []
     o._seen.filter_new.side_effect = lambda x: x
+    o._ctx = PipelineContext(
+        run_dir=o._run_dir,
+        cp=o._cp,
+        observer=o._observer,
+        live=o._live,
+        seen=o._seen,
+    )
     o._script = _fake_script()
     o._news = []
     o._history = []
@@ -551,11 +559,7 @@ def orch(tmp_path) -> PipelineOrchestrator:
 def _make_builder(orch, tmp_path) -> _MediaBuilder:
     return _MediaBuilder(
         script=orch._script,
-        run_dir=tmp_path,
-        cp=orch._cp,
-        observer=orch._observer,
-        live=orch._live,
-        seen=orch._seen,
+        ctx=orch._ctx,
         news=orch._news,
         summary=orch._summary,
         thompson_preferred_type=None,
@@ -565,11 +569,7 @@ def _make_builder(orch, tmp_path) -> _MediaBuilder:
 def _make_publisher(orch, tmp_path) -> _PublishStep:
     return _PublishStep(
         script=orch._script,
-        run_dir=tmp_path,
-        cp=orch._cp,
-        observer=orch._observer,
-        live=orch._live,
-        seen=orch._seen,
+        ctx=orch._ctx,
         news=orch._news,
         summary=orch._summary,
         skip_upload=orch._skip_upload,

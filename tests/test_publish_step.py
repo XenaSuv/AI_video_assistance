@@ -18,6 +18,7 @@ for _m in (
 
 import pytest
 
+from src.pipeline_context import PipelineContext
 from src.publish_step import _PublishStep
 from src.script_generator import Scene, VideoScript
 
@@ -75,17 +76,17 @@ def _publisher(
     if feedback_history is None:
         feedback_history = []
 
-    observer = MagicMock()
-    live = MagicMock()
-    seen = MagicMock()
+    ctx = PipelineContext(
+        run_dir=tmp_path,
+        cp=cp,
+        observer=MagicMock(),
+        live=MagicMock(),
+        seen=MagicMock(),
+    )
 
     return _PublishStep(
         script=script,
-        run_dir=tmp_path,
-        cp=cp,
-        observer=observer,
-        live=live,
-        seen=seen,
+        ctx=ctx,
         news=news,
         summary=summary,
         skip_upload=skip_upload,

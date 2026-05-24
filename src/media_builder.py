@@ -10,17 +10,14 @@ from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
-from src.checkpoint import PipelineCheckpoint
-from src.deduplicator import SeenStories
 from src.image_generator import async_prefetch_scene_images
-from src.live_state import LiveState
+from src.pipeline_context import PipelineContext
 from src.pipeline_helpers import (
     _get_intro_duration,
     _get_shared_outro,
     _load_audio_durations,
     _needs_video_rebuild,
 )
-from src.pipeline_observer import PipelineObserver
 from src.script_generator import VideoScript
 from src.subtitle_generator import generate_subtitles
 from src.thumbnail_ab import generate_thumbnail_variants, pick_thumbnail
@@ -32,21 +29,17 @@ class _MediaBuilder:
     def __init__(
         self,
         script: VideoScript | None,
-        run_dir: Path,
-        cp: PipelineCheckpoint,
-        observer: PipelineObserver,
-        live: LiveState,
-        seen: SeenStories,
+        ctx: PipelineContext,
         news: list[Any],
         summary: dict[str, Any],
         thompson_preferred_type: str | None,
     ) -> None:
         self._script = script
-        self._run_dir = run_dir
-        self._cp = cp
-        self._observer = observer
-        self._live = live
-        self._seen = seen
+        self._run_dir = ctx.run_dir
+        self._cp = ctx.cp
+        self._observer = ctx.observer
+        self._live = ctx.live
+        self._seen = ctx.seen
         self._news = news
         self._summary = summary
         self._thompson_preferred_type = thompson_preferred_type
