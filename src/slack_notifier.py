@@ -242,6 +242,36 @@ def notify_watchdog_alert(
     })
 
 
+def notify_heartbeat(statuses: list[Any]) -> None:
+    """Post a consolidated health status board for all pipelines.
+
+    Each element of *statuses* must expose:  .pipeline, .last_run_at,
+    .hours_since, .threshold_hours, .is_stale, .status_emoji
+    (duck-typed so watchdog.PipelineHealth or any compatible object works).
+    """
+    now_str = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    lines: list[str] = [f"*🏥 Pipeline Health Report — {now_str}*", ""]
+
+    for s in statuses:
+        if s.last_run_at is None:
+            last_str = "no run found"
+        else:
+            h = s.hours_since
+            ts = s.last_run_at.strftime("%Y-%m-%d %H:%M UTC")
+            last_str = f"{h:.1f}h ago  ({ts})"
+        lines.append(f"{s.status_emoji}  `{s.pipeline:<8}`  {last_str}")
+
+    any_stale = any(s.is_stale for s in statuses)
+    color = "#e01e5a" if any_stale else "#2eb886"
+    _post({
+        "attachments": [{
+            "color":    color,
+            "text":     "\n".join(lines),
+            "mrkdwn_in": ["text"],
+        }]
+    })
+
+
 def notify_failure(
     exc: BaseException,
     pipeline: str,
