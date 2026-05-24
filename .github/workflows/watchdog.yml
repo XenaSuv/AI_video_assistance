@@ -30,14 +30,11 @@ jobs:
           key: pipeline-traces-${{ github.run_id }}
           restore-keys: pipeline-traces-
 
-      - name: Run watchdog
+      - name: Run heartbeat health check
         env:
           SLACK_WEBHOOK_URL: ${{ vars.SLACK_WEBHOOK_URL }}
           OPENAI_API_KEY: placeholder          # required by settings import
           ELEVENLABS_API_KEY: placeholder
           OUTPUT_DIR: output
           DATA_DIR: data
-        run: |
-          python src/watchdog.py \
-            --pipeline daily \
-            --max-hours 36
+        run: python src/watchdog.py --heartbeat

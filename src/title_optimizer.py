@@ -64,7 +64,12 @@ Return a JSON array of titles.
 
     text = (res.choices[0].message.content or "").strip()
     if res.usage:
-        get_ledger().record_llm("title-generate", settings.openai_model, res.usage.prompt_tokens or 0, res.usage.completion_tokens or 0)
+        _det = res.usage.prompt_tokens_details
+        get_ledger().record_llm(
+            "title-generate", settings.openai_model,
+            res.usage.prompt_tokens or 0, res.usage.completion_tokens or 0,
+            cached_tokens=getattr(_det, "cached_tokens", 0) if _det else 0,
+        )
     text = re.sub(r"^```json\s*", "", text, flags=re.IGNORECASE).strip()
     text = re.sub(r"```$", "", text).strip()
     try:
@@ -117,7 +122,12 @@ Return ONLY the best title.
     )
     result = (res.choices[0].message.content or "").strip()
     if res.usage:
-        get_ledger().record_llm("title-select", settings.openai_model, res.usage.prompt_tokens or 0, res.usage.completion_tokens or 0)
+        _det = res.usage.prompt_tokens_details
+        get_ledger().record_llm(
+            "title-select", settings.openai_model,
+            res.usage.prompt_tokens or 0, res.usage.completion_tokens or 0,
+            cached_tokens=getattr(_det, "cached_tokens", 0) if _det else 0,
+        )
     if result:
         return result
     return titles[0] if titles else "AI NEWS"

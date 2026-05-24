@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +16,7 @@ from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 from config import settings
 from src.performance_tracker import get_unanalyzed, mark_analyzed
-from src.shared_types import PerformanceStats
+from src.shared_types import PerformanceStats, WindowStats
 from src.state_io import json_lock
 from src.tiktok_analytics import get_video_metrics as get_tiktok_video_metrics
 from src.youtube_analytics import get_retention_curve, get_video_metrics
@@ -39,6 +39,39 @@ class RetentionAnalysis:
     drop_point: str | None
     retention_30s: float | None
     best_segment: str | None
+
+
+_7D_WINDOW = 7  # days for the rolling short-term window
+
+
+def _parse_ts(ts: str | None) -> datetime:
+    """Parse an ISO timestamp; returns datetime.min when missing or malformed."""
+    if not ts:
+        return datetime.min
+    try:
+        return datetime.fromisoformat(ts)
+    except (ValueError, TypeError):
+        return datetime.min
+
+
+def _cutoff_7d() -> datetime:
+    return datetime.now() - timedelta(days=_7D_WINDOW)
+
+
+def _compute_window_stats(records: list[dict[str, Any]]) -> WindowStats | None:
+    """Return WindowStats for *records*, or None when the list is empty."""
+    if not records:
+        return None
+    n = len(records)
+    avg_hook  = sum(r["hook_score"] for r in records) / n
+    avg_watch = sum(r["avg_view_percentage"] for r in records) / n
+    success   = sum(1 for r in records if r["hook_score"] > 0.6) / n
+    return WindowStats(
+        sample_size   = n,
+        avg_hook_score= round(avg_hook,  2),
+        avg_watch_time= round(avg_watch, 2),
+        success_rate  = round(success,   2),
+    )
 
 
 class FeedbackAnalyzer:
@@ -309,9 +342,9 @@ class FeedbackAnalyzer:
         return []
 
     def get_angle_performance(self, angle: str) -> PerformanceStats | None:
-        """Get performance metrics for a specific angle."""
+        """Get lifetime + 7-day rolling performance metrics for *angle*."""
         try:
-            history = []
+            history: list[dict[str, Any]] = []
             if self.feedback_db.exists():
                 history = json.loads(self.feedback_db.read_text())
 
@@ -319,23 +352,28 @@ class FeedbackAnalyzer:
             if not records:
                 return None
 
-            avg_hook_score = sum(h["hook_score"] for h in records) / len(records)
-            avg_watch_time = sum(h["avg_view_percentage"] for h in records) / len(records)
+            cutoff  = _cutoff_7d()
+            recent  = [r for r in records if _parse_ts(r.get("timestamp")) >= cutoff]
+            lt      = _compute_window_stats(records)
+            r7      = _compute_window_stats(recent)
+            assert lt is not None
             return PerformanceStats(
-                category=angle,
-                sample_size=len(records),
-                avg_hook_score=round(avg_hook_score, 2),
-                avg_watch_time=round(avg_watch_time, 2),
-                success_rate=len([h for h in records if h["hook_score"] > 0.6]) / len(records),
+                category      = angle,
+                sample_size   = lt.sample_size,
+                avg_hook_score= lt.avg_hook_score,
+                avg_watch_time= lt.avg_watch_time,
+                success_rate  = lt.success_rate,
+                lifetime      = lt,
+                recent_7d     = r7,
             )
         except Exception as exc:
             logger.warning(f"Failed to get angle performance: {exc}")
             return None
 
     def get_format_performance(self, fmt: str) -> PerformanceStats | None:
-        """Get performance metrics for a specific format."""
+        """Get lifetime + 7-day rolling performance metrics for *fmt*."""
         try:
-            history = []
+            history: list[dict[str, Any]] = []
             if self.feedback_db.exists():
                 history = json.loads(self.feedback_db.read_text())
 
@@ -343,14 +381,19 @@ class FeedbackAnalyzer:
             if not records:
                 return None
 
-            avg_hook_score = sum(h["hook_score"] for h in records) / len(records)
-            avg_watch_time = sum(h["avg_view_percentage"] for h in records) / len(records)
+            cutoff  = _cutoff_7d()
+            recent  = [r for r in records if _parse_ts(r.get("timestamp")) >= cutoff]
+            lt      = _compute_window_stats(records)
+            r7      = _compute_window_stats(recent)
+            assert lt is not None
             return PerformanceStats(
-                category=fmt,
-                sample_size=len(records),
-                avg_hook_score=round(avg_hook_score, 2),
-                avg_watch_time=round(avg_watch_time, 2),
-                success_rate=len([h for h in records if h["hook_score"] > 0.6]) / len(records),
+                category      = fmt,
+                sample_size   = lt.sample_size,
+                avg_hook_score= lt.avg_hook_score,
+                avg_watch_time= lt.avg_watch_time,
+                success_rate  = lt.success_rate,
+                lifetime      = lt,
+                recent_7d     = r7,
             )
         except Exception as exc:
             logger.warning(f"Failed to get format performance: {exc}")

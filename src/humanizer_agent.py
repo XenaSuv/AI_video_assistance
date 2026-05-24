@@ -97,10 +97,12 @@ Return only the rewritten script, no explanations.
             )
             new_script = (response.choices[0].message.content or "").strip()
             if response.usage:
+                _det = response.usage.prompt_tokens_details
                 get_ledger().record_llm(
                     tag="humanize-structure", model=settings.openai_model,
                     prompt_tokens=response.usage.prompt_tokens or 0,
                     completion_tokens=response.usage.completion_tokens or 0,
+                    cached_tokens=getattr(_det, "cached_tokens", 0) if _det else 0,
                 )
             changes = ["broke perfect paragraph structure into conversational chunks"]
             return new_script, changes
@@ -133,10 +135,12 @@ Return only the rewritten script.
             )
             new_script = (response.choices[0].message.content or "").strip()
             if response.usage:
+                _det = response.usage.prompt_tokens_details
                 get_ledger().record_llm(
                     tag="humanize-sentences", model=settings.openai_model,
                     prompt_tokens=response.usage.prompt_tokens or 0,
                     completion_tokens=response.usage.completion_tokens or 0,
+                    cached_tokens=getattr(_det, "cached_tokens", 0) if _det else 0,
                 )
             changes = ["varied sentence lengths for natural rhythm"]
             return new_script, changes
@@ -175,10 +179,12 @@ Return only the rewritten script.
             )
             new_script = (response.choices[0].message.content or "").strip()
             if response.usage:
+                _det = response.usage.prompt_tokens_details
                 get_ledger().record_llm(
                     tag="humanize-reactions", model=settings.openai_model,
                     prompt_tokens=response.usage.prompt_tokens or 0,
                     completion_tokens=response.usage.completion_tokens or 0,
+                    cached_tokens=getattr(_det, "cached_tokens", 0) if _det else 0,
                 )
             changes = ["injected emotional reactions and subjectivity"]
             return new_script, changes
@@ -213,10 +219,12 @@ Return only the rewritten script.
             )
             new_script = (response.choices[0].message.content or "").strip()
             if response.usage:
+                _det = response.usage.prompt_tokens_details
                 get_ledger().record_llm(
                     tag="humanize-imperfection", model=settings.openai_model,
                     prompt_tokens=response.usage.prompt_tokens or 0,
                     completion_tokens=response.usage.completion_tokens or 0,
+                    cached_tokens=getattr(_det, "cached_tokens", 0) if _det else 0,
                 )
             changes = ["added slight imperfections and conversational elements"]
             return new_script, changes
@@ -251,10 +259,12 @@ Return only the rewritten script.
             )
             new_script = (response.choices[0].message.content or "").strip()
             if response.usage:
+                _det = response.usage.prompt_tokens_details
                 get_ledger().record_llm(
                     tag="humanize-rhythm", model=settings.openai_model,
                     prompt_tokens=response.usage.prompt_tokens or 0,
                     completion_tokens=response.usage.completion_tokens or 0,
+                    cached_tokens=getattr(_det, "cached_tokens", 0) if _det else 0,
                 )
             changes = ["optimized rhythm with pauses and emphasis"]
             return new_script, changes
@@ -292,10 +302,12 @@ Return only the rewritten script.
             )
             new_script = (response.choices[0].message.content or "").strip()
             if response.usage:
+                _det = response.usage.prompt_tokens_details
                 get_ledger().record_llm(
                     tag="humanize-voice", model=settings.openai_model,
                     prompt_tokens=response.usage.prompt_tokens or 0,
                     completion_tokens=response.usage.completion_tokens or 0,
+                    cached_tokens=getattr(_det, "cached_tokens", 0) if _det else 0,
                 )
             changes = ["fine-tuned voice to match persona and editorial tone"]
             return new_script, changes

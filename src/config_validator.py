@@ -3,6 +3,10 @@
 Usage (already wired in config/settings.py):
     from src.config_validator import validate
     validate(settings)
+
+For runtime path checks (call at pipeline start, not at import time):
+    from src.config_validator import validate_runtime_paths
+    validate_runtime_paths(settings)
 """
 from __future__ import annotations
 
@@ -266,4 +270,56 @@ def validate(cfg: Any) -> None:
         bullet_list = "\n".join(f"  • {e}" for e in errors)
         raise ConfigurationError(
             f"Configuration errors ({len(errors)} found):\n{bullet_list}"
+        )
+
+
+# ── Runtime path validation ───────────────────────────────────────────────────
+
+def _missing(path: Path, env_var: str, errors: list[str]) -> None:
+    """Append an error if *path* does not point to an existing file."""
+    if not path.is_file():
+        errors.append(f"{env_var} does not exist: {path}")
+
+
+def validate_runtime_paths(cfg: Any) -> None:
+    """Check that critical filesystem paths exist.
+
+    Call explicitly at the beginning of each pipeline entry point — NOT at
+    import time — so that the test suite (which never touches real files) is
+    unaffected.  Raises ConfigurationError listing every missing path.
+    """
+    errors: list[str] = []
+
+    # ── Source assets directory ───────────────────────────────────────────────
+    source_dir = Path(cfg.source_dir)
+    if not source_dir.is_dir():
+        errors.append(f"SOURCE_DIR does not exist: {source_dir}")
+
+    # ── Background music file (optional — only when path is configured) ───────
+    if cfg.background_music_path:
+        raw = str(cfg.background_music_path).strip()
+        music_path = Path(raw) if Path(raw).is_absolute() else source_dir / raw
+        if not music_path.is_file():
+            errors.append(f"BACKGROUND_MUSIC_PATH does not exist: {music_path}")
+
+    # ── D-ID presenter avatar (only when presenter is active without HeyGen) ──
+    if cfg.presenter_enabled and not cfg.heygen_enabled and cfg.presenter_avatar_path:
+        avatar_raw = Path(cfg.presenter_avatar_path)
+        avatar = avatar_raw if avatar_raw.is_absolute() else source_dir.parent / avatar_raw
+        if not avatar.is_file():
+            errors.append(f"PRESENTER_AVATAR_PATH does not exist: {avatar}")
+
+    # ── YouTube OAuth credentials ─────────────────────────────────────────────
+    _missing(Path(cfg.youtube_client_secrets), "YOUTUBE_CLIENT_SECRETS", errors)
+    _missing(Path(cfg.youtube_token_file),     "YOUTUBE_TOKEN_FILE",     errors)
+
+    # ── Russian variant credentials ───────────────────────────────────────────
+    if cfg.ru_enabled:
+        _missing(Path(cfg.ru_youtube_client_secrets), "RU_YOUTUBE_CLIENT_SECRETS", errors)
+        _missing(Path(cfg.ru_youtube_token_file),     "RU_YOUTUBE_TOKEN_FILE",     errors)
+
+    if errors:
+        bullet_list = "\n".join(f"  • {e}" for e in errors)
+        raise ConfigurationError(
+            f"Runtime path errors ({len(errors)} found):\n{bullet_list}"
         )

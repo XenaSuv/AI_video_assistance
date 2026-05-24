@@ -9,7 +9,7 @@ import datetime as dt
 import json
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from loguru import logger
 
@@ -24,6 +24,7 @@ from src.feedback_analyzer import FeedbackAnalyzer
 from src.hook_mutation_engine import HookMutationEngine
 from src.humanizer_agent import HumanizerAgent
 from src.micro_hook_agent import MicroHookAgent
+from src.pipeline_context import PipelineContext
 from src.pipeline_helpers import (
     _build_v3_context,
     _classify_hook_type,
@@ -43,11 +44,6 @@ from src.script_generator import VideoScript, generate_script
 from src.sequence_learning_engine import SequenceLearningEngine
 from src.shorts_experiment_engine import ShortsExperimentEngine
 
-if TYPE_CHECKING:
-    from src.checkpoint import PipelineCheckpoint
-    from src.live_state import LiveState
-    from src.pipeline_observer import PipelineObserver
-
 
 class _ScriptStep:
     """Runs editorial planning, script generation, humanization, and hook tuning.
@@ -62,19 +58,16 @@ class _ScriptStep:
         self,
         news: list[NewsItem],
         history: list[str],
-        run_dir: Path,
-        cp: PipelineCheckpoint,
-        observer: PipelineObserver,
-        live: LiveState,
+        ctx: PipelineContext,
         summary: dict[str, Any],
         thompson_preferred_type: str | None,
     ) -> None:
         self._news = news
         self._history = history
-        self._run_dir = run_dir
-        self._cp = cp
-        self._observer = observer
-        self._live = live
+        self._run_dir = ctx.run_dir
+        self._cp = ctx.cp
+        self._observer = ctx.observer
+        self._live = ctx.live
         self._summary = summary
         # Input; may be updated during run via cross-engine / v3 fallback
         self.thompson_preferred_type = thompson_preferred_type

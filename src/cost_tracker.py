@@ -67,6 +67,7 @@ class _Entry:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     cached_tokens: int = 0
+    cache_savings_usd: float = 0.0
     # TTS-specific
     chars: int = 0
     # Image-specific
@@ -99,10 +100,11 @@ class CostLedger:
             + cached_tokens                * prices["cached"] / 1_000_000
             + completion_tokens            * prices["output"] / 1_000_000
         )
+        savings = cached_tokens * (prices["input"] - prices["cached"]) / 1_000_000
         self._entries.append(_Entry(
             tag=tag, kind="llm", model=model, usd=round(usd, 6),
             prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-            cached_tokens=cached_tokens,
+            cached_tokens=cached_tokens, cache_savings_usd=round(savings, 6),
         ))
         logger.debug(
             f"[cost] {tag} llm/{model} "
@@ -134,7 +136,8 @@ class CostLedger:
     def summary(self) -> dict[str, Any]:
         by_tag: dict[str, dict[str, Any]] = {}
         by_kind: dict[str, dict[str, Any]] = {
-            "llm":   {"usd": 0.0, "prompt_tokens": 0, "completion_tokens": 0, "cached_tokens": 0},
+            "llm":   {"usd": 0.0, "prompt_tokens": 0, "completion_tokens": 0,
+                      "cached_tokens": 0, "cache_hit_rate": 0.0, "cache_savings_usd": 0.0},
             "tts":   {"usd": 0.0, "chars": 0},
             "image": {"usd": 0.0, "count": 0},
         }
@@ -149,17 +152,24 @@ class CostLedger:
                 k["prompt_tokens"]     += e.prompt_tokens
                 k["completion_tokens"] += e.completion_tokens
                 k["cached_tokens"]     += e.cached_tokens
+                k["cache_savings_usd"]  = round(k["cache_savings_usd"] + e.cache_savings_usd, 6)
             elif e.kind == "tts":
                 k["chars"] += e.chars
             elif e.kind == "image":
                 k["count"] += e.n
 
+        llm = by_kind["llm"]
+        if llm["prompt_tokens"] > 0:
+            llm["cache_hit_rate"] = round(llm["cached_tokens"] / llm["prompt_tokens"] * 100, 1)
+
         # round by_tag usd
         for t in by_tag.values():
             t["usd"] = round(t["usd"], 4)
 
+        total_savings = round(sum(e.cache_savings_usd for e in self._entries), 4)
         return {
-            "total_usd": self.total_usd(),
+            "total_usd":          self.total_usd(),
+            "cache_savings_usd":  total_savings,
             "by_tag":    by_tag,
             "by_kind":   {k: v for k, v in by_kind.items() if v["usd"] > 0},
             "entries": [
@@ -168,7 +178,8 @@ class CostLedger:
                     "usd": e.usd,
                     **({"prompt_tokens": e.prompt_tokens,
                         "completion_tokens": e.completion_tokens,
-                        "cached_tokens": e.cached_tokens} if e.kind == "llm" else {}),
+                        "cached_tokens": e.cached_tokens,
+                        "cache_savings_usd": e.cache_savings_usd} if e.kind == "llm" else {}),
                     **({"chars": e.chars} if e.kind == "tts" else {}),
                     **({"n": e.n}         if e.kind == "image" else {}),
                 }
@@ -195,10 +206,15 @@ class CostLedger:
         s = self.summary()
         parts = []
         if llm := s["by_kind"].get("llm"):
+            savings_str = (
+                f", saved ${llm['cache_savings_usd']:.4f}"
+                if llm["cache_savings_usd"] > 0 else ""
+            )
             parts.append(
                 f"LLM ${llm['usd']:.4f} "
                 f"({llm['prompt_tokens']}in/{llm['completion_tokens']}out"
-                f"/{llm['cached_tokens']}cached tokens)"
+                f"/{llm['cached_tokens']}cached"
+                f", {llm['cache_hit_rate']:.0f}% hit{savings_str})"
             )
         if tts := s["by_kind"].get("tts"):
             parts.append(f"TTS ${tts['usd']:.4f} ({tts['chars']} chars)")

@@ -21,12 +21,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src.budget_guard import BudgetGuard
 from src.checkpoint import PipelineCheckpoint
+from src.config_validator import validate_runtime_paths
 from src.cost_tracker import reset_ledger
 from src.deduplicator import SeenStories
 from src.deferred_feedback import _DeferredFeedbackCollector
 from src.latency_tracker import LatencyTracker
 from src.live_state import LiveState
 from src.media_builder import _MediaBuilder
+from src.pipeline_context import PipelineContext
 from src.pipeline_helpers import _setup_logging as _setup_logging_helper
 from src.pipeline_observer import PipelineObserver
 from src.publish_step import _PublishStep
@@ -56,6 +58,7 @@ class PipelineOrchestrator:
 
     def run(self, dry_run: bool = False, skip_upload: bool = False) -> dict[str, Any]:
         """Execute the full pipeline. Returns a summary dict."""
+        validate_runtime_paths(settings)
         date_str = dt.date.today().isoformat()
         self._run_dir = settings.output_dir / date_str
         self._run_dir.mkdir(parents=True, exist_ok=True)
@@ -75,6 +78,13 @@ class PipelineOrchestrator:
         self._seen = SeenStories(
             settings.data_dir / "seen_stories.db",
             ttl_days=settings.dedup_ttl_days,
+        )
+        self._ctx = PipelineContext(
+            run_dir=self._run_dir,
+            cp=self._cp,
+            observer=self._observer,
+            live=self._live,
+            seen=self._seen,
         )
         # Per-run state populated by step methods
         self._script: VideoScript | None = None
@@ -100,11 +110,7 @@ class PipelineOrchestrator:
             self._step_script()
             self._builder = _MediaBuilder(
                 script=self._script,
-                run_dir=self._run_dir,
-                cp=self._cp,
-                observer=self._observer,
-                live=self._live,
-                seen=self._seen,
+                ctx=self._ctx,
                 news=self._news,
                 summary=self._summary,
                 thompson_preferred_type=self._thompson_preferred_type,
@@ -115,11 +121,7 @@ class PipelineOrchestrator:
             self._step_thumbnail()
             self._publisher = _PublishStep(
                 script=self._script,
-                run_dir=self._run_dir,
-                cp=self._cp,
-                observer=self._observer,
-                live=self._live,
-                seen=self._seen,
+                ctx=self._ctx,
                 news=self._news,
                 summary=self._summary,
                 skip_upload=self._skip_upload,
@@ -225,10 +227,7 @@ class PipelineOrchestrator:
         step = _ScriptStep(
             news=self._news,
             history=self._history,
-            run_dir=self._run_dir,
-            cp=self._cp,
-            observer=self._observer,
-            live=self._live,
+            ctx=self._ctx,
             summary=self._summary,
             thompson_preferred_type=self._thompson_preferred_type,
         )
