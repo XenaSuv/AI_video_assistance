@@ -24,6 +24,7 @@ from src.feedback_analyzer import FeedbackAnalyzer
 from src.hook_mutation_engine import HookMutationEngine
 from src.humanizer_agent import HumanizerAgent
 from src.micro_hook_agent import MicroHookAgent
+from src.pipeline_context import PipelineContext
 from src.pipeline_helpers import (
     _build_v3_context,
     _classify_hook_type,
@@ -42,8 +43,6 @@ from src.scraper import NewsItem
 from src.script_generator import VideoScript, generate_script
 from src.sequence_learning_engine import SequenceLearningEngine
 from src.shorts_experiment_engine import ShortsExperimentEngine
-
-from src.pipeline_context import PipelineContext
 
 
 class _ScriptStep:
